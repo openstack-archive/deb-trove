@@ -1,0 +1,47 @@
+#!/usr/bin/make -f
+
+PYTHONS:=$(shell pyversions -vr)
+
+include /usr/share/openstack-pkg-tools/pkgos.make
+export OSLO_PACKAGE_VERSION=$(VERSION)
+
+%:
+	dh $@ --with python2
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f debian/trove-common.postinst
+	rm -f debian/trove-taskmanager.postinst
+	rm -f debian/trove-guestagent.postinst
+
+override_dh_auto_build:
+	dh_auto_build
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-common.postinst
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-taskmanager.postinst
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-guestagent.postinst
+
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	python setup.py build_sphinx
+endif
+
+override_dh_install:
+	dh_install
+	set -e && for pyvers in $(PYTHONS); do \
+		python$$pyvers setup.py install --install-layout=deb \
+			--root $(CURDIR)/debian/python-trove; \
+	done
+	# Install the config files in the different binary packages
+	# -guestagent
+	install -D -m 0664 $(CURDIR)/etc/trove/trove-guestagent.conf.sample $(CURDIR)/debian/trove-guestagent/usr/share/trove-guestagent/trove-guestagent.conf
+	# -taskmanager
+	install -D -m 0664 $(CURDIR)/etc/trove/trove-taskmanager.conf.sample $(CURDIR)/debian/trove-taskmanager/usr/share/trove-taskmanager/trove-taskmanager.conf
+	# -common
+	install -D -m 0664 $(CURDIR)/etc/trove/trove.conf.sample $(CURDIR)/debian/trove-common/usr/share/trove-common/trove.conf
+	install -D -m 0664 $(CURDIR)/etc/trove/api-paste.ini $(CURDIR)/debian/trove-common/etc/trove/api-paste.ini
+
+
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+override_dh_auto_test:
+	#run_tests.py --test-config=etc/tests/xml.localhost.test.conf
+	python setup.py testr --slowest --testr-args='--subunit  '
+endif

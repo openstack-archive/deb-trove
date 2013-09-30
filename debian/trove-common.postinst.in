@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+#PKGOS-INCLUDE#
+
+if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
+	pkgos_var_user_group trove
+	pkgos_write_new_conf trove.conf
+	pkgos_write_new_conf api-paste.ini
+fi
+
+#DEBHELPER#
+
+exit 0

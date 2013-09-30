@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+if [ "${1}" = "purge" ] ; then
+	rm -f /etc/trove/trove-guestagent.conf
+	[ -d /etc/trove ] && rmdir --ignore-fail-on-non-empty /etc/trove
+fi
+
+#DEBHELPER#

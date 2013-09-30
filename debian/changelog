@@ -1,0 +1,5 @@
+trove (2013.2~rc1-1) unstable; urgency=low
+
+  * Initial release. (Closes: #724980)
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 30 Sep 2013 01:27:39 +0800
