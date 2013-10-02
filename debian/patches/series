@@ -1,1 +1,2 @@
 patch-default-config-file.patch
+fixes-filter-authtoken-config-file.patch

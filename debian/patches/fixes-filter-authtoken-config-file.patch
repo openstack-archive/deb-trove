@@ -1,0 +1,20 @@
+Description: Fixes keystone credentials in the default config file.
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2013-09-03
+
+--- trove-2013.2~rc1.orig/etc/trove/api-paste.ini
++++ trove-2013.2~rc1/etc/trove/api-paste.ini
+@@ -18,8 +18,10 @@ paste.filter_factory = keystoneclient.mi
+ auth_host = 127.0.0.1
+ auth_port = 35357
+ auth_protocol = http
+-admin_token = be19c524ddc92109a224
+-signing_dir = /tmp/keystone-signing-nova
++admin_tenant_name = %SERVICE_TENANT_NAME%
++admin_user = %SERVICE_USER%
++admin_password = %SERVICE_PASSWORD%
++signing_dir = /var/lib/trove/keystone-signing
+ 
+ [filter:authorization]
+ paste.filter_factory = trove.common.auth:AuthorizationMiddleware.factory
