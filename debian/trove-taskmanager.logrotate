@@ -1,0 +1,7 @@
+/var/log/trove/taskmanager.log {
+    daily
+    missingok
+    compress
+    delaycompress
+    notifempty
+}
