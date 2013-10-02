@@ -1,0 +1,7 @@
+/var/log/trove/guestagent.log {
+    daily
+    missingok
+    compress
+    delaycompress
+    notifempty
+}
