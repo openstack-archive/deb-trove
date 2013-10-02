@@ -105,6 +105,7 @@ Package: trove-common
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: adduser,
+         dbconfig-common,
          python-trove (= ${binary:Version}),
          sqlite3,
          ${misc:Depends},

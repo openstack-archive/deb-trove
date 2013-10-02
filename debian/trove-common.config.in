@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+. /usr/share/debconf/confmodule
+
+CONF=/etc/trove/trove.conf
+
+#PKGOS-INCLUDE#
+
+pkgos_var_user_group trove
+pkgos_dbc_read_conf -pkg trove-common ${CONF} DEFAULT sql_connection trove $@
+
+exit 0

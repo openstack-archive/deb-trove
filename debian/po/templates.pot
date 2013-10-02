@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: trove\n"
 "Report-Msgid-Bugs-To: trove@packages.debian.org\n"
-"POT-Creation-Date: 2013-10-03 00:50+0800\n"
+"POT-Creation-Date: 2013-10-03 01:16+0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -102,4 +102,45 @@ msgid ""
 "OpenStack supports using availability zones, with each region representing a "
 "location. Please enter the zone that you wish to use when registering the "
 "endpoint."
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../trove-common.templates:2001
+msgid "Set up a database for Trove?"
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../trove-common.templates:2001
+msgid ""
+"No database has been set up for trove to use. Before continuing, you should "
+"make sure you have the following information:"
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../trove-common.templates:2001
+msgid ""
+" * the type of database that you want to use;\n"
+" * the database server hostname (that server must allow TCP connections from "
+"this\n"
+"   machine);\n"
+" * a username and password to access the database."
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../trove-common.templates:2001
+msgid ""
+"If some of these requirements are missing, do not choose this option and run "
+"with regular SQLite support."
+msgstr ""
+
+#. Type: boolean
+#. Description
+#: ../trove-common.templates:2001
+msgid ""
+"You can change this setting later on by running \"dpkg-reconfigure -plow "
+"trove-common\"."
 msgstr ""

@@ -1,0 +1,18 @@
+Description: Better default in the config file
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: not-needed
+Last-Update: 2013-10-03
+
+--- trove-2013.2~rc1.orig/etc/trove/trove.conf.sample
++++ trove-2013.2~rc1/etc/trove/trove.conf.sample
+@@ -20,9 +20,7 @@ rabbit_password=f7999d1955c5014aa32c
+ # SQLAlchemy connection string for the reference implementation
+ # registry server. Any valid SQLAlchemy connection string is fine.
+ # See: http://www.sqlalchemy.org/docs/05/reference/sqlalchemy/connections.html#sqlalchemy.create_engine
+-# sql_connection = sqlite:///trove_test.sqlite
+-sql_connection = mysql://root:e1a2c042c828d3566d0a@localhost/trove
+-#sql_connection = postgresql://trove:trove@localhost/trove
++sql_connection = sqlite:///var/lib/trove/trovedb
+ 
+ # Period in seconds after which SQLAlchemy should reestablish its connection
+ # to the database.

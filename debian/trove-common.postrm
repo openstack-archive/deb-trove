@@ -3,6 +3,22 @@
 set -e
 
 if [ "${1}" = "purge" ] ; then
+	if [ -r /usr/share/debconf/confmodule ] ; then
+		. /usr/share/debconf/confmodule
+		db_get trove/configure_db || true
+		if [ "$RET" = "true" ] ; then
+			if [ -f /usr/share/dbconfig-common/dpkg/postrm ] ; then
+				. /usr/share/dbconfig-common/dpkg/postrm
+				dbc_go trove-common $@
+			else
+				rm -f /etc/dbconfig-common/trove-common.conf
+				if which ucf >/dev/null 2>&1; then
+					ucf --purge /etc/dbconfig-common/trove-common.conf
+					ucfr --purge nova-common /etc/dbconfig-common/trove-common.conf
+				fi
+			fi
+		fi
+	fi
 	rm -rf /var/log/trove
 	rm -f /etc/trove/api-paste.ini
 	rm -f /etc/trove/trove.conf
