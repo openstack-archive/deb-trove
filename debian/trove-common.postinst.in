@@ -6,8 +6,8 @@ set -e
 
 if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	pkgos_var_user_group trove
-	pkgos_write_new_conf trove.conf
-	pkgos_write_new_conf api-paste.ini
+	pkgos_write_new_conf trove trove.conf
+	pkgos_write_new_conf trove api-paste.ini
 fi
 
 #DEBHELPER#

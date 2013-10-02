@@ -87,14 +87,14 @@ Depends: python-cinderclient (>= 1:1.0.5),
 Suggests: python-suds (>= 0.4.0)
 Conflicts: python-cjson
 Description: Database as a Service for OpenStack - Python lib
- Trove is Database as a Service for Openstack. It's designed to run entirely on
- OpenStack, with the goal of allowing users to quickly and easily utilize the
- features of a relational database without the burden of handling complex
- administrative tasks. Cloud users and database administrators can provision
- and manage multiple database instances as needed. Initially, the service will
- focus on providing resource isolation at high performance while automating
- complex administrative tasks including deployment, configuration, patching,
- backups, restores, and monitoring. Trove is designed to support a
+ Trove is "Database as a Service" for Openstack. It's designed to allow users
+ to quickly and easily utilize the features of a relational database without
+ the burden of handling complex administrative tasks.
+ .
+ Cloud users and database administrators can provision and manage multiple
+ database instances as needed. The service focus on providing resource
+ isolation at high performance while automating deployment, configuration,
+ patching, backups, restores, and monitoring. Trove is designed to support a
  single-tenant database within a Nova instance. There is no restrictions on how
  Nova is configured, since Trove interacts with other OpenStack components
  purely through the API.
