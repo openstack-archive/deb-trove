@@ -1,4 +1,4 @@
-Source: trove
+Source: openstack-trove
 Section: net
 Priority: extra
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
@@ -51,8 +51,8 @@ Build-Depends-Indep: python-cinderclient (>= 1:1.0.5),
                      python-wsgi-intercept,
                      testrepository (>=0.0.8)
 Standards-Version: 3.9.4
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/trove.git;a=summary
-Vcs-Git: git://anonscm.debian.org/openstack/trove.git
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/openstack-trove.git;a=summary
+Vcs-Git: git://anonscm.debian.org/openstack/openstack-trove.git
 Homepage: http://github.com/openstack/trove
 
 Package: python-trove
