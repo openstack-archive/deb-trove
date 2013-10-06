@@ -1,0 +1,22 @@
+Description: Fix incompatible assert_unicode=None keyword use
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2013-10-06
+
+--- openstack-trove-2013.2~rc1.orig/trove/db/sqlalchemy/migrate_repo/schema.py
++++ openstack-trove-2013.2~rc1/trove/db/sqlalchemy/migrate_repo/schema.py
+@@ -25,12 +25,12 @@ logger = logging.getLogger('trove.db.sql
+ 
+ 
+ String = lambda length: sqlalchemy.types.String(
+-    length=length, convert_unicode=False, assert_unicode=None,
++    length=length, convert_unicode=False,
+     unicode_error=None, _warn_on_bytestring=False)
+ 
+ 
+ Text = lambda: sqlalchemy.types.Text(
+-    length=None, convert_unicode=False, assert_unicode=None,
++    length=None, convert_unicode=False,
+     unicode_error=None, _warn_on_bytestring=False)
+ 
+ 

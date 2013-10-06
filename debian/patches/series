@@ -1,2 +1,3 @@
 patch-default-config-file.patch
 fixes-filter-authtoken-config-file.patch
+removes-assert_unicode-in-sqlalchemy-schema.py.patch
