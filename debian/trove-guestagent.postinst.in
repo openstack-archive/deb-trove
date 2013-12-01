@@ -6,7 +6,7 @@ set -e
 
 if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	pkgos_var_user_group trove
-	pkgos_write_new_conf trove-guestagent.conf
+	pkgos_write_new_conf trove trove-guestagent.conf
 fi
 
 #DEBHELPER#
