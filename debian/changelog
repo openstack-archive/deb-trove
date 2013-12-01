@@ -1,12 +1,7 @@
-openstack-trove (2013.2-2) unstable; urgency=low
-
-  * Fix install of trove-guestagent.conf (Closes: #728157).
-
- -- Thomas Goirand <zigo@debian.org>  Sun, 01 Dec 2013 14:15:48 +0800
-
 openstack-trove (2013.2-1) unstable; urgency=low
 
   * New upstream release.
+  * Fix install of trove-guestagent.conf (Closes: #728157).
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 23 Oct 2013 01:06:25 +0800
 
