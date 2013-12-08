@@ -1,3 +1,12 @@
+openstack-trove (2013.2-2) unstable; urgency=low
+
+  * Added some Debconf translations, with warm thanks to:
+    - French, Julien Patriarca <leatherface@debian.org> (Closes: #728766).
+    - Russian, Yuri Kozlov <yuray@komyakino.ru> (Closes: #729777).
+    - Portuguese, Américo Monteiro <a_monteiro@gmx.com> (Closes: #729920).
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 08 Dec 2013 11:03:42 +0800
+
 openstack-trove (2013.2-1) unstable; urgency=low
 
   * New upstream release.
