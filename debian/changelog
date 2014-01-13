@@ -3,6 +3,9 @@ openstack-trove (2013.2-3) unstable; urgency=medium
   * Added new Debconf translations, with thanks to:
     - Swedish: Martin Bagge (Closes: #734620).
     - Italian: Beatrice Torracca (Closes: #733253).
+  * Removed the sphinx.ext.intersphinx plugin from doc/source/conf.py so that
+    the package do not attempts to use network when build docs.
+  * Uses sphinx correctly now, and added a trove-doc package which was missing.
 
  -- Thomas Goirand <zigo@debian.org>  Mon, 13 Jan 2014 16:45:28 +0800
 
