@@ -1,3 +1,11 @@
+openstack-trove (2013.2-3) unstable; urgency=medium
+
+  * Added new Debconf translations, with thanks to:
+    - Swedish: Martin Bagge (Closes: #734620).
+    - Italian: Beatrice Torracca (Closes: #733253).
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 13 Jan 2014 16:45:28 +0800
+
 openstack-trove (2013.2-2) unstable; urgency=low
 
   * Added some Debconf translations, with warm thanks to:
