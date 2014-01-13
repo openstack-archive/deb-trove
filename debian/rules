@@ -8,7 +8,7 @@ include /usr/share/openstack-pkg-tools/pkgos.make
 export OSLO_PACKAGE_VERSION=$(VERSION)
 
 %:
-	dh $@ --with python2,sphinxdoc
+	dh $@ --buildsystem=python_distutils --with python2,sphinxdoc
 
 override_dh_auto_clean:
 	dh_auto_clean
@@ -27,13 +27,9 @@ override_dh_auto_build:
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-guestagent.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-api.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-api.config
-
-ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
 override_dh_sphinxdoc:
-        PYTHONPATH=$(CURDIR) sphinx-build doc/source debian/trove-doc/usr/share/doc/trove-doc/html
-        dh_sphinxdoc -O--buildsystem=python_distutils
-	#python setup.py build_sphinx
-endif
+	PYTHONPATH=. sphinx-build doc/source debian/trove-doc/usr/share/doc/trove-doc/html
+	dh_sphinxdoc -O--buildsystem=python_distutils
 
 override_dh_install:
 	dh_install
