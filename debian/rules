@@ -27,6 +27,7 @@ override_dh_auto_build:
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-guestagent.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-api.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-api.config
+
 override_dh_sphinxdoc:
 	PYTHONPATH=. sphinx-build doc/source debian/trove-doc/usr/share/doc/trove-doc/html
 	dh_sphinxdoc -O--buildsystem=python_distutils

@@ -1,3 +1,9 @@
+openstack-trove (2013.2-4) UNRELEASED; urgency=low
+
+  * Restarts daemons after logrotate.
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 03 Feb 2014 23:17:50 +0800
+
 openstack-trove (2013.2-3) unstable; urgency=medium
 
   * Added new Debconf translations, with thanks to:
