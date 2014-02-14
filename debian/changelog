@@ -1,6 +1,7 @@
 openstack-trove (2013.2-4) unstable; urgency=medium
 
   * Rebuilt using openstack-pkg-tools >= 9~.
+  * Restarts daemons after logrotate.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 14 Feb 2014 17:59:35 +0000
 
