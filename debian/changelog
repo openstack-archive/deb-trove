@@ -1,3 +1,9 @@
+openstack-trove (2013.2-5) UNRELEASED; urgency=low
+
+  * Added initial German debconf translation (Closes: #739450).
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 02 Mar 2014 17:20:02 +0800
+
 openstack-trove (2013.2-4) unstable; urgency=medium
 
   * Rebuilt using openstack-pkg-tools >= 9~.
