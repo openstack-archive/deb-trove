@@ -1,6 +1,8 @@
 openstack-trove (2013.2-5) UNRELEASED; urgency=low
 
   * Added initial German debconf translation (Closes: #739450).
+  * Corrected debian/copyright for the doc/source/_static/nature.css which is
+    released under BSD-2-clauses (Closes: #735274).
 
  -- Thomas Goirand <zigo@debian.org>  Sun, 02 Mar 2014 17:20:02 +0800
 
