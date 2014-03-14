@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -17,8 +15,6 @@
 
 """Common code to help in faking the models."""
 
-import time
-
 from novaclient import exceptions as nova_exceptions
 from trove.common import cfg
 from trove.openstack.common import log as logging
@@ -31,54 +27,3 @@ LOG = logging.getLogger(__name__)
 def authorize(context):
     if not context.is_admin:
         raise nova_exceptions.Forbidden(403, "Forbidden")
-
-
-def get_event_spawer():
-    if CONF.fake_mode_events == "simulated":
-        return event_simulator
-    else:
-        return eventlet_spawner
-
-
-pending_events = []
-sleep_entrance_count = 0
-
-
-def eventlet_spawner(time_from_now_in_seconds, func):
-    """Uses eventlet to spawn events."""
-    import eventlet
-    eventlet.spawn_after(time_from_now_in_seconds, func)
-
-
-def event_simulator(time_from_now_in_seconds, func):
-    """Fakes events without doing any actual waiting."""
-    pending_events.append({"time": time_from_now_in_seconds, "func": func})
-
-
-def event_simulator_sleep(time_to_sleep):
-    """Simulates waiting for an event."""
-    global sleep_entrance_count
-    sleep_entrance_count += 1
-    time_to_sleep = float(time_to_sleep)
-    global pending_events
-    while time_to_sleep > 0:
-        itr_sleep = 0.5
-        for i in range(len(pending_events)):
-            event = pending_events[i]
-            event["time"] = event["time"] - itr_sleep
-            if event["func"] is not None and event["time"] < 0:
-                # Call event, but first delete it so this function can be
-                # reentrant.
-                func = event["func"]
-                event["func"] = None
-                try:
-                    func()
-                except Exception as e:
-                    LOG.exception("Simulated event error.")
-
-        time_to_sleep -= itr_sleep
-    sleep_entrance_count -= 1
-    if sleep_entrance_count < 1:
-        # Clear out old events
-        pending_events = [event for event in pending_events
-                          if event["func"] is not None]

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013 Rackspace Hosting
 # All Rights Reserved.
 #
@@ -16,13 +14,10 @@
 #    under the License.
 
 from collections import defaultdict
-from proboscis.asserts import Check
-from proboscis.asserts import assert_equal
-from proboscis.asserts import assert_not_equal
-import unittest
 
 from trove.common import utils
 from trove.tests.config import CONFIG
+import proboscis.asserts as asserts
 from proboscis.dependencies import SkipTest
 
 MESSAGE_QUEUE = defaultdict(list)
@@ -39,31 +34,31 @@ class UsageVerifier(object):
         pass
 
     def check_message(self, resource_id, event_type, **attrs):
-        messages = self.get_messages(resource_id)
-        print("%s %s" % (messages, resource_id))
+        messages = utils.poll_until(lambda: self.get_messages(resource_id),
+                                    lambda x: len(x) > 0, time_out=30)
         found = None
         for message in messages:
             if message['event_type'] == event_type:
                 found = message
-        assert_not_equal(found, None)
-        with Check() as check:
+        asserts.assert_is_not_none(found,
+                                   "No message type %s for resource %s" %
+                                   (event_type, resource_id))
+        with asserts.Check() as check:
             for key, value in attrs.iteritems():
                 check.equal(found[key], value)
 
     def get_messages(self, resource_id, expected_messages=None):
         global MESSAGE_QUEUE
-        import pprint
-        pprint.pprint(MESSAGE_QUEUE.items())
         msgs = MESSAGE_QUEUE.get(resource_id, [])
         if expected_messages is not None:
-            assert_equal(len(msgs), expected_messages)
+            asserts.assert_equal(len(msgs), expected_messages)
         return msgs
 
 
 class FakeVerifier(object):
     """This is the default handler in fake mode, it is basically a no-op."""
 
-    def clear_event(self):
+    def clear_events(self):
         pass
 
     def check_message(self, *args, **kwargs):

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2013 OpenStack LLC.
+# Copyright 2013 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -31,7 +29,8 @@ class BackupView(object):
             "created": self.backup.created,
             "updated": self.backup.updated,
             "size": self.backup.size,
-            "status": self.backup.state
+            "status": self.backup.state,
+            "parent_id": self.backup.parent_id,
         }
         }
 

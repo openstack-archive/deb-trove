@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -30,8 +28,10 @@ def map(engine, models):
     orm.mapper(models['instance'], Table('instances', meta, autoload=True))
     orm.mapper(models['root_enabled_history'],
                Table('root_enabled_history', meta, autoload=True))
-    orm.mapper(models['service_image'],
-               Table('service_images', meta, autoload=True))
+    orm.mapper(models['datastore'],
+               Table('datastores', meta, autoload=True))
+    orm.mapper(models['datastore_version'],
+               Table('datastore_versions', meta, autoload=True))
     orm.mapper(models['service_statuses'],
                Table('service_statuses', meta, autoload=True))
     orm.mapper(models['dns_records'],
@@ -53,6 +53,12 @@ def map(engine, models):
     orm.mapper(models['security_group_instance_association'],
                Table('security_group_instance_associations', meta,
                      autoload=True))
+    orm.mapper(models['configurations'],
+               Table('configurations', meta, autoload=True))
+    orm.mapper(models['configuration_parameters'],
+               Table('configuration_parameters', meta, autoload=True))
+    orm.mapper(models['conductor_lastseen'],
+               Table('conductor_lastseen', meta, autoload=True))
 
 
 def mapping_exists(model):

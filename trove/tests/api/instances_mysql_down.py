@@ -17,18 +17,15 @@ Extra tests to create an instance, shut down MySQL, and delete it.
 """
 
 from proboscis.decorators import time_out
-from proboscis import after_class
 from proboscis import before_class
 from proboscis import test
-from proboscis import SkipTest
-from proboscis.asserts import *
+from proboscis import asserts
 import time
 
 from datetime import datetime
-from troveclient import exceptions
-from trove.tests import util
+from troveclient.compat import exceptions
 from trove.tests.util import create_client
-from trove.tests.util import poll_until
+from trove.common.utils import poll_until
 from trove.tests.util import test_config
 from trove.tests.api.instances import VOLUME_SUPPORT
 from trove.tests.api.instances import EPHEMERAL_SUPPORT
@@ -59,7 +56,7 @@ class TestBase(object):
         # Get the resize to flavor.
         flavors2 = self.client.find_flavors_by_name(flavor2_name)
         self.new_flavor_id = flavors2[0].id
-        assert_not_equal(self.flavor_id, self.new_flavor_id)
+        asserts.assert_not_equal(self.flavor_id, self.new_flavor_id)
 
     def _wait_for_active(self):
         poll_until(lambda: self.client.instances.get(self.id),
@@ -77,7 +74,7 @@ class TestBase(object):
         self._wait_for_active()
 
     def _shutdown_instance(self):
-        instance = self.client.instances.get(self.id)
+        self.client.instances.get(self.id)
         self.mgmt_client.management.stop(self.id)
 
     @test(depends_on=[create_instance])
@@ -118,7 +115,7 @@ class TestBase(object):
         while True:
             try:
                 instance = self.client.instances.get(self.id)
-                assert_equal("SHUTDOWN", instance.status)
+                asserts.assert_equal("SHUTDOWN", instance.status)
             except exceptions.NotFound:
                 break
             time.sleep(0.25)

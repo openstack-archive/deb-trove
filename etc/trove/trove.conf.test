@@ -1,18 +1,26 @@
 [DEFAULT]
 
 # Fake out the remote implementations
-remote_implementation = fake
 remote_nova_client = trove.tests.fakes.nova.fake_create_nova_client
 remote_guest_client = trove.tests.fakes.guestagent.fake_create_guest_client
 remote_swift_client = trove.tests.fakes.swift.fake_create_swift_client
 remote_cinder_client = trove.tests.fakes.nova.fake_create_cinder_client
 
+# Fake out the RPC implementation
+rpc_backend = trove.common.rpc.impl_fake
+
+# Fake out DNS.
+trove_dns_support = True
+dns_driver = trove.tests.fakes.dns.FakeDnsDriver
+dns_instance_entry_factory = trove.tests.fakes.dns.FakeDnsInstanceEntryFactory
+
+
 # This will remove some of the verbose logging when trying to diagnose tox issues
-#default_log_levels=routes.middleware=ERROR,trove.common.auth=WARN
+default_log_levels=routes.middleware=ERROR,trove.common.auth=WARN
 
-fake_mode_events = eventlet
+log_file = trovetest.log
 
-log_file = rdtest.log
+use_stderr = False
 
 # Show more verbose log output (sets INFO log level output)
 verbose = True
@@ -68,15 +76,14 @@ nova_service_type = compute
 nova_service_name = Compute Service
 
 # Config option for showing the IP address that nova doles out
-add_addresses = True
 network_label_regex = ^private$
+ip_regex = ^(15.|123.)
 
 # Config options for enabling volume service
 trove_volume_support = True
 nova_volume_service_type = volume
 nova_volume_service_name = Volume Service
 device_path = /dev/vdb
-mount_point = /var/lib/mysql
 max_accepted_volume_size = 25
 max_instances_per_user = 55
 max_volumes_per_user = 100
@@ -88,6 +95,9 @@ http_get_rate = 200
 http_post_rate = 200
 http_put_rate = 200
 http_delete_rate = 200
+
+# default datastore
+default_datastore = a00000a0-00a0-0a00-00a0-000a000000aa
 
 # Auth
 admin_roles = admin
@@ -109,6 +119,7 @@ revert_time_out = 120
 
 # usage notifications
 notification_driver = trove.tests.util.usage
+notification_service_id = mysql:123,percona:abc
 
 # ============ notifer queue kombu connection options ========================
 
@@ -133,13 +144,13 @@ use = call:trove.common.wsgi:versioned_urlmap
 paste.app_factory = trove.versions:app_factory
 
 [pipeline:troveapi]
-pipeline = faultwrapper tokenauth authorization contextwrapper ratelimit extensions troveapp
+pipeline = faultwrapper authtoken authorization contextwrapper ratelimit extensions troveapp
 # pipeline = debug troveapp
 
 [filter:extensions]
 paste.filter_factory = trove.common.extensions:factory
 
-[filter:tokenauth]
+[filter:authtoken]
 paste.filter_factory = trove.tests.fakes.keystone:filter_factory
 service_protocol = http
 service_host = 127.0.0.1
@@ -168,4 +179,3 @@ paste.app_factory = trove.common.api:app_factory
 #Add this filter to log request and response for debugging
 [filter:debug]
 paste.filter_factory = trove.common.wsgi:Debug
-

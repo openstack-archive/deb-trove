@@ -1,4 +1,4 @@
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -24,7 +24,6 @@ environments if we choose to.
 import json
 import os
 from collections import Mapping
-from trove.tests.fakes.common import event_simulator_sleep
 
 
 #TODO(tim.simpson): I feel like this class already exists somewhere in core
@@ -71,8 +70,13 @@ class TestConfig(object):
             'dbaas_url': "http://localhost:8775/v1.0/dbaas",
             'version_url': "http://localhost:8775/",
             'nova_url': "http://localhost:8774/v1.1",
+            'dbaas_datastore': "mysql",
+            'dbaas_datastore_id': "a00000a0-00a0-0a00-00a0-000a000000aa",
+            'dbaas_datastore_version': "mysql-5.5",
+            'dbaas_datastore_version_id': "b00000b0-00b0-0b00-00b0-"
+                                          "000b000000bb",
+            'dbaas_inactive_datastore_version': "mysql_inactive_version",
             'instance_create_time': 16 * 60,
-            'dbaas_image': None,
             'mysql_connection_method': {"type": "direct"},
             'typical_nova_image_name': None,
             'white_box': os.environ.get("WHITE_BOX", "False") == "True",
@@ -81,29 +85,13 @@ class TestConfig(object):
             "known_bugs": {},
             "in_proc_server": True,
             "report_directory": os.environ.get("REPORT_DIRECTORY", None),
-            "sleep_mode": "simulated",
-            "simulate_events": False,
             "trove_volume_support": True,
             "trove_max_volumes_per_user": 100,
             "usage_endpoint": USAGE_ENDPOINT,
+            "root_on_create": False
         }
         self._frozen_values = FrozenDict(self._values)
         self._users = None
-        self._dawdler = None
-
-    @property
-    def dawdler(self):
-        """Equivalent (in theory) to time.sleep.
-
-        Calling this in place of sleep allows the tests to run faster in
-        fake mode.
-        """
-        if not self._dawdler:
-            if self.sleep_mode == "simulated":
-                self._dawdler = event_simulator_sleep
-            else:
-                self._dawdler = greenthread.sleep
-        return self._dawdler
 
     def get(self, name, default_value):
         return self.values.get(name, default_value)

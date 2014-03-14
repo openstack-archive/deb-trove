@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -16,7 +14,6 @@
 #    under the License.
 
 import routes
-import webob.dec
 from trove.openstack.common import log as logging
 
 from trove.openstack.common import extensions

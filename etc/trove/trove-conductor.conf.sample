@@ -1,0 +1,7 @@
+[DEFAULT]
+verbose = True
+debug = True
+control_exchange = trove
+trove_auth_url = http://0.0.0.0:5000/v2.0
+sql_connection = mysql://root:e1a2c042c828d3566d0a@localhost/trove
+rabbit_password = f7999d1955c5014aa32c

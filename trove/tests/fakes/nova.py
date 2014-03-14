@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -16,12 +14,10 @@
 #    under the License.
 
 from novaclient import exceptions as nova_exceptions
-from novaclient.v1_1.client import Client
 from trove.common.exception import PollTimeOut
-from trove.common.utils import poll_until
+from trove.common import instance as rd_instance
 from trove.openstack.common import log as logging
 from trove.tests.fakes.common import authorize
-from trove.tests.fakes.common import get_event_spawer
 
 import eventlet
 import uuid
@@ -105,7 +101,6 @@ class FakeServer(object):
         self.image_id = image_id
         self.flavor_ref = flavor_ref
         self.old_flavor_ref = None
-        self.event_spawn = get_event_spawer()
         self._current_status = "BUILD"
         self.volumes = volumes
         # This is used by "RdServers". Its easier to compute the
@@ -116,7 +111,8 @@ class FakeServer(object):
         for volume in self.volumes:
             info_vols.append({'id': volume.id})
             volume.set_attachment(id)
-        self.hostId = FAKE_HOSTS[0]
+            volume.schedule_status("in-use", 1)
+        self.host = FAKE_HOSTS[0]
         self.old_host = None
         setattr(self, 'OS-EXT-AZ:availability_zone', 'nova')
 
@@ -134,7 +130,7 @@ class FakeServer(object):
     def revert_resize(self):
         if self.status != "VERIFY_RESIZE":
             raise RuntimeError("Not in resize confirm mode.")
-        self.hostId = self.old_host
+        self.host = self.old_host
         self.old_host = None
         self.flavor_ref = self.old_flavor_ref
         self.old_flavor_ref = None
@@ -148,7 +144,7 @@ class FakeServer(object):
             self.parent.schedule_simulate_running_server(self.id, 1.5)
 
         self._current_status = "REBOOT"
-        self.event_spawn(1, set_to_active)
+        eventlet.spawn_after(1, set_to_active)
 
     def delete(self):
         self.schedule_status = []
@@ -187,7 +183,7 @@ class FakeServer(object):
 
             def set_to_active():
                 self.parent.schedule_simulate_running_server(self.id, 1.5)
-            self.event_spawn(1, set_to_active)
+            eventlet.spawn_after(1, set_to_active)
 
         def change_host():
             self.old_host = self.host
@@ -206,21 +202,21 @@ class FakeServer(object):
                 # A resize MIGHT change the host, but a migrate
                 # deliberately does.
                 LOG.debug("Migrating fake instance.")
-                self.event_spawn(0.75, change_host)
+                eventlet.spawn_after(0.75, change_host)
             else:
                 LOG.debug("Resizing fake instance.")
                 self.old_flavor_ref = self.flavor_ref
                 flavor = self.parent.flavors.get(new_flavor_id)
                 self.flavor_ref = flavor.links[0]['href']
-            self.event_spawn(1, set_to_confirm_mode)
+            eventlet.spawn_after(1, set_to_confirm_mode)
 
-        self.event_spawn(0.8, set_flavor)
+        eventlet.spawn_after(0.8, set_flavor)
 
     def schedule_status(self, new_status, time_from_now):
         """Makes a new status take effect at the given time."""
         def set_status():
             self._current_status = new_status
-        self.event_spawn(time_from_now, set_status)
+        eventlet.spawn_after(time_from_now, set_status)
 
     @property
     def status(self):
@@ -254,7 +250,6 @@ class FakeServers(object):
         self.context = context
         self.db = FAKE_SERVERS_DB
         self.flavors = flavors
-        self.event_spawn = get_event_spawer()
 
     def can_see(self, id):
         """Can this FakeServers, with its context, see some resource?"""
@@ -263,7 +258,8 @@ class FakeServers(object):
                 server.owner.tenant == self.context.tenant)
 
     def create(self, name, image_id, flavor_ref, files=None, userdata=None,
-               block_device_mapping=None, volume=None, security_groups=None):
+               block_device_mapping=None, volume=None, security_groups=None,
+               availability_zone=None, nics=None):
         id = "FAKE_%s" % uuid.uuid4()
         if volume:
             volume = self.volumes.create(volume['size'], volume['name'],
@@ -283,6 +279,15 @@ class FakeServers(object):
         self.db[id] = server
         if name.endswith('SERVER_ERROR'):
             raise nova_exceptions.ClientException("Fake server create error.")
+
+        if availability_zone == 'BAD_ZONE':
+            raise nova_exceptions.ClientException("The requested availability "
+                                                  "zone is not available.")
+
+        if nics is not None and nics.port_id == 'UNKNOWN':
+            raise nova_exceptions.ClientException("The requested availability "
+                                                  "zone is not available.")
+
         server.schedule_status("ACTIVE", 1)
         LOG.info("FAKE_SERVERS_DB : %s" % str(FAKE_SERVERS_DB))
         return server
@@ -292,7 +297,7 @@ class FakeServers(object):
         if block_device_mapping is not None:
             # block_device_mapping is a dictionary, where the key is the
             # device name on the compute instance and the mapping info is a
-            # set of fields in a string, seperated by colons.
+            # set of fields in a string, separated by colons.
             # For each device, find the volume, and record the mapping info
             # to another fake object and attach it to the volume
             # so that the fake API can later retrieve this.
@@ -329,20 +334,19 @@ class FakeServers(object):
         def delete_server():
             LOG.info("Simulated event ended, deleting server %s." % id)
             del self.db[id]
-        self.event_spawn(time_from_now, delete_server)
+        eventlet.spawn_after(time_from_now, delete_server)
 
     def schedule_simulate_running_server(self, id, time_from_now):
         from trove.instance.models import DBInstance
         from trove.instance.models import InstanceServiceStatus
-        from trove.instance.models import ServiceStatuses
 
         def set_server_running():
             instance = DBInstance.find_by(compute_instance_id=id)
             LOG.debug("Setting server %s to running" % instance.id)
             status = InstanceServiceStatus.find_by(instance_id=instance.id)
-            status.status = ServiceStatuses.RUNNING
+            status.status = rd_instance.ServiceStatuses.RUNNING
             status.save()
-        self.event_spawn(time_from_now, set_server_running)
+        eventlet.spawn_after(time_from_now, set_server_running)
 
 
 class FakeRdServer(object):
@@ -400,7 +404,6 @@ class FakeVolume(object):
         self.size = size
         self.name = name
         self.description = description
-        self.event_spawn = get_event_spawer()
         self._current_status = "BUILD"
         # For some reason we grab this thing from device then call it mount
         # point.
@@ -428,7 +431,7 @@ class FakeVolume(object):
         """Makes a new status take effect at the given time."""
         def set_status():
             self._current_status = new_status
-        self.event_spawn(time_from_now, set_status)
+        eventlet.spawn_after(time_from_now, set_status)
 
     def set_attachment(self, server_id):
         """Fake method we've added to set attachments. Idempotent."""
@@ -461,7 +464,6 @@ class FakeVolumes(object):
     def __init__(self, context):
         self.context = context
         self.db = FAKE_VOLUMES_DB
-        self.event_spawn = get_event_spawer()
 
     def can_see(self, id):
         """Can this FakeVolumes, with its context, see some resource?"""
@@ -506,7 +508,7 @@ class FakeVolumes(object):
 
         def finish_resize():
             volume.size = new_size
-        self.event_spawn(1.0, finish_resize)
+        eventlet.spawn_after(1.0, finish_resize)
 
     def detach(self, volume_id):
         volume = self.get(volume_id)
@@ -516,7 +518,17 @@ class FakeVolumes(object):
 
         def finish_detach():
             volume._current_status = "available"
-        self.event_spawn(1.0, finish_detach)
+        eventlet.spawn_after(1.0, finish_detach)
+
+    def attach(self, volume_id, server_id, device_path):
+        volume = self.get(volume_id)
+
+        if volume._current_status != "available":
+            raise Exception("Invalid volume status")
+
+        def finish_attach():
+            volume._current_status = "in-use"
+        eventlet.spawn_after(1.0, finish_attach)
 
 
 class FakeAccount(object):
@@ -532,7 +544,7 @@ class FakeAccount(object):
             server_dict['id'] = server.id
             server_dict['name'] = server.name
             server_dict['status'] = server.status
-            server_dict['hostId'] = server.hostId
+            server_dict['host'] = server.host
             ret.append(server_dict)
         return ret
 
@@ -544,7 +556,6 @@ class FakeAccounts(object):
         self.context = context
         self.db = FAKE_SERVERS_DB
         self.servers = servers
-        self.event_spawn = get_event_spawer()
 
     def _belongs_to_tenant(self, tenant, id):
         server = self.db[id]

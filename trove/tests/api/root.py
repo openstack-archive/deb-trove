@@ -12,9 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import time
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from nose.plugins.skip import SkipTest
 from proboscis import before_class
@@ -24,13 +23,9 @@ from proboscis.asserts import assert_false
 from proboscis.asserts import assert_not_equal
 from proboscis.asserts import assert_raises
 from proboscis.asserts import assert_true
-from proboscis.asserts import fail
-from proboscis.decorators import expect_exception
-from proboscis.decorators import time_out
 
 from trove import tests
 from trove.tests.api.users import TestUsers
-from trove.tests.api.instances import GROUP_START
 from trove.tests.api.instances import instance_info
 from trove.tests import util
 from trove.tests.util import test_config
@@ -38,12 +33,6 @@ from trove.tests.api.databases import TestMysqlAccess
 
 
 GROUP = "dbaas.api.root"
-
-
-def log_in_as_root(root_password):
-    con = create_mysql_connection(instance_info.get_address(), 'root',
-                                  root_password)
-    return con
 
 
 @test(depends_on_classes=[TestMysqlAccess],
@@ -70,8 +59,7 @@ class TestRoot(object):
 
     def _root(self):
         global root_password
-        host = "%"
-        user, password = self.dbaas.root.create(instance_info.id)
+        self.dbaas.root.create(instance_info.id)
         assert_equal(200, self.dbaas.last_http_code)
         reh = self.dbaas_admin.management.root_enabled_history
         self.root_enabled_timestamp = reh(instance_info.id).enabled
@@ -89,8 +77,7 @@ class TestRoot(object):
 
     @test
     def test_create_user_os_admin_failure(self):
-        users = []
-        users.append({"name": "os_admin", "password": "12345"})
+        users = [{"name": "os_admin", "password": "12345"}]
         assert_raises(exceptions.BadRequest, self.dbaas.users.create,
                       instance_info.id, users)
 
@@ -170,7 +157,8 @@ class TestRoot(object):
           enabled=not test_config.values['root_removed_from_instance_api'])
     def test_root_still_enabled_details(self):
         """Use instance details to test that after root was reset,
-        it's still enabled."""
+            it's still enabled.
+        """
         instance = self.dbaas.instances.get(instance_info.id)
         assert_true(hasattr(instance, 'rootEnabled'),
                     "Instance has no rootEnabled property.")

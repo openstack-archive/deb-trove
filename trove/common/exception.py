@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -24,7 +22,6 @@ from trove.openstack.common import exception as openstack_exception
 from trove.openstack.common import processutils
 from trove.openstack.common.gettextutils import _
 
-from webob import exc
 
 ClientConnectionError = openstack_exception.ClientConnectionError
 ProcessExecutionError = processutils.ProcessExecutionError
@@ -96,6 +93,47 @@ class DnsRecordNotFound(NotFound):
     message = _("DnsRecord with name= %(name)s not found.")
 
 
+class DatastoreNotFound(NotFound):
+
+    message = _("Datastore '%(datastore)s' cannot be found.")
+
+
+class DatastoreVersionNotFound(NotFound):
+
+    message = _("Datastore version '%(version)s' cannot be found.")
+
+
+class DatastoresNotFound(NotFound):
+
+    message = _("Datastores cannot be found.")
+
+
+class DatastoreNoVersion(TroveError):
+
+    message = _("Datastore '%(datastore)s' has no version '%(version)s'.")
+
+
+class DatastoreVersionInactive(TroveError):
+
+    message = _("Datastore version '%(version)s' is not active.")
+
+
+class DatastoreDefaultDatastoreNotFound(TroveError):
+
+    message = _("Please specify datastore.")
+
+
+class DatastoreDefaultVersionNotFound(TroveError):
+
+    message = _("Default version for datastore '%(datastore)s' not found.")
+
+
+class NoUniqueMatch(TroveError):
+
+    message = _("Multiple matches found for '%(name)s', i"
+                "use an UUID to be more specific.")
+
+
 class OverLimit(TroveError):
 
     internal_message = _("The server rejected the request due to its size or "
@@ -142,6 +180,14 @@ class DatabaseAlreadyExists(BadRequest):
 class UserAlreadyExists(BadRequest):
 
     message = _('A user with the name "%(name)s" already exists.')
+
+
+class InstanceAssignedToConfiguration(BadRequest):
+
+    message = _('A configuration group cannot be deleted if it is '
+                'associated with one or more non-terminated instances. '
+                'Detach the configuration group from all non-terminated '
+                'instances and please try again.')
 
 
 class UnprocessableEntity(TroveError):
@@ -279,6 +325,13 @@ class SecurityGroupRuleDeletionError(TroveError):
     message = _("Failed to delete Security Group Rule.")
 
 
+class MalformedSecurityGroupRuleError(TroveError):
+
+    message = _("Error creating security group rules."
+                " Malformed port(s). Port(s) is not integer."
+                " FromPort = %(from)s greater than ToPort = %(to)s")
+
+
 class BackupNotCompleteError(TroveError):
 
     message = _("Unable to create instance because backup %(backup_id)s is "
@@ -293,3 +346,48 @@ class BackupFileNotFound(NotFound):
 class SwiftAuthError(TroveError):
 
     message = _("Swift account not accessible for tenant %(tenant_id)s.")
+
+
+class DatabaseForUserNotInDatabaseListError(TroveError):
+    message = _("The request indicates that user %(user)s should have access "
+                "to database %(database)s, but database %(database)s is not "
+                "included in the initial databases list.")
+
+
+class DatabaseInitialDatabaseDuplicateError(TroveError):
+    message = _("Two or more databases share the same name in the initial "
+                "databases list. Please correct the names or remove the "
+                "duplicate entries.")
+
+
+class DatabaseInitialUserDuplicateError(TroveError):
+    message = _("Two or more users share the same name and host in the "
+                "initial users list. Please correct the names or remove the "
+                "duplicate entries.")
+
+
+class RestoreBackupIntegrityError(TroveError):
+
+    message = _("Current Swift object checksum does not match original "
+                "checksum for backup %(backup_id)s.")
+
+
+class ConfigKeyNotFound(NotFound):
+    message = _("%(key)s is not a supported configuration parameter")
+
+
+class NoConfigParserFound(NotFound):
+    message = _("No configuration parser found for datastore "
+                "%(datastore_manager)s")
+
+
+class ConfigurationDatastoreNotMatchInstance(TroveError):
+    message = _("Datastore Version on Configuration "
+                "%(config_datastore_version)s does not "
+                "match the Datastore Version on the instance "
+                "%(instance_datastore_version)s.")
+
+
+class ConfigurationParameterDeleted(object):
+    message = _("%(parameter_name)s parameter can no longer be "
+                " set as of %(parameter_deleted_at)s")

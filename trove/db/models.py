@@ -29,15 +29,17 @@ class DatabaseModelBase(models.ModelBase):
 
     @classmethod
     def create(cls, **values):
-        if 'id' not in values:
-            values['id'] = utils.generate_uuid()
-        if hasattr(cls, 'deleted') and 'deleted' not in values:
-            values['deleted'] = False
-        values['created'] = utils.utcnow()
-        instance = cls(**values).save()
+        init_vals = {
+            'id': utils.generate_uuid(),
+            'created': utils.utcnow(),
+        }
+        if hasattr(cls, 'deleted'):
+            init_vals['deleted'] = False
+        init_vals.update(values)
+        instance = cls(**init_vals)
         if not instance.is_valid():
             raise exception.InvalidModelError(errors=instance.errors)
-        return instance
+        return instance.save()
 
     @property
     def db_api(self):
@@ -55,14 +57,14 @@ class DatabaseModelBase(models.ModelBase):
         if not self.is_valid():
             raise exception.InvalidModelError(errors=self.errors)
         self['updated'] = utils.utcnow()
-        LOG.debug(_("Saving %s: %s") %
-                  (self.__class__.__name__, self.__dict__))
+        LOG.debug(_("Saving %(name)s: %(dict)s") %
+                  {'name': self.__class__.__name__, 'dict': self.__dict__})
         return self.db_api.save(self)
 
     def delete(self):
         self['updated'] = utils.utcnow()
-        LOG.debug(_("Deleting %s: %s") %
-                  (self.__class__.__name__, self.__dict__))
+        LOG.debug(_("Deleting %(name)s: %(dict)s") %
+                  {'name': self.__class__.__name__, 'dict': self.__dict__})
 
         if self.preserve_on_delete:
             self['deleted_at'] = utils.utcnow()

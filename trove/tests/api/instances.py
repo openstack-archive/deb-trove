@@ -12,15 +12,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import hashlib
 
 import os
 import re
-import string
 import time
 import unittest
-from trove.tests import util
-import urlparse
 
 
 GROUP = "dbaas.guest"
@@ -32,12 +28,17 @@ GROUP_USERS = "dbaas.api.users"
 GROUP_ROOT = "dbaas.api.root"
 GROUP_DATABASES = "dbaas.api.databases"
 GROUP_SECURITY_GROUPS = "dbaas.api.security_groups"
+GROUP_CREATE_INSTANCE_FAILURE = "dbaas.api.failures"
+
+TIMEOUT_INSTANCE_CREATE = 60 * 32
+TIMEOUT_INSTANCE_DELETE = 120
 
 from datetime import datetime
 from time import sleep
 
+from trove.datastore import models as datastore_models
 from trove.common import exception as rd_exceptions
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis.decorators import time_out
 from proboscis import before_class
@@ -45,26 +46,26 @@ from proboscis import after_class
 from proboscis import test
 from proboscis import SkipTest
 from proboscis.asserts import assert_equal
-from proboscis.asserts import assert_false
 from proboscis.asserts import assert_not_equal
 from proboscis.asserts import assert_raises
 from proboscis.asserts import assert_is_not_none
 from proboscis.asserts import assert_true
 from proboscis.asserts import fail
 
-from trove.openstack.common import timeutils
 from trove import tests
 from trove.tests.config import CONFIG
 from trove.tests.util import create_dbaas_client
-from trove.tests.util import create_nova_client
 from trove.tests.util.usage import create_usage_verifier
+from trove.tests.util import dns_checker
 from trove.tests.util import iso_time
-from trove.tests.util import process
 from trove.tests.util.users import Requirements
-from trove.tests.util import string_in_list
-from trove.tests.util import poll_until
+from trove.common.utils import poll_until
 from trove.tests.util.check import AttrCheck
 from trove.tests.util.check import TypeCheck
+from trove.tests.util import test_config
+from trove.tests.util import skip_if_xml
+
+FAKE = test_config.values['fake_mode']
 
 
 class InstanceTestInfo(object):
@@ -75,8 +76,9 @@ class InstanceTestInfo(object):
         self.dbaas_admin = None  # The rich client with admin access.
         self.dbaas_flavor = None  # The flavor object of the instance.
         self.dbaas_flavor_href = None  # The flavor of the instance.
-        self.dbaas_image = None  # The image used to create the instance.
-        self.dbaas_image_href = None  # The link of the image.
+        self.dbaas_datastore = None  # The datastore id
+        self.dbaas_datastore_version = None  # The datastore version id
+        self.dbaas_inactive_datastore_version = None  # The DS inactive id
         self.id = None  # The ID of the instance in the database.
         self.local_id = None
         self.address = None
@@ -99,13 +101,37 @@ class InstanceTestInfo(object):
         self.users = None  # The users created on the instance.
         self.consumer = create_usage_verifier()
 
+    def find_default_flavor(self):
+        if EPHEMERAL_SUPPORT:
+            flavor_name = CONFIG.values.get('instance_eph_flavor_name',
+                                            'eph.rd-tiny')
+        else:
+            flavor_name = CONFIG.values.get('instance_flavor_name', 'm1.tiny')
+        flavors = self.dbaas.find_flavors_by_name(flavor_name)
+        assert_equal(len(flavors), 1,
+                     "Number of flavors with name '%s' "
+                     "found was '%d'." % (flavor_name, len(flavors)))
+        flavor = flavors[0]
+        assert_true(flavor is not None, "Flavor '%s' not found!" % flavor_name)
+        flavor_href = self.dbaas.find_flavor_self_href(flavor)
+        assert_true(flavor_href is not None,
+                    "Flavor href '%s' not found!" % flavor_name)
+        return flavor, flavor_href
+
     def get_address(self):
         result = self.dbaas_admin.mgmt.instances.show(self.id)
-        return result.ip[0]
+        if not hasattr(result, 'hostname'):
+            return result.ip[0]
+        else:
+            return result.server['addresses']
 
     def get_local_id(self):
         mgmt_instance = self.dbaas_admin.management.show(self.id)
         return mgmt_instance.server["local_id"]
+
+    def get_volume_filesystem_size(self):
+        mgmt_instance = self.dbaas_admin.management.show(self.id)
+        return mgmt_instance.volume["total"]
 
 
 # The two variables are used below by tests which depend on an instance
@@ -113,6 +139,7 @@ class InstanceTestInfo(object):
 instance_info = InstanceTestInfo()
 dbaas = None  # Rich client used throughout this test.
 dbaas_admin = None  # Same as above, with admin privs.
+ROOT_ON_CREATE = CONFIG.get('root_on_create', False)
 VOLUME_SUPPORT = CONFIG.get('trove_volume_support', False)
 EPHEMERAL_SUPPORT = not VOLUME_SUPPORT and CONFIG.get('device_path',
                                                       '/dev/vdb') is not None
@@ -144,7 +171,7 @@ def clear_messages_off_queue():
 class InstanceSetup(object):
     """Makes sure the client can hit the ReST service.
 
-    This test also uses the API to find the image and flavor to use.
+    This test also uses the API to find the flavor to use.
 
     """
 
@@ -170,61 +197,14 @@ class InstanceSetup(object):
             instance_info.user = CONFIG.users.find_user(reqs)
 
         instance_info.dbaas = create_dbaas_client(instance_info.user)
-        if CONFIG.white_box:
-            instance_info.nova_client = create_nova_client(instance_info.user)
-            instance_info.volume_client = create_nova_client(
-                instance_info.user,
-                service_type=CONFIG.nova_client['volume_service_type'])
         global dbaas
         dbaas = instance_info.dbaas
 
-        if CONFIG.white_box:
-            user = instance_info.user.auth_user
-            tenant = instance_info.user.tenant
-            instance_info.user_context = context.RequestContext(user, tenant)
-
-    @test(enabled=CONFIG.white_box)
-    def find_image(self):
-        result = dbaas_admin.find_image_and_self_href(CONFIG.dbaas_image)
-        instance_info.dbaas_image, instance_info.dbaas_image_href = result
-
     @test
     def test_find_flavor(self):
-        if EPHEMERAL_SUPPORT:
-            flavor_name = CONFIG.values.get('instance_eph_flavor_name',
-                                            'eph.rd-tiny')
-        else:
-            flavor_name = CONFIG.values.get('instance_flavor_name', 'm1.tiny')
-        flavors = dbaas.find_flavors_by_name(flavor_name)
-        assert_equal(len(flavors), 1,
-                     "Number of flavors with name '%s' "
-                     "found was '%d'." % (flavor_name, len(flavors)))
-        flavor = flavors[0]
-        assert_true(flavor is not None, "Flavor '%s' not found!" % flavor_name)
-        flavor_href = dbaas.find_flavor_self_href(flavor)
-        assert_true(flavor_href is not None,
-                    "Flavor href '%s' not found!" % flavor_name)
+        flavor, flavor_href = instance_info.find_default_flavor()
         instance_info.dbaas_flavor = flavor
         instance_info.dbaas_flavor_href = flavor_href
-
-    @test(enabled=CONFIG.white_box)
-    def test_add_imageref_config(self):
-        #TODO(tim.simpson): I'm not sure why this is here. The default image
-        # setup should be in initialization test code that lives somewhere
-        # else, probably with the code that uploads the image.
-        key = "trove_imageref"
-        value = 1
-        description = "Default Image for Trove"
-        config = {'key': key, 'value': value, 'description': description}
-        try:
-            dbaas_admin.configs.create([config])
-        except exceptions.ClientException as e:
-            # configs.create will throw an exception if the config already
-            # exists we will check the value after to make sure it is correct
-            # and set
-            pass
-        result = dbaas_admin.configs.get(key)
-        assert_equal(result.value, str(value))
 
     @test
     def create_instance_name(self):
@@ -252,6 +232,7 @@ class CreateInstanceQuotaTest(unittest.TestCase):
         import copy
 
         self.test_info = copy.deepcopy(instance_info)
+        self.test_info.dbaas_datastore = CONFIG.dbaas_datastore
 
     def tearDown(self):
         quota_dict = {'instances': CONFIG.trove_max_instances_per_user}
@@ -332,77 +313,71 @@ class CreateInstanceQuotaTest(unittest.TestCase):
 
 
 @test(depends_on_classes=[InstanceSetup],
-      groups=[GROUP, GROUP_START, GROUP_START_SIMPLE, tests.INSTANCES],
+      groups=[GROUP, GROUP_CREATE_INSTANCE_FAILURE],
       runs_after_groups=[tests.PRE_INSTANCES, 'dbaas_quotas'])
-class CreateInstance(object):
-    """Test to create a Database Instance
+class CreateInstanceFail(object):
 
-    If the call returns without raising an exception this test passes.
+    def instance_in_error(self, instance_id):
+        def check_if_error():
+            instance = dbaas.instances.get(instance_id)
+            if instance.status == "ERROR":
+                return True
+            else:
+                # The status should still be BUILD
+                assert_equal("BUILD", instance.status)
+                return False
+        return check_if_error
 
-    """
+    def delete_async(self, instance_id):
+        dbaas.instances.delete(instance_id)
+        while True:
+            try:
+                dbaas.instances.get(instance_id)
+            except exceptions.NotFound:
+                return True
+            time.sleep(1)
 
     @test
-    def test_create(self):
+    @time_out(30)
+    def test_create_with_bad_availability_zone(self):
+        instance_name = "instance-failure-with-bad-ephemeral"
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
         databases = []
-        databases.append({"name": "firstdb", "character_set": "latin2",
-                          "collate": "latin2_general_ci"})
-        databases.append({"name": "db2"})
-        instance_info.databases = databases
-        users = []
-        users.append({"name": "lite", "password": "litepass",
-                      "databases": [{"name": "firstdb"}]})
-        instance_info.users = users
+        result = dbaas.instances.create(instance_name,
+                                        instance_info.dbaas_flavor_href,
+                                        volume, databases,
+                                        availability_zone="BAD_ZONE")
+
+        poll_until(self.instance_in_error(result.id))
+        instance = dbaas.instances.get(result.id)
+        assert_equal("ERROR", instance.status)
+
+        self.delete_async(result.id)
+
+    @test
+    def test_create_with_bad_nics(self):
+        # FIXME: (steve-leon) Remove this once xml is yanked out
+        skip_if_xml()
+        instance_name = "instance-failure-with-bad-nics"
         if VOLUME_SUPPORT:
-            instance_info.volume = {'size': 1}
+            volume = {'size': 1}
         else:
-            instance_info.volume = None
+            volume = None
+        databases = []
+        bad_nic = [{"port-id": "UNKNOWN", "net-id": "1234",
+                    "v4-fixed-ip": "1.2.3.4"}]
+        result = dbaas.instances.create(instance_name,
+                                        instance_info.dbaas_flavor_href,
+                                        volume, databases, nics=bad_nic)
 
-        if create_new_instance():
-            instance_info.initial_result = dbaas.instances.create(
-                instance_info.name,
-                instance_info.dbaas_flavor_href,
-                instance_info.volume,
-                databases,
-                users)
-            assert_equal(200, dbaas.last_http_code)
-        else:
-            id = existing_instance()
-            instance_info.initial_result = dbaas.instances.get(id)
+        poll_until(self.instance_in_error(result.id))
+        instance = dbaas.instances.get(result.id)
+        assert_equal("ERROR", instance.status)
 
-        result = instance_info.initial_result
-        instance_info.id = result.id
-        if CONFIG.white_box:
-            instance_info.local_id = dbapi.localid_from_uuid(result.id)
-
-        report = CONFIG.get_report()
-        report.log("Instance UUID = %s" % instance_info.id)
-        if create_new_instance():
-            if CONFIG.white_box:
-                building = dbaas_mapping[power_state.BUILDING]
-                assert_equal(result.status, building)
-            assert_equal("BUILD", instance_info.initial_result.status)
-
-        else:
-            report.log("Test was invoked with TESTS_USE_INSTANCE_ID=%s, so no "
-                       "instance was actually created." % id)
-
-        # Check these attrs only are returned in create response
-        expected_attrs = ['created', 'flavor', 'addresses', 'id', 'links',
-                          'name', 'status', 'updated']
-        if VOLUME_SUPPORT:
-            expected_attrs.append('volume')
-        if CONFIG.trove_dns_support:
-            expected_attrs.append('hostname')
-
-        with CheckInstance(result._info) as check:
-            if create_new_instance():
-                check.attrs_exist(result._info, expected_attrs,
-                                  msg="Create response")
-            # Don't CheckInstance if the instance already exists.
-            check.flavor()
-            check.links(result._info['links'])
-            if VOLUME_SUPPORT:
-                check.volume()
+        self.delete_async(result.id)
 
     @test(enabled=VOLUME_SUPPORT)
     def test_create_failure_with_empty_volume(self):
@@ -476,7 +451,7 @@ class CreateInstance(object):
             result = dbaas_admin.management.show(instance_info.id)
             expected_attrs = ['account_id', 'addresses', 'created',
                               'databases', 'flavor', 'guest_status', 'host',
-                              'hostname', 'id', 'name',
+                              'hostname', 'id', 'name', 'datastore',
                               'server_state_description', 'status', 'updated',
                               'users', 'volume', 'root_enabled_at',
                               'root_enabled_by']
@@ -484,7 +459,121 @@ class CreateInstance(object):
                 check.attrs_exist(result._info, expected_attrs,
                                   msg="Mgmt get instance")
                 check.flavor()
+                check.datastore()
                 check.guest_status()
+
+    @test
+    def test_create_failure_with_datastore_default_notfound(self):
+        if not FAKE:
+            raise SkipTest("This test only for fake mode.")
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
+        instance_name = "datastore_default_notfound"
+        databases = []
+        users = []
+        origin_default_datastore = (datastore_models.CONF.
+                                    default_datastore)
+        datastore_models.CONF.default_datastore = ""
+        try:
+            assert_raises(exceptions.NotFound,
+                          dbaas.instances.create, instance_name,
+                          instance_info.dbaas_flavor_href,
+                          volume, databases, users)
+        except exceptions.BadRequest as e:
+            assert_equal(e.message,
+                         "Please specify datastore.")
+        datastore_models.CONF.default_datastore = \
+            origin_default_datastore
+
+    @test
+    def test_create_failure_with_datastore_default_version_notfound(self):
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
+        instance_name = "datastore_default_version_notfound"
+        databases = []
+        users = []
+        datastore = "Test_Datastore_1"
+        try:
+            assert_raises(exceptions.NotFound,
+                          dbaas.instances.create, instance_name,
+                          instance_info.dbaas_flavor_href,
+                          volume, databases, users,
+                          datastore=datastore)
+        except exceptions.BadRequest as e:
+            assert_equal(e.message,
+                         "Default version for datastore '%s' not found." %
+                         datastore)
+
+    @test
+    def test_create_failure_with_datastore_notfound(self):
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
+        instance_name = "datastore_notfound"
+        databases = []
+        users = []
+        datastore = "nonexistent"
+        try:
+            assert_raises(exceptions.NotFound,
+                          dbaas.instances.create, instance_name,
+                          instance_info.dbaas_flavor_href,
+                          volume, databases, users,
+                          datastore=datastore)
+        except exceptions.BadRequest as e:
+            assert_equal(e.message,
+                         "Datastore '%s' cannot be found." %
+                         datastore)
+
+    @test
+    def test_create_failure_with_datastore_version_notfound(self):
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
+        instance_name = "datastore_version_notfound"
+        databases = []
+        users = []
+        datastore = CONFIG.dbaas_datastore
+        datastore_version = "nonexistent"
+        try:
+            assert_raises(exceptions.NotFound,
+                          dbaas.instances.create, instance_name,
+                          instance_info.dbaas_flavor_href,
+                          volume, databases, users,
+                          datastore=datastore,
+                          datastore_version=datastore_version)
+        except exceptions.BadRequest as e:
+            assert_equal(e.message,
+                         "Datastore version '%s' cannot be found." %
+                         datastore_version)
+
+    @test
+    def test_create_failure_with_datastore_version_inactive(self):
+        if VOLUME_SUPPORT:
+            volume = {'size': 1}
+        else:
+            volume = None
+        instance_name = "datastore_version_inactive"
+        databases = []
+        users = []
+        datastore = CONFIG.dbaas_datastore
+        datastore_version = CONFIG.dbaas_inactive_datastore_version
+        try:
+            assert_raises(exceptions.NotFound,
+                          dbaas.instances.create, instance_name,
+                          instance_info.dbaas_flavor_href,
+                          volume, databases, users,
+                          datastore=datastore,
+                          datastore_version=datastore_version)
+        except exceptions.BadRequest as e:
+            assert_equal(e.message,
+                         "Datastore version '%s' is not active." %
+                         datastore_version)
 
 
 def assert_unprocessable(func, *args):
@@ -500,93 +589,6 @@ def assert_unprocessable(func, *args):
         assert_equal(422, dbaas.last_http_code)
         pass  # Good
 
-
-@test(depends_on_classes=[CreateInstance],
-      groups=[GROUP, GROUP_SECURITY_GROUPS],
-      runs_after_groups=[tests.PRE_INSTANCES])
-class SecurityGroupsTest(object):
-
-    @before_class
-    def setUp(self):
-        self.testSecurityGroup = dbaas.security_groups.get(
-            instance_info.id)
-        self.secGroupName = "SecGroup_%s" % instance_info.id
-        self.secGroupDescription = "Security Group for %s" % instance_info.id
-
-    @test
-    def test_created_security_group(self):
-        assert_is_not_none(self.testSecurityGroup)
-        with TypeCheck('SecurityGroup', self.testSecurityGroup) as secGrp:
-            secGrp.has_field('id', basestring)
-            secGrp.has_field('name', basestring)
-            secGrp.has_field('description', basestring)
-            secGrp.has_field('created', basestring)
-            secGrp.has_field('updated', basestring)
-        assert_equal(self.testSecurityGroup.name, self.secGroupName)
-        assert_equal(self.testSecurityGroup.description,
-                     self.secGroupDescription)
-
-    @test
-    def test_list_security_group(self):
-        securityGroupList = dbaas.security_groups.list()
-        assert_is_not_none(securityGroupList)
-        securityGroup = [x for x in securityGroupList
-                         if x.name in self.secGroupName]
-        assert_is_not_none(securityGroup)
-
-    @test
-    def test_get_security_group(self):
-        securityGroup = dbaas.security_groups.get(self.testSecurityGroup.id)
-        assert_is_not_none(securityGroup)
-        assert_equal(securityGroup.name, self.secGroupName)
-        assert_equal(securityGroup.description, self.secGroupDescription)
-        assert_equal(securityGroup.instance_id, instance_info.id)
-
-
-@test(depends_on_classes=[SecurityGroupsTest],
-      groups=[GROUP, GROUP_SECURITY_GROUPS],
-      runs_after_groups=[tests.PRE_INSTANCES])
-class SecurityGroupsRulesTest(object):
-
-    # Security group already have default rule
-    # that is why 'delete'-test is not needed anymore
-
-    @before_class
-    def setUp(self):
-        self.testSecurityGroup = dbaas.security_groups.get(
-            instance_info.id)
-        self.secGroupName = "SecGroup_%s" % instance_info.id
-        self.secGroupDescription = "Security Group for %s" % instance_info.id
-
-    @test
-    def test_create_security_group_rule(self):
-        if len(self.testSecurityGroup.rules) == 0:
-            self.testSecurityGroupRule = \
-                dbaas.security_group_rules.create(
-                    group_id=self.testSecurityGroup.id,
-                    protocol="tcp",
-                    from_port=3306,
-                    to_port=3306,
-                    cidr="0.0.0.0/0")
-            assert_is_not_none(self.testSecurityGroupRule)
-            with TypeCheck('SecurityGroupRule',
-                           self.testSecurityGroupRule) as secGrpRule:
-                secGrpRule.has_field('id', basestring)
-                secGrpRule.has_field('security_group_id', basestring)
-                secGrpRule.has_field('protocol', basestring)
-                secGrpRule.has_field('cidr', basestring)
-                secGrpRule.has_field('from_port', int)
-                secGrpRule.has_field('to_port', int)
-                secGrpRule.has_field('created', basestring)
-            assert_equal(self.testSecurityGroupRule.security_group_id,
-                         self.testSecurityGroup.id)
-            assert_equal(self.testSecurityGroupRule.protocol, "tcp")
-            assert_equal(int(self.testSecurityGroupRule.from_port), 3306)
-            assert_equal(int(self.testSecurityGroupRule.to_port), 3306)
-            assert_equal(self.testSecurityGroupRule.cidr, "0.0.0.0/0")
-        else:
-            assert_not_equal(len(self.testSecurityGroup.rules), 0)
-
     @test
     def test_deep_list_security_group_with_rules(self):
         securityGroupList = dbaas.security_groups.list()
@@ -595,6 +597,85 @@ class SecurityGroupsRulesTest(object):
                          if x.name in self.secGroupName]
         assert_is_not_none(securityGroup[0])
         assert_not_equal(len(securityGroup[0].rules), 0)
+
+
+@test(depends_on_classes=[InstanceSetup],
+      run_after_class=[CreateInstanceFail],
+      groups=[GROUP, GROUP_START, GROUP_START_SIMPLE, tests.INSTANCES],
+      runs_after_groups=[tests.PRE_INSTANCES, 'dbaas_quotas'])
+class CreateInstance(object):
+
+    """Test to create a Database Instance
+
+    If the call returns without raising an exception this test passes.
+
+    """
+
+    @test
+    def test_create(self):
+        databases = []
+        databases.append({"name": "firstdb", "character_set": "latin2",
+                          "collate": "latin2_general_ci"})
+        databases.append({"name": "db2"})
+        instance_info.databases = databases
+        users = []
+        users.append({"name": "lite", "password": "litepass",
+                      "databases": [{"name": "firstdb"}]})
+        instance_info.users = users
+        instance_info.dbaas_datastore = CONFIG.dbaas_datastore
+        if VOLUME_SUPPORT:
+            instance_info.volume = {'size': 1}
+        else:
+            instance_info.volume = None
+
+        if create_new_instance():
+            instance_info.initial_result = dbaas.instances.create(
+                instance_info.name,
+                instance_info.dbaas_flavor_href,
+                instance_info.volume,
+                databases,
+                users,
+                availability_zone="nova",
+                datastore=instance_info.dbaas_datastore,
+                datastore_version=instance_info.dbaas_datastore_version)
+            assert_equal(200, dbaas.last_http_code)
+        else:
+            id = existing_instance()
+            instance_info.initial_result = dbaas.instances.get(id)
+
+        result = instance_info.initial_result
+        instance_info.id = result.id
+        instance_info.dbaas_datastore_version = result.datastore['version']
+
+        report = CONFIG.get_report()
+        report.log("Instance UUID = %s" % instance_info.id)
+        if create_new_instance():
+            assert_equal("BUILD", instance_info.initial_result.status)
+
+        else:
+            report.log("Test was invoked with TESTS_USE_INSTANCE_ID=%s, so no "
+                       "instance was actually created." % id)
+
+        # Check these attrs only are returned in create response
+        expected_attrs = ['created', 'flavor', 'addresses', 'id', 'links',
+                          'name', 'status', 'updated', 'datastore']
+        if ROOT_ON_CREATE:
+            expected_attrs.append('password')
+        if VOLUME_SUPPORT:
+            expected_attrs.append('volume')
+        if CONFIG.trove_dns_support:
+            expected_attrs.append('hostname')
+
+        with CheckInstance(result._info) as check:
+            if create_new_instance():
+                check.attrs_exist(result._info, expected_attrs,
+                                  msg="Create response")
+            # Don't CheckInstance if the instance already exists.
+            check.flavor()
+            check.datastore()
+            check.links(result._info['links'])
+            if VOLUME_SUPPORT:
+                check.volume()
 
 
 @test(depends_on_classes=[CreateInstance],
@@ -661,7 +742,7 @@ class WaitForGuestInstallationToFinish(object):
     """
 
     @test
-    @time_out(60 * 32)
+    @time_out(TIMEOUT_INSTANCE_CREATE)
     def test_instance_created(self):
         # This version just checks the REST API status.
         def result_is_active():
@@ -677,7 +758,7 @@ class WaitForGuestInstallationToFinish(object):
                 return False
 
         poll_until(result_is_active)
-        result = dbaas.instances.get(instance_info.id)
+        dbaas.instances.get(instance_info.id)
 
         report = CONFIG.get_report()
         report.log("Created an instance, ID = %s." % instance_info.id)
@@ -689,32 +770,88 @@ class WaitForGuestInstallationToFinish(object):
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
-      groups=[GROUP, GROUP_START, GROUP_START_SIMPLE],
-      enabled=CONFIG.white_box and create_new_instance())
-class VerifyGuestStarted(unittest.TestCase):
-    """
-        Test to verify the guest instance is started and we can get the init
-        process pid.
-    """
+      groups=[GROUP, GROUP_SECURITY_GROUPS])
+class SecurityGroupsTest(object):
 
-    def test_instance_created(self):
-        def check_status_of_instance():
-            status, err = process("sudo vzctl status %s | awk '{print $5}'"
-                                  % str(instance_info.local_id))
-            if string_in_list(status, ["running"]):
-                self.assertEqual("running", status.strip())
-                return True
-            else:
-                return False
-        poll_until(check_status_of_instance, sleep_time=5, time_out=(60 * 8))
+    @before_class
+    def setUp(self):
+        self.testSecurityGroup = dbaas.security_groups.get(
+            instance_info.id)
+        self.secGroupName = "SecGroup_%s" % instance_info.id
+        self.secGroupDescription = "Security Group for %s" % instance_info.id
 
-    def test_get_init_pid(self):
-        def get_the_pid():
-            out, err = process("pgrep init | vzpid - | awk '/%s/{print $1}'"
-                               % str(instance_info.local_id))
-            instance_info.pid = out.strip()
-            return len(instance_info.pid) > 0
-        poll_until(get_the_pid, sleep_time=10, time_out=(60 * 10))
+    @test
+    def test_created_security_group(self):
+        assert_is_not_none(self.testSecurityGroup)
+        with TypeCheck('SecurityGroup', self.testSecurityGroup) as secGrp:
+            secGrp.has_field('id', basestring)
+            secGrp.has_field('name', basestring)
+            secGrp.has_field('description', basestring)
+            secGrp.has_field('created', basestring)
+            secGrp.has_field('updated', basestring)
+        assert_equal(self.testSecurityGroup.name, self.secGroupName)
+        assert_equal(self.testSecurityGroup.description,
+                     self.secGroupDescription)
+
+    @test
+    def test_list_security_group(self):
+        securityGroupList = dbaas.security_groups.list()
+        assert_is_not_none(securityGroupList)
+        securityGroup = [x for x in securityGroupList
+                         if x.name in self.secGroupName]
+        assert_is_not_none(securityGroup)
+
+    @test
+    def test_get_security_group(self):
+        securityGroup = dbaas.security_groups.get(self.testSecurityGroup.id)
+        assert_is_not_none(securityGroup)
+        assert_equal(securityGroup.name, self.secGroupName)
+        assert_equal(securityGroup.description, self.secGroupDescription)
+        assert_equal(securityGroup.instance_id, instance_info.id)
+
+
+@test(depends_on_classes=[SecurityGroupsTest],
+      groups=[GROUP, GROUP_SECURITY_GROUPS])
+class SecurityGroupsRulesTest(object):
+
+    # Security group already have default rule
+    # that is why 'delete'-test is not needed anymore
+
+    @before_class
+    def setUp(self):
+        self.testSecurityGroup = dbaas.security_groups.get(
+            instance_info.id)
+        self.secGroupName = "SecGroup_%s" % instance_info.id
+        self.secGroupDescription = "Security Group for %s" % instance_info.id
+
+    @test
+    def test_create_security_group_rule(self):
+        if len(self.testSecurityGroup.rules) == 0:
+            self.testSecurityGroupRule = \
+                dbaas.security_group_rules.create(
+                    group_id=self.testSecurityGroup.id,
+                    protocol="tcp",
+                    from_port=3306,
+                    to_port=3306,
+                    cidr="0.0.0.0/0")
+            assert_is_not_none(self.testSecurityGroupRule)
+            with TypeCheck('SecurityGroupRule',
+                           self.testSecurityGroupRule) as secGrpRule:
+                secGrpRule.has_field('id', basestring)
+                secGrpRule.has_field('security_group_id', basestring)
+                secGrpRule.has_field('protocol', basestring)
+                secGrpRule.has_field('cidr', basestring)
+                secGrpRule.has_field('from_port', int)
+                secGrpRule.has_field('to_port', int)
+                secGrpRule.has_field('created', basestring)
+            assert_equal(self.testSecurityGroupRule.security_group_id,
+                         self.testSecurityGroup.id)
+            assert_equal(self.testSecurityGroupRule.protocol, "tcp")
+            assert_equal(int(self.testSecurityGroupRule.from_port), 3306)
+            assert_equal(int(self.testSecurityGroupRule.to_port), 3306)
+            assert_equal(self.testSecurityGroupRule.cidr, "0.0.0.0/0")
+        else:
+            assert_not_equal(len(self.testSecurityGroup.rules), 0)
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
@@ -723,33 +860,6 @@ class TestGuestProcess(object):
     """
         Test that the guest process is started with all the right parameters
     """
-
-    @test(enabled=CONFIG.use_local_ovz)
-    @time_out(60 * 10)
-    def check_process_alive_via_local_ovz(self):
-        init_re = ("[\w\W\|\-\s\d,]*nova-guest "
-                   "--flagfile=/etc/nova/nova.conf nova[\W\w\s]*")
-        init_proc = re.compile(init_re)
-        guest_re = ("[\w\W\|\-\s]*/usr/bin/nova-guest "
-                    "--flagfile=/etc/nova/nova.conf[\W\w\s]*")
-        guest_proc = re.compile(guest_re)
-        apt = re.compile("[\w\W\|\-\s]*apt-get[\w\W\|\-\s]*")
-        while True:
-            guest_process, err = process("pstree -ap %s | grep nova-guest"
-                                         % instance_info.pid)
-            if not string_in_list(guest_process, ["nova-guest"]):
-                time.sleep(10)
-            else:
-                if apt.match(guest_process):
-                    time.sleep(10)
-                else:
-                    init = init_proc.match(guest_process)
-                    guest = guest_proc.match(guest_process)
-                    if init and guest:
-                        assert_true(True, init.group())
-                    else:
-                        assert_false(False, guest_process)
-                    break
 
     @test
     def check_hwinfo_before_tests(self):
@@ -772,18 +882,17 @@ class TestGuestProcess(object):
             diagnostic_tests_helper(diagnostics)
 
 
-@test(depends_on_classes=[CreateInstance],
-      groups=[GROUP, GROUP_START, GROUP_START_SIMPLE, GROUP_TEST,
-              "nova.volumes.instance"],
-      enabled=CONFIG.white_box)
-class TestVolume(unittest.TestCase):
-    """Make sure the volume is attached to instance correctly."""
+@test(depends_on_classes=[WaitForGuestInstallationToFinish],
+      groups=[GROUP, GROUP_TEST, "dbaas.dns"])
+class DnsTests(object):
 
-    def test_db_should_have_instance_to_volume_association(self):
-        """The compute manager should associate a volume to the instance."""
-        volumes = db.volume_get_all_by_instance(context.get_admin_context(),
-                                                instance_info.local_id)
-        self.assertEqual(1, len(volumes))
+    @test
+    def test_dns_entries_are_found(self):
+        """Talk to DNS system to ensure entries were created."""
+        print("Instance name=%s" % instance_info.name)
+        client = instance_info.dbaas_admin
+        mgmt_instance = client.mgmt.instances.show(instance_info.id)
+        dns_checker(mgmt_instance)
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
@@ -812,7 +921,7 @@ class TestAfterInstanceCreatedGuestData(object):
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
       groups=[GROUP, GROUP_START, GROUP_START_SIMPLE, "dbaas.listing"])
 class TestInstanceListing(object):
-    """ Test the listing of the instance information """
+    """Test the listing of the instance information """
 
     @before_class
     def setUp(self):
@@ -824,7 +933,8 @@ class TestInstanceListing(object):
 
     @test
     def test_index_list(self):
-        expected_attrs = ['id', 'links', 'name', 'status', 'flavor']
+        expected_attrs = ['id', 'links', 'name', 'status', 'flavor',
+                          'datastore']
         if VOLUME_SUPPORT:
             expected_attrs.append('volume')
         instances = dbaas.instances.list()
@@ -837,12 +947,14 @@ class TestInstanceListing(object):
                                   msg="Instance Index")
                 check.links(instance_dict['links'])
                 check.flavor()
+                check.datastore()
                 check.volume()
 
     @test
     def test_get_instance(self):
         expected_attrs = ['created', 'databases', 'flavor', 'hostname', 'id',
-                          'links', 'name', 'status', 'updated', 'ip']
+                          'links', 'name', 'status', 'updated', 'ip',
+                          'datastore']
         if VOLUME_SUPPORT:
             expected_attrs.append('volume')
         else:
@@ -855,16 +967,9 @@ class TestInstanceListing(object):
             check.attrs_exist(instance_dict, expected_attrs,
                               msg="Get Instance")
             check.flavor()
+            check.datastore()
             check.links(instance_dict['links'])
             check.used_volume()
-
-    @test(enabled=CONFIG.trove_dns_support)
-    def test_instance_hostname(self):
-        instance = dbaas.instances.get(instance_info.id)
-        assert_equal(200, dbaas.last_http_code)
-        hostname_prefix = ("%s" % (hashlib.sha1(instance.id).hexdigest()))
-        instance_hostname_prefix = instance.hostname.split('.')[0]
-        assert_equal(hostname_prefix, instance_hostname_prefix)
 
     @test
     def test_get_instance_status(self):
@@ -929,12 +1034,13 @@ class TestInstanceListing(object):
         expected_attrs = ['account_id', 'addresses', 'created', 'databases',
                           'flavor', 'guest_status', 'host', 'hostname', 'id',
                           'name', 'root_enabled_at', 'root_enabled_by',
-                          'server_state_description', 'status',
+                          'server_state_description', 'status', 'datastore',
                           'updated', 'users', 'volume']
         with CheckInstance(result._info) as check:
             check.attrs_exist(result._info, expected_attrs,
                               msg="Mgmt get instance")
             check.flavor()
+            check.datastore()
             check.guest_status()
             check.addresses()
             check.volume_mgmt()
@@ -967,7 +1073,7 @@ class TestCreateNotification(object):
 @test(depends_on_groups=['dbaas.api.instances.actions'],
       groups=[GROUP, tests.INSTANCES, "dbaas.diagnostics"])
 class CheckDiagnosticsAfterTests(object):
-    """ Check the diagnostics after running api commands on an instance. """
+    """Check the diagnostics after running api commands on an instance. """
     @test
     def test_check_diagnostics_on_instance_after_tests(self):
         diagnostics = dbaas_admin.diagnostics.get(instance_info.id)
@@ -979,13 +1085,14 @@ class CheckDiagnosticsAfterTests(object):
 
 @test(depends_on=[WaitForGuestInstallationToFinish],
       depends_on_groups=[GROUP_USERS, GROUP_DATABASES, GROUP_ROOT],
-      groups=[GROUP, GROUP_STOP])
+      groups=[GROUP, GROUP_STOP],
+      runs_after_groups=[GROUP_START,
+                         GROUP_START_SIMPLE, GROUP_TEST, tests.INSTANCES])
 class DeleteInstance(object):
-    """ Delete the created instance """
+    """Delete the created instance """
 
     @time_out(3 * 60)
-    @test(runs_after_groups=[GROUP_START,
-                             GROUP_START_SIMPLE, GROUP_TEST, tests.INSTANCES])
+    @test
     def test_delete(self):
         if do_not_delete_instance():
             CONFIG.get_report().log("TESTS_DO_NOT_DELETE_INSTANCE=True was "
@@ -994,17 +1101,9 @@ class DeleteInstance(object):
         global dbaas
         if not hasattr(instance_info, "initial_result"):
             raise SkipTest("Instance was never created, skipping test...")
-        if CONFIG.white_box:
-            # Change this code to get the volume using the API.
-            # That way we can keep it while keeping it black box.
-            admin_context = context.get_admin_context()
-            volumes = db.volume_get_all_by_instance(admin_context(),
-                                                    instance_info.local_id)
-            instance_info.volume_id = volumes[0].id
         # Update the report so the logs inside the instance will be saved.
         CONFIG.get_report().update()
         dbaas.instances.delete(instance_info.id)
-        instance_info.deleted_at = timeutils.utcnow().isoformat()
 
         attempts = 0
         try:
@@ -1019,7 +1118,7 @@ class DeleteInstance(object):
         except exceptions.NotFound:
             pass
         except Exception as ex:
-            fail("A failure occured when trying to GET instance %s for the %d"
+            fail("A failure occurred when trying to GET instance %s for the %d"
                  " time: %s" % (str(instance_info.id), attempts, str(ex)))
 
     @time_out(30)
@@ -1045,6 +1144,11 @@ class DeleteInstance(object):
 class AfterDeleteChecks(object):
     @test
     def test_instance_delete_event_sent(self):
+        deleted_at = None
+        mgmt_details = dbaas_admin.management.index(deleted=True)
+        for instance in mgmt_details:
+            if instance.id == instance_info.id:
+                deleted_at = instance.deleted_at
         expected = {
             'instance_size': instance_info.dbaas_flavor.ram,
             'tenant_id': instance_info.user.tenant_id,
@@ -1052,7 +1156,7 @@ class AfterDeleteChecks(object):
             'instance_name': instance_info.name,
             'created_at': iso_time(instance_info.initial_result.created),
             'launched_at': iso_time(instance_info.initial_result.created),
-            'deleted_at': iso_time(instance_info.deleted_at),
+            'deleted_at': iso_time(deleted_at),
         }
         instance_info.consumer.check_message(instance_info.id,
                                              'trove.instance.delete',
@@ -1069,8 +1173,8 @@ class AfterDeleteChecks(object):
             fail("Could not find instance %s" % instance_info.id)
 
 
-@test(depends_on_classes=[CreateInstance, VerifyGuestStarted,
-      WaitForGuestInstallationToFinish],
+@test(depends_on_classes=[CreateInstance,
+                          WaitForGuestInstallationToFinish],
       groups=[GROUP, GROUP_START, GROUP_START_SIMPLE],
       enabled=CONFIG.test_mgmt)
 class VerifyInstanceMgmtInfo(object):
@@ -1111,9 +1215,8 @@ class VerifyInstanceMgmtInfo(object):
         info = instance_info
         ir = info.initial_result
         cid = ir.id
-        instance_id = instance_info.local_id
         expected = {
-            'id': ir.id,
+            'id': cid,
             'name': ir.name,
             'account_id': info.user.auth_user,
             # TODO(hub-cap): fix this since its a flavor object now
@@ -1131,19 +1234,6 @@ class VerifyInstanceMgmtInfo(object):
                 }
             ],
         }
-
-        if CONFIG.white_box:
-            admin_context = context.get_admin_context()
-            volumes = db.volume_get_all_by_instance(admin_context(),
-                                                    instance_id)
-            assert_equal(len(volumes), 1)
-            volume = volumes[0]
-            expected['volume'] = {
-                'id': volume.id,
-                'name': volume.display_name,
-                'size': volume.size,
-                'description': volume.display_description,
-            }
 
         expected_entry = info.expected_dns_entry()
         if expected_entry:
@@ -1176,6 +1266,14 @@ class CheckInstance(AttrCheck):
             self.attrs_exist(self.instance['flavor'], expected_attrs,
                              msg="Flavor")
             self.links(self.instance['flavor']['links'])
+
+    def datastore(self):
+        if 'datastore' not in self.instance:
+            self.fail("'datastore' not found in instance.")
+        else:
+            expected_attrs = ['type', 'version']
+            self.attrs_exist(self.instance['datastore'], expected_attrs,
+                             msg="datastore")
 
     def volume_key_exists(self):
         if 'volume' not in self.instance:

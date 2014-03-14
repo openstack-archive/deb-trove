@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -17,7 +15,12 @@
 
 import urllib
 import urlparse
-from xml.dom import minidom
+
+
+def url_quote(s):
+    if s is None:
+        return s
+    return urllib.quote(str(s))
 
 
 class PaginatedDataView(object):
@@ -27,7 +30,7 @@ class PaginatedDataView(object):
         self.collection_type = collection_type
         self.collection = collection
         self.current_page_url = current_page_url
-        self.next_page_marker = next_page_marker
+        self.next_page_marker = url_quote(next_page_marker)
 
     def data(self):
         return {self.collection_type: self.collection,
@@ -55,7 +58,7 @@ class SimplePaginatedDataView(object):
         self.url = url
         self.name = name
         self.view = view
-        self.marker = marker
+        self.marker = url_quote(marker)
 
     def data(self):
         if not self.marker:

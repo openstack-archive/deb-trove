@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -146,23 +144,22 @@ class MgmtInstanceController(InstanceController):
     @admin_context
     def root(self, req, tenant_id, id):
         """Return the date and time root was enabled on an instance,
-        if ever."""
+            if ever.
+        """
         LOG.info(_("req : '%s'\n\n") % req)
         LOG.info(_("Showing root history for tenant '%s'") % tenant_id)
         LOG.info(_("id : '%s'\n\n") % id)
         context = req.environ[wsgi.CONTEXT_KEY]
         try:
-            server = instance_models.Instance.load(context=context, id=id)
+            instance_models.Instance.load(context=context, id=id)
         except exception.TroveError as e:
             LOG.error(e)
             return wsgi.Result(str(e), 404)
+        rhv = views.RootHistoryView(id)
         reh = mysql_models.RootHistory.load(context=context, instance_id=id)
-        rhv = None
         if reh:
             rhv = views.RootHistoryView(reh.id, enabled=reh.created,
                                         user_id=reh.user)
-        else:
-            rhv = views.RootHistoryView(id)
         return wsgi.Result(rhv.data(), 200)
 
     @admin_context

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 # All Rights Reserved.
 #
@@ -76,8 +74,7 @@ class SecurityGroup(DatabaseModelBase):
     @classmethod
     def create_for_instance(cls, instance_id, context):
         # Create a new security group
-        name = _("%s_%s") %\
-                (CONF.trove_security_group_name_prefix, instance_id)
+        name = "%s_%s" % (CONF.trove_security_group_name_prefix, instance_id)
         description = _("Security Group for %s") % instance_id
         sec_group = cls.create_sec_group(name, description, context)
 
@@ -121,13 +118,20 @@ class SecurityGroup(DatabaseModelBase):
 
     @classmethod
     def delete_for_instance(cls, instance_id, context):
-        association = SecurityGroupInstanceAssociation.find_by(
-            instance_id=instance_id,
-            deleted=False)
-        if association:
-            sec_group = association.get_security_group()
-            sec_group.delete(context)
-            association.delete()
+        try:
+            association = SecurityGroupInstanceAssociation.find_by(
+                instance_id=instance_id,
+                deleted=False)
+            if association:
+                sec_group = association.get_security_group()
+                if sec_group:
+                    sec_group.delete(context)
+                association.delete()
+        except (exception.ModelNotFoundError,
+                exception.TroveError):
+            LOG.info(_('Security Group with id: %(id)s '
+                       'already had been deleted')
+                     % {'id': instance_id})
 
 
 class SecurityGroupRule(DatabaseModelBase):

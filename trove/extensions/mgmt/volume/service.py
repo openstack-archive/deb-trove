@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -15,9 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import webob.exc
 
-from trove.common import exception
 from trove.common import wsgi
 from trove.common.auth import admin_context
 from trove.extensions.mgmt.volume import models

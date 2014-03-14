@@ -14,11 +14,13 @@
 
 """Model classes that form the core of snapshots functionality."""
 
+from sqlalchemy import desc
+from swiftclient.client import ClientException
+
 from trove.common import cfg
 from trove.common import exception
 from trove.db.models import DatabaseModelBase
 from trove.openstack.common import log as logging
-from swiftclient.client import ClientException
 from trove.taskmanager import api
 from trove.common.remote import create_swift_client
 from trove.common import utils
@@ -43,7 +45,7 @@ class BackupState(object):
 class Backup(object):
 
     @classmethod
-    def create(cls, context, instance, name, description=None):
+    def create(cls, context, instance, name, description=None, parent_id=None):
         """
         create db record for Backup
         :param cls:
@@ -58,25 +60,43 @@ class Backup(object):
             # parse the ID from the Ref
             instance_id = utils.get_id_from_href(instance)
 
-            # verify that the instance exist and can perform actions
+            # verify that the instance exists and can perform actions
             from trove.instance.models import Instance
             instance_model = Instance.load(context, instance_id)
             instance_model.validate_can_perform_action()
 
             cls.verify_swift_auth_token(context)
 
+            parent = None
+            if parent_id:
+                # Look up the parent info or fail early if not found or if
+                # the user does not have access to the parent.
+                _parent = cls.get_by_id(context, parent_id)
+                parent = {
+                    'location': _parent.location,
+                    'checksum': _parent.checksum,
+                }
             try:
                 db_info = DBBackup.create(name=name,
                                           description=description,
                                           tenant_id=context.tenant,
                                           state=BackupState.NEW,
                                           instance_id=instance_id,
+                                          parent_id=parent_id,
                                           deleted=False)
             except exception.InvalidModelError as ex:
                 LOG.exception("Unable to create Backup record:")
                 raise exception.BackupCreationError(str(ex))
 
-            api.API(context).create_backup(db_info.id, instance_id)
+            backup_info = {'id': db_info.id,
+                           'name': name,
+                           'description': description,
+                           'instance_id': instance_id,
+                           'backup_type': db_info.backup_type,
+                           'checksum': db_info.checksum,
+                           'parent': parent,
+                           }
+            api.API(context).create_backup(backup_info, instance_id)
             return db_info
 
         return run_with_quotas(context.tenant,
@@ -117,6 +137,26 @@ class Backup(object):
             raise exception.NotFound(uuid=backup_id)
 
     @classmethod
+    def _paginate(cls, context, query):
+        """Paginate the results of the base query.
+        We use limit/offset as the results need to be ordered by date
+        and not the primary key.
+        """
+        marker = int(context.marker or 0)
+        limit = int(context.limit or CONF.backups_page_size)
+        # order by 'updated DESC' to show the most recent backups first
+        query = query.order_by(desc(DBBackup.updated))
+        # Apply limit/offset
+        query = query.limit(limit)
+        query = query.offset(marker)
+        # check if we need to send a marker for the next page
+        if query.count() < limit:
+            marker = None
+        else:
+            marker += limit
+        return query.all(), marker
+
+    @classmethod
     def list(cls, context):
         """
         list all live Backups belong to given tenant
@@ -124,21 +164,23 @@ class Backup(object):
         :param context: tenant_id included
         :return:
         """
-        db_info = DBBackup.find_all(tenant_id=context.tenant,
-                                    deleted=False)
-        return db_info
+        query = DBBackup.query()
+        query = query.filter_by(tenant_id=context.tenant,
+                                deleted=False)
+        return cls._paginate(context, query)
 
     @classmethod
-    def list_for_instance(cls, instance_id):
+    def list_for_instance(cls, context, instance_id):
         """
         list all live Backups associated with given instance
         :param cls:
         :param instance_id:
         :return:
         """
-        db_info = DBBackup.find_all(instance_id=instance_id,
-                                    deleted=False)
-        return db_info
+        query = DBBackup.query()
+        query = query.filter_by(instance_id=instance_id,
+                                deleted=False)
+        return cls._paginate(context, query)
 
     @classmethod
     def fail_for_instance(cls, instance_id):
@@ -159,6 +201,12 @@ class Backup(object):
         :param backup_id: Backup uuid
         :return:
         """
+
+        # Recursively delete all children and grandchildren of this backup.
+        query = DBBackup.query()
+        query = query.filter_by(parent_id=backup_id, deleted=False)
+        for child in query.all():
+            cls.delete(context, child.id)
 
         def _delete_resources():
             backup = cls.get_by_id(context, backup_id)
@@ -181,21 +229,6 @@ class Backup(object):
         except ClientException:
             raise exception.SwiftAuthError(tenant_id=context.tenant)
 
-    @classmethod
-    def check_object_exist(cls, context, location):
-        try:
-            parts = location.split('/')
-            obj = parts[-1]
-            container = parts[-2]
-            client = create_swift_client(context)
-            client.head_object(container, obj)
-            return True
-        except ClientException as e:
-            if e.http_status == 404:
-                return False
-            else:
-                raise exception.SwiftAuthError(tenant_id=context.tenant)
-
 
 def persisted_models():
     return {'backups': DBBackup}
@@ -206,7 +239,7 @@ class DBBackup(DatabaseModelBase):
     _data_fields = ['id', 'name', 'description', 'location', 'backup_type',
                     'size', 'tenant_id', 'state', 'instance_id',
                     'checksum', 'backup_timestamp', 'deleted', 'created',
-                    'updated', 'deleted_at']
+                    'updated', 'deleted_at', 'parent_id']
     preserve_on_delete = True
 
     @property
@@ -226,3 +259,26 @@ class DBBackup(DatabaseModelBase):
             return self.location[last_slash + 1:]
         else:
             return None
+
+    def check_swift_object_exist(self, context, verify_checksum=False):
+        try:
+            parts = self.location.split('/')
+            obj = parts[-1]
+            container = parts[-2]
+            client = create_swift_client(context)
+            LOG.info(_("Checking if backup exist in '%s'") % self.location)
+            resp = client.head_object(container, obj)
+            if verify_checksum:
+                LOG.info(_("Checking if backup checksum matches swift."))
+                # swift returns etag in double quotes
+                # e.g. '"dc3b0827f276d8d78312992cc60c2c3f"'
+                swift_checksum = resp['etag'].strip('"')
+                if self.checksum != swift_checksum:
+                    raise exception.RestoreBackupIntegrityError(
+                        backup_id=self.id)
+            return True
+        except ClientException as e:
+            if e.http_status == 404:
+                return False
+            else:
+                raise exception.SwiftAuthError(tenant_id=context.tenant)

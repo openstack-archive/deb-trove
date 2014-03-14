@@ -16,24 +16,29 @@
 
 import abc
 from trove.guestagent.strategy import Strategy
-from trove.openstack.common import log as logging
-
-
-LOG = logging.getLogger(__name__)
 
 
 class Storage(Strategy):
-    """ Base class for Storage Strategy implementation """
+    """Base class for Storage Strategy implementation """
     __strategy_type__ = 'storage'
     __strategy_ns__ = 'trove.guestagent.strategies.storage'
 
-    def __init__(self):
+    def __init__(self, context):
+        self.context = context
         super(Storage, self).__init__()
 
     @abc.abstractmethod
-    def save(self, save_location, stream):
-        """ Persist information from the stream """
+    def save(self, filename, stream):
+        """Persist information from the stream """
 
     @abc.abstractmethod
-    def load(self, context, location, is_zipped):
-        """ Load a stream from a persisted storage location  """
+    def load(self, location, backup_checksum):
+        """Load a stream from a persisted storage location  """
+
+    @abc.abstractmethod
+    def load_metadata(self, location, backup_checksum):
+        """Load metadata for a persisted object."""
+
+    @abc.abstractmethod
+    def save_metadata(self, location, metadata={}):
+        """Save metadata for a persisted object."""

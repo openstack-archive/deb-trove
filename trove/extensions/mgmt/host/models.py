@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -21,14 +19,10 @@ Model classes that extend the instances functionality for MySQL instances.
 
 from trove.openstack.common import log as logging
 
-from trove import db
-
 from trove.common import exception
-from trove.common import utils
 from trove.instance.models import DBInstance
 from trove.instance.models import InstanceServiceStatus
 from trove.instance.models import SimpleInstance
-from trove.guestagent.db import models as guest_models
 from trove.common.remote import create_guest_client
 from trove.common.remote import create_nova_client
 from novaclient import exceptions as nova_exceptions

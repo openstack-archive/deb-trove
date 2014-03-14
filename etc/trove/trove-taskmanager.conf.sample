@@ -5,6 +5,9 @@ verbose = True
 # Show debugging output in logs (sets DEBUG log level output)
 debug = True
 
+# Updates service and instance task statuses if instance failed become active
+update_status_on_fail = False
+
 # AMQP Connection info
 rabbit_password=f7999d1955c5014aa32c
 
@@ -47,7 +50,6 @@ server_delete_time_out=480
 nova_proxy_admin_user = admin
 nova_proxy_admin_pass = 3de4922d8b6ac5a1aad9
 nova_proxy_admin_tenant_name = admin
-trove_auth_url = http://0.0.0.0:5000/v2.0
 
 # Manager impl for the taskmanager
 taskmanager_manager=trove.taskmanager.manager.Manager
@@ -55,10 +57,25 @@ taskmanager_manager=trove.taskmanager.manager.Manager
 # Manager sends Exists Notifications
 exists_notification_transformer = trove.extensions.mgmt.instances.models.NovaNotificationTransformer
 exists_notification_ticks = 30
-notification_service_id = 2f3ff068-2bfb-4f70-9a9d-a6bb65bc084b
+notification_service_id = mysql:2f3ff068-2bfb-4f70-9a9d-a6bb65bc084b
 
 # Trove DNS
 trove_dns_support = False
+dns_account_id = 123456
+dns_auth_url = http://127.0.0.1:5000/v2.0
+dns_username = user
+dns_passkey = password
+dns_ttl = 3600
+dns_domain_name = 'trove.com.'
+dns_domain_id = 11111111-1111-1111-1111-111111111111
+dns_driver = trove.dns.designate.driver.DesignateDriver
+dns_instance_entry_factory = trove.dns.designate.driver.DesignateInstanceEntryFactory
+dns_endpoint_url = http://127.0.0.1/v1/
+dns_service_type = dns
+
+# Trove Security Groups for Instances
+trove_security_groups_support = True
+trove_security_group_rule_cidr = 0.0.0.0/0
 
 # Guest related conf
 agent_heartbeat_time = 10
@@ -67,6 +84,13 @@ agent_call_high_timeout = 150
 
 # Whether to use nova's contrib api for create server with volume
 use_nova_server_volume = False
+
+# Config option for filtering the IP address that DNS uses
+network_label_regex = ^private$
+#ip_regex = ^(15.|123.)
+
+# Datastore templates
+template_path = /etc/trove/templates/
 
 # ============ notifer queue kombu connection options ========================
 
@@ -85,3 +109,43 @@ control_exchange=trove
 # ============ Logging information =============================
 #log_dir = /integration/report
 #log_file = trove-taskmanager.log
+
+# ============ PyDev remote dubugging =============================
+
+# Enable or disable pydev remote debugging.
+# There are three values allowed: 'disabled', 'enabled' and 'auto'
+# If value is 'auto' tries to connect to remote debugger server,
+# but in case of error continue running with disabled debugging
+pydev_debug = disabled
+
+# remote debug server host and port options
+#pydev_debug_host = localhost
+#pydev_debug_port = 5678
+
+# path to pydevd library. It will be used if pydevd is absent in sys.path
+#pydev_path = <path>
+
+# ================= Guestagent related ========================
+#guest_config = $pybasedir/etc/trove/trove-guestagent.conf.sample
+#cloudinit_location = /etc/trove/cloudinit
+
+# ================= Security groups related ========================
+# Each future datastore implementation should implement
+# its own oslo group with defined in it:
+# - tcp_ports; upd_ports;
+
+[mysql]
+# Format (single port or port range): A, B-C
+# where C greater than B
+tcp_ports = 3306
+
+[redis]
+# Format (single port or port range): A, B-C
+# where C greater than B
+tcp_ports = 6379
+
+[cassandra]
+tcp_ports = 7000, 7001, 9042, 9160
+
+[couchbase]
+tcp_ports = 8091, 8092, 4369, 11209-11211, 21100-21199

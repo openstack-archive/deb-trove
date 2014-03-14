@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -15,26 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import re
 from trove.openstack.common import log as logging
 from trove.common import cfg
 from trove.common.views import create_links
 from trove.instance import models
 
 LOG = logging.getLogger(__name__)
-
 CONF = cfg.CONF
-
-
-def get_ip_address(addresses):
-    if addresses is None:
-        return None
-    IPs = []
-    for label in addresses:
-        if (re.search(CONF.network_label_regex, label) and
-                len(addresses[label]) > 0):
-            IPs.extend([addr.get('addr') for addr in addresses[label]])
-    return IPs
 
 
 class InstanceView(object):
@@ -51,6 +36,7 @@ class InstanceView(object):
             "status": self.instance.status,
             "links": self._build_links(),
             "flavor": self._build_flavor_info(),
+            "datastore": {"type": self.instance.datastore.name},
         }
         if CONF.trove_volume_support:
             instance_dict['volume'] = {'size': self.instance.volume_size}
@@ -84,17 +70,21 @@ class InstanceDetailView(InstanceView):
         result['instance']['created'] = self.instance.created
         result['instance']['updated'] = self.instance.updated
 
-        dns_support = CONF.trove_dns_support
-        if dns_support:
-            result['instance']['hostname'] = self.instance.hostname
+        result['instance']['datastore']['version'] = (self.instance.
+                                                      datastore_version.name)
 
-        if CONF.add_addresses:
-            ip = get_ip_address(self.instance.addresses)
+        if self.instance.configuration is not None:
+            result['instance']['configuration'] = (self.
+                                                   _build_configuration_info())
+        if self.instance.hostname:
+            result['instance']['hostname'] = self.instance.hostname
+        else:
+            ip = self.instance.get_visible_ip_addresses()
             if ip is not None and len(ip) > 0:
                 result['instance']['ip'] = ip
 
-        if isinstance(self.instance, models.DetailInstance) and \
-            self.instance.volume_used:
+        if (isinstance(self.instance, models.DetailInstance) and
+                self.instance.volume_used):
             used = self.instance.volume_used
             if CONF.trove_volume_support:
                 result['instance']['volume']['used'] = used
@@ -102,7 +92,18 @@ class InstanceDetailView(InstanceView):
                 # either ephemeral or root partition
                 result['instance']['local_storage'] = {'used': used}
 
+        if self.instance.root_password:
+            result['instance']['password'] = self.instance.root_password
+
         return result
+
+    def _build_configuration_info(self):
+        return {
+            "id": self.instance.configuration.id,
+            "name": self.instance.configuration.name,
+            "links": create_links("configurations", self.req,
+                                  self.instance.configuration.id)
+        }
 
 
 class InstancesView(object):
@@ -122,3 +123,14 @@ class InstancesView(object):
     def data_for_instance(self, instance):
         view = InstanceView(instance, req=self.req)
         return view.data()['instance']
+
+
+class DefaultConfigurationView(object):
+    def __init__(self, config):
+        self.config = config
+
+    def data(self):
+        config_dict = {}
+        for key, val in self.config:
+            config_dict[key] = val
+        return {"instance": {"configuration": config_dict}}

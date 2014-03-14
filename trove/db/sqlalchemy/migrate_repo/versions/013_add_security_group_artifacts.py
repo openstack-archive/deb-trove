@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -83,7 +81,7 @@ security_group_rules = Table(
 
 def upgrade(migrate_engine):
     meta.bind = migrate_engine
-    instances = Table(
+    Table(
         'instances',
         meta,
         autoload=True,

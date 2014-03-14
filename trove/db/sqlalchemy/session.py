@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -42,21 +40,27 @@ def configure_db(options, models_mapper=None):
         models_mapper.map(_ENGINE)
     else:
         from trove.instance import models as base_models
+        from trove.datastore import models as datastores_models
         from trove.dns import models as dns_models
         from trove.extensions.mysql import models as mysql_models
         from trove.guestagent import models as agent_models
         from trove.quota import models as quota_models
         from trove.backup import models as backup_models
         from trove.extensions.security_group import models as secgrp_models
+        from trove.configuration import models as configurations_models
+        from trove.conductor import models as conductor_models
 
         model_modules = [
             base_models,
+            datastores_models,
             dns_models,
             mysql_models,
             agent_models,
             quota_models,
             backup_models,
             secgrp_models,
+            configurations_models,
+            conductor_models,
         ]
 
         models = {}

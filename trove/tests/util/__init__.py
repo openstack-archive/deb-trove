@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,33 +25,26 @@
 """
 
 import subprocess
-import time
 
 from trove.tests.config import CONFIG as test_config
 from urllib import unquote
 
 try:
-    from eventlet import event
-    from eventlet import greenthread
     EVENT_AVAILABLE = True
 except ImportError:
     EVENT_AVAILABLE = False
 
 from sqlalchemy import create_engine
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis.asserts import Check
 from proboscis.asserts import fail
 from proboscis import SkipTest
-from troveclient import Dbaas
-from troveclient.client import TroveHTTPClient
-from trove import tests
-from troveclient.xml import TroveXmlClient
+from troveclient.compat import Dbaas
 from trove.tests.util import test_config as CONFIG
 from trove.tests.util.client import TestClient as TestClient
 from trove.tests.util.users import Requirements
-from trove.common.exception import PollTimeOut
 from trove.common.utils import import_object
 from trove.common.utils import import_class
 
@@ -122,7 +113,7 @@ def create_dbaas_client(user):
         kwargs['service_url'] += "/" + user.tenant
 
     if auth_strategy == 'fake':
-        from troveclient import auth
+        from troveclient.compat import auth
 
         class FakeAuth(auth.Authenticator):
 
@@ -184,6 +175,20 @@ def create_nova_client(user, service_type=None):
     return TestClient(openstack)
 
 
+def dns_checker(mgmt_instance):
+    """Given a MGMT instance, ensures DNS provisioning worked.
+
+    Uses a helper class which, given a mgmt instance (returned by the mgmt
+    API) can confirm that the DNS record provisioned correctly.
+    """
+    skip_if_xml()  # The mgmt instance won't look the same, so skip this.
+    if CONFIG.values.get('trove_dns_checker') is not None:
+        checker = import_class(CONFIG.trove_dns_checker)
+        checker()(mgmt_instance)
+    else:
+        raise SkipTest("Can't access DNS system to check if DNS provisioned.")
+
+
 def process(cmd):
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
@@ -223,33 +228,12 @@ def iso_time(time_string):
         pass
     return '%sZ' % ts
 
-
-if CONFIG.simulate_events:
-    # Without event let, this just calls time.sleep.
-    def poll_until(retriever, condition=lambda value: value,
-                   sleep_time=1, time_out=None):
-        """Retrieves object until it passes condition, then returns it.
-
-        If time_out_limit is passed in, PollTimeOut will be raised once that
-        amount of time is eclipsed.
-
-        """
-        start_time = time.time()
-
-        def check_timeout():
-            if time_out is not None and time.time() > start_time + time_out:
-                raise PollTimeOut
-
-        while True:
-            obj = retriever()
-            if condition(obj):
-                return
-            check_timeout()
-            time.sleep(sleep_time)
-else:
-    from trove.common.utils import poll_until
+# TODO(dukhlov): Still required by trove integration
+# Should be removed after trove integration fix
+# https://bugs.launchpad.net/trove-integration/+bug/1228306
 
 
+#TODO(cp16net): DO NOT USE needs to be removed
 def mysql_connection():
     cls = CONFIG.get('mysql_connection',
                      "local.MySqlConnection")
@@ -260,10 +244,10 @@ def mysql_connection():
 
 class MySqlConnection(object):
 
-    def assert_fails(self, user_name, password, ip):
+    def assert_fails(self, ip, user_name, password):
         from trove.tests.util import mysql
         try:
-            with mysql.create_mysql_connection(ip, user_name, password) as db:
+            with mysql.create_mysql_connection(ip, user_name, password):
                 pass
             fail("Should have failed to connect: mysql --host %s -u %s -p%s"
                  % (ip, user_name, password))
@@ -303,7 +287,7 @@ class LocalSqlClient(object):
     def execute(self, t, **kwargs):
         try:
             return self.conn.execute(t, kwargs)
-        except:
+        except Exception:
             self.trans.rollback()
             self.trans = None
             raise
@@ -313,5 +297,3 @@ class LocalSqlClient(object):
         return create_engine("mysql://%s:%s@%s:3306" %
                              (user, password, host),
                              pool_recycle=1800, echo=True)
-        self.engine = engine
-        self.use_flush = use_flush

@@ -97,6 +97,7 @@ class DetailedMgmtInstance(SimpleMgmtInstance):
         super(DetailedMgmtInstance, self).__init__(*args, **kwargs)
         self.volume = None
         self.volume_used = None
+        self.volume_total = None
         self.root_history = None
 
     @classmethod
@@ -180,21 +181,34 @@ class NotificationTransformer(object):
             subsecond=True)
         return audit_start, audit_end
 
+    def _get_service_id(self, datastore_manager, id_map):
+        if datastore_manager in id_map:
+            datastore_manager_id = id_map[datastore_manager]
+        else:
+            datastore_manager_id = cfg.UNKNOWN_SERVICE_ID
+            LOG.error("Datastore ID for Manager (%s) is not configured"
+                      % datastore_manager)
+        return datastore_manager_id
+
     def transform_instance(self, instance, audit_start, audit_end):
-        return {'audit_period_beginning': audit_start,
-                'audit_period_ending': audit_end,
-                'created_at': instance.created,
-                'display_name': instance.name,
-                'instance_id': instance.id,
-                'instance_name': instance.name,
-                'instance_type_id': instance.flavor_id,
-                'launched_at': instance.created,
-                'nova_instance_id': instance.server_id,
-                'region': CONF.region,
-                'state_description': instance.status.lower(),
-                'state': instance.status.lower(),
-                'tenant_id': instance.tenant_id,
-                'service_id': CONF.notification_service_id}
+        payload = {
+            'audit_period_beginning': audit_start,
+            'audit_period_ending': audit_end,
+            'created_at': instance.created,
+            'display_name': instance.name,
+            'instance_id': instance.id,
+            'instance_name': instance.name,
+            'instance_type_id': instance.flavor_id,
+            'launched_at': instance.created,
+            'nova_instance_id': instance.server_id,
+            'region': CONF.region,
+            'state_description': instance.status.lower(),
+            'state': instance.status.lower(),
+            'tenant_id': instance.tenant_id
+        }
+        payload['service_id'] = self._get_service_id(
+            instance.datastore_version.manager, CONF.notification_service_id)
+        return payload
 
     def __call__(self):
         audit_start, audit_end = NotificationTransformer._get_audit_period()
@@ -236,7 +250,8 @@ class NovaNotificationTransformer(NotificationTransformer):
                 instances):
             message = {
                 'instance_type': self._lookup_flavor(instance.flavor_id),
-                'user_id': instance.server.user_id}
+                'user_id': instance.server.user_id
+            }
             message.update(self.transform_instance(instance,
                                                    audit_start,
                                                    audit_end))

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -111,7 +109,8 @@ class API(proxy.RpcProxy):
 
     def change_passwords(self, users):
         """Make an asynchronous call to change the passwords of one or more
-           users."""
+           users.
+        """
         LOG.debug(_("Changing passwords for users on Instance %s"), self.id)
         self._cast("change_passwords", users=users)
 
@@ -141,7 +140,7 @@ class API(proxy.RpcProxy):
                           username=username, hostname=hostname)
 
     def grant_access(self, username, hostname, databases):
-        """Give a user permission to use a given database."""
+        """Grant a user permission to use a given database."""
         return self._call("grant_access", AGENT_LOW_TIMEOUT,
                           username=username, hostname=hostname,
                           databases=databases)
@@ -160,12 +159,14 @@ class API(proxy.RpcProxy):
 
     def delete_user(self, user):
         """Make an asynchronous call to delete an existing database user"""
-        LOG.debug(_("Deleting user %s for Instance %s"), user, self.id)
+        LOG.debug(_("Deleting user %(user)s for Instance %(instance_id)s") %
+                  {'user': user, 'instance_id': self.id})
         self._cast("delete_user", user=user)
 
     def create_database(self, databases):
         """Make an asynchronous call to create a new database
-           within the specified container"""
+           within the specified container
+        """
         LOG.debug(_("Creating databases for Instance %s"), self.id)
         self._cast("create_database", databases=databases)
 
@@ -177,25 +178,31 @@ class API(proxy.RpcProxy):
 
     def delete_database(self, database):
         """Make an asynchronous call to delete an existing database
-           within the specified container"""
-        LOG.debug(_("Deleting database %s for Instance %s"), database, self.id)
+           within the specified container
+        """
+        LOG.debug(_("Deleting database %(database)s for "
+                    "Instance %(instance_id)s") % {'database': database,
+                                                   'instance_id': self.id})
         self._cast("delete_database", database=database)
 
     def enable_root(self):
         """Make a synchronous call to enable the root user for
-           access from anywhere"""
+           access from anywhere
+        """
         LOG.debug(_("Enable root user for Instance %s"), self.id)
         return self._call("enable_root", AGENT_LOW_TIMEOUT)
 
     def disable_root(self):
         """Make a synchronous call to disable the root user for
-           access from anywhere"""
+           access from anywhere
+        """
         LOG.debug(_("Disable root user for Instance %s"), self.id)
         return self._call("disable_root", AGENT_LOW_TIMEOUT)
 
     def is_root_enabled(self):
         """Make a synchronous call to check if root access is
-           available for the container"""
+           available for the container
+        """
         LOG.debug(_("Check root access for Instance %s"), self.id)
         return self._call("is_root_enabled", AGENT_LOW_TIMEOUT)
 
@@ -209,17 +216,20 @@ class API(proxy.RpcProxy):
         LOG.debug(_("Check diagnostics on Instance %s"), self.id)
         return self._call("get_diagnostics", AGENT_LOW_TIMEOUT)
 
-    def prepare(self, memory_mb, databases, users,
+    def prepare(self, memory_mb, packages, databases, users,
                 device_path='/dev/vdb', mount_point='/mnt/volume',
-                backup_id=None, config_contents=None):
+                backup_info=None, config_contents=None, root_password=None,
+                overrides=None):
         """Make an asynchronous call to prepare the guest
            as a database container optionally includes a backup id for restores
         """
         LOG.debug(_("Sending the call to prepare the Guest"))
         self._cast_with_consumer(
-            "prepare", databases=databases, memory_mb=memory_mb,
-            users=users, device_path=device_path, mount_point=mount_point,
-            backup_id=backup_id, config_contents=config_contents)
+            "prepare", packages=packages, databases=databases,
+            memory_mb=memory_mb, users=users, device_path=device_path,
+            mount_point=mount_point, backup_info=backup_info,
+            config_contents=config_contents, root_password=root_password,
+            overrides=overrides)
 
     def restart(self):
         """Restart the MySQL server."""
@@ -235,7 +245,8 @@ class API(proxy.RpcProxy):
 
     def reset_configuration(self, configuration):
         """Ignore running state of MySQL, and just change the config file
-           to a new flavor."""
+           to a new flavor.
+        """
         LOG.debug(_("Sending the call to change MySQL conf file on the Guest "
                     "with a timeout of %s.") % AGENT_HIGH_TIMEOUT)
         self._call("reset_configuration", AGENT_HIGH_TIMEOUT,
@@ -257,13 +268,46 @@ class API(proxy.RpcProxy):
         LOG.debug(_("Check Volume Info on Instance %s"), self.id)
         # self._check_for_hearbeat()
         return self._call("get_filesystem_stats", AGENT_LOW_TIMEOUT,
-                          fs_path=CONF.mount_point)
+                          fs_path=None)
 
     def update_guest(self):
         """Make a synchronous call to update the guest agent."""
         self._call("update_guest", AGENT_HIGH_TIMEOUT)
 
-    def create_backup(self, backup_id):
+    def create_backup(self, backup_info):
         """Make async call to create a full backup of this instance"""
-        LOG.debug(_("Create Backup %s for Instance %s"), backup_id, self.id)
-        self._cast("create_backup", backup_id=backup_id)
+        LOG.debug(_("Create Backup %(backup_id)s "
+                    "for Instance %(instance_id)s") %
+                  {'backup_id': backup_info['id'], 'instance_id': self.id})
+        self._cast("create_backup", backup_info=backup_info)
+
+    def mount_volume(self, device_path=None, mount_point=None):
+        """Mount the volume"""
+        LOG.debug(_("Mount volume %(mount)s on instance %(id)s") % {
+            'mount': mount_point, 'id': self.id})
+        self._call("mount_volume", AGENT_LOW_TIMEOUT,
+                   device_path=device_path, mount_point=mount_point)
+
+    def unmount_volume(self, device_path=None, mount_point=None):
+        """Unmount the volume"""
+        LOG.debug(_("Unmount volume %(device)s on instance %(id)s") % {
+            'device': device_path, 'id': self.id})
+        self._call("unmount_volume", AGENT_LOW_TIMEOUT,
+                   device_path=device_path, mount_point=mount_point)
+
+    def resize_fs(self, device_path=None, mount_point=None):
+        """Resize the filesystem"""
+        LOG.debug(_("Resize device %(device)s on instance %(id)s") % {
+            'device': device_path, 'id': self.id})
+        self._call("resize_fs", AGENT_LOW_TIMEOUT, device_path=device_path,
+                   mount_point=mount_point)
+
+    def update_overrides(self, overrides, remove=False):
+        LOG.debug(_("Updating overrides on Instance %s"), self.id)
+        LOG.debug(_("Updating overrides values %s") % overrides)
+        self._cast("update_overrides", overrides=overrides, remove=remove)
+
+    def apply_overrides(self, overrides):
+        LOG.debug(_("Applying overrides on Instance %s"), self.id)
+        LOG.debug(_("Applying overrides values %s") % overrides)
+        self._cast("apply_overrides", overrides=overrides)

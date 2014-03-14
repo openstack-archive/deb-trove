@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -24,23 +22,16 @@ context or provide additional information in their specific WSGI pipeline.
 
 from trove.openstack.common import context
 from trove.openstack.common import local
-from trove.common import utils
 
 
 class TroveContext(context.RequestContext):
-
     """
     Stores information about the security context under which the user
     accesses the system, as well as additional request information.
     """
-
     def __init__(self, **kwargs):
-        self.limit = kwargs.get('limit')
-        if 'limit' in kwargs:
-            del kwargs['limit']
-        self.marker = kwargs.get('marker')
-        if 'marker' in kwargs:
-            del kwargs['marker']
+        self.limit = kwargs.pop('limit', None)
+        self.marker = kwargs.pop('marker', None)
         super(TroveContext, self).__init__(**kwargs)
 
         if not hasattr(local.store, 'context'):

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -161,11 +159,11 @@ class DbQuotaDriver(object):
         for resource in deltas:
             reserved = deltas[resource]
             usage = quota_usages[resource]
-            usage.reserved = reserved
+            usage.reserved += reserved
             usage.save()
 
             resv = Reservation.create(usage_id=usage.id,
-                                      delta=usage.reserved,
+                                      delta=reserved,
                                       status=Reservation.Statuses.RESERVED)
             reservations.append(resv)
 
@@ -181,6 +179,8 @@ class DbQuotaDriver(object):
         for reservation in reservations:
             usage = QuotaUsage.find_by(id=reservation.usage_id)
             usage.in_use += reservation.delta
+            if usage.in_use < 0:
+                usage.in_use = 0
             usage.reserved -= reservation.delta
             reservation.status = Reservation.Statuses.COMMITTED
             usage.save()
@@ -272,7 +272,8 @@ class QuotaEngine(object):
 
         reservations = self._driver.reserve(tenant_id, self._resources, deltas)
 
-        LOG.debug(_("Created reservations %(reservations)s") % locals())
+        LOG.debug(_("Created reservations %(reservations)s") %
+                  {'reservations': reservations})
 
         return reservations
 
@@ -287,7 +288,7 @@ class QuotaEngine(object):
             self._driver.commit(reservations)
         except Exception:
             LOG.exception(_("Failed to commit reservations "
-                            "%(reservations)s") % locals())
+                          "%(reservations)s") % {'reservations': reservations})
 
     def rollback(self, reservations):
         """Roll back reservations.
@@ -300,7 +301,7 @@ class QuotaEngine(object):
             self._driver.rollback(reservations)
         except Exception:
             LOG.exception(_("Failed to roll back reservations "
-                            "%(reservations)s") % locals())
+                          "%(reservations)s") % {'reservations': reservations})
 
     @property
     def resources(self):
@@ -319,13 +320,13 @@ QUOTAS.register_resources(resources)
 
 
 def run_with_quotas(tenant_id, deltas, f):
-    """ Quota wrapper """
+    """Quota wrapper """
 
     reservations = QUOTAS.reserve(tenant_id, **deltas)
     result = None
     try:
         result = f()
-    except:
+    except Exception:
         QUOTAS.rollback(reservations)
         raise
     else:

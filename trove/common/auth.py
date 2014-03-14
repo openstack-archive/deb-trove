@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -15,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import httplib2
 import re
 import webob.exc
 import wsgi
@@ -62,8 +59,10 @@ class TenantBasedAuth(object):
         match_for_tenant = self.tenant_scoped_url.match(request.path_info)
         if (match_for_tenant and
                 tenant_id == match_for_tenant.group('tenant_id')):
-            LOG.debug(_("Authorized tenant '%(tenant_id)s' request: "
-                      "%(request)s") % locals())
+            LOG.debug(logging.mask_password(
+                      _("Authorized tenant '%(tenant_id)s' request: "
+                        "%(request)s") %
+                      {'tenant_id': tenant_id, 'request': request}))
             return True
         msg = _("User with tenant id %s cannot access this resource")
         LOG.debug(msg % tenant_id)
@@ -80,7 +79,7 @@ def admin_context(f):
         try:
             req = args[1]
             context = req.environ.get('trove.context')
-        except:
+        except Exception:
             raise exception.TroveError("Cannot load request context.")
         if not context.is_admin:
             raise exception.Forbidden("User does not have admin privileges.")

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -51,11 +49,13 @@ XMLDictSerializer = openstack_wsgi.XMLDictSerializer
 XMLDeserializer = openstack_wsgi.XMLDeserializer
 RequestDeserializer = openstack_wsgi.RequestDeserializer
 
+CONF = cfg.CONF
+# Raise the default from 8192 to accommodate large tokens
+eventlet.wsgi.MAX_HEADER_LINE = CONF.max_header_line
+
 eventlet.patcher.monkey_patch(all=False, socket=True)
 
 LOG = logging.getLogger('trove.common.wsgi')
-
-CONF = cfg.CONF
 
 XMLNS = 'http://docs.openstack.org/database/api/v1.0'
 CUSTOM_PLURALS_METADATA = {'databases': '', 'users': ''}
@@ -81,6 +81,12 @@ CUSTOM_SERIALIZER_METADATA = {
         'used': '',
         #mgmt/instance
         'id': '',
+    },
+    'configuration': {
+        'id': '',
+        'name': '',
+        'description': '',
+        'datastore_version_id': ''
     },
     'flavor': {'id': '', 'ram': '', 'name': ''},
     'link': {'href': '', 'rel': ''},
@@ -273,7 +279,7 @@ class Request(openstack_wsgi.Request):
 
 
 class Result(object):
-    """A result whose serialization is compatable with JSON and XML.
+    """A result whose serialization is compatible with JSON and XML.
 
     This class is used by TroveResponseSerializer, which calls the
     data method to grab a JSON or XML specific dictionary which it then
@@ -364,18 +370,18 @@ class Resource(openstack_wsgi.Resource):
         # If an exception is raised here in the base class, it is swallowed,
         # and the action_result is returned as-is. For us, that's bad news -
         # we never want that to happen except in the case of webob types.
-        # So we override the behavior here so we can at least log it (raising
-        # an exception in the base class creates a circular reference issue).
+        # So we override the behavior here so we can at least log it.
         try:
             return super(Resource, self).serialize_response(
                 action, action_result, accept)
-        except Exception as ex:
-            # The super class code seems designed to either serialize things
-            # or pass them back if they're webobs.
-            if not isinstance(action_result, webob.Response):
-                LOG.error("unserializable result detected! "
-                          "Exception type: %s Message: %s" % (type(ex), ex))
+        except Exception:
+            # execute_action either returns the results or a Fault object.
+            # If action_result is not a Fault then there really was a
+            # serialization error which we log. Otherwise return the Fault.
+            if not isinstance(action_result, Fault):
+                LOG.exception("unserializable result detected.")
                 raise
+            return action_result
 
 
 class Controller(object):
@@ -409,6 +415,7 @@ class Controller(object):
         ],
         webob.exc.HTTPConflict: [
             exception.BackupNotCompleteError,
+            exception.RestoreBackupIntegrityError,
         ],
         webob.exc.HTTPRequestEntityTooLarge: [
             exception.OverLimit,
@@ -687,7 +694,7 @@ class ContextMiddleware(openstack_wsgi.Middleware):
     def process_request(self, request):
         tenant_id = request.headers.get('X-Tenant-Id', None)
         auth_token = request.headers["X-Auth-Token"]
-        user = request.headers.get('X-User', None)
+        user_id = request.headers.get('X-User-ID', None)
         roles = request.headers.get('X-Role', '').split(',')
         is_admin = False
         for role in roles:
@@ -697,7 +704,7 @@ class ContextMiddleware(openstack_wsgi.Middleware):
         limits = self._extract_limits(request.params)
         context = rd_context.TroveContext(auth_token=auth_token,
                                           tenant=tenant_id,
-                                          user=user,
+                                          user=user_id,
                                           is_admin=is_admin,
                                           limit=limits.get('limit'),
                                           marker=limits.get('marker'))

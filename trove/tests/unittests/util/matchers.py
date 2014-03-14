@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # Copyright 2012 Hewlett-Packard Development Company, L.P.
@@ -51,7 +49,6 @@ class DictMismatch(object):
 
 
 class DictMatches(object):
-
     def __init__(self, d1, approx_equal=False, tolerance=0.001):
         self.d1 = d1
         self.approx_equal = approx_equal
@@ -121,7 +118,6 @@ class ListLengthMismatch(object):
 
 
 class DictListMatches(object):
-
     def __init__(self, l1, approx_equal=False, tolerance=0.001):
         self.l1 = l1
         self.approx_equal = approx_equal
@@ -163,17 +159,16 @@ class SubDictMismatch(object):
         if self.keys:
             return "Keys between dictionaries did not match"
         else:
-            return("Dictionaries do not match at %s. d1: %s d2: %s"
-                   % (self.key,
-                      self.super_value,
-                      self.sub_value))
+            return ("Dictionaries do not match at %s. d1: %s d2: %s"
+                    % (self.key,
+                       self.super_value,
+                       self.sub_value))
 
     def get_details(self):
         return {}
 
 
 class IsSubDictOf(object):
-
     def __init__(self, super_dict):
         self.super_dict = super_dict
 
@@ -199,7 +194,6 @@ class IsSubDictOf(object):
 
 
 class FunctionCallMatcher(object):
-
     def __init__(self, expected_func_calls):
         self.expected_func_calls = expected_func_calls
         self.actual_func_calls = []
@@ -408,7 +402,7 @@ class XMLMatches(object):
             if len(expected) == 0 and len(actual) == 0:
                 # No children, compare text values
                 if ('DONTCARE' not in (expected.text, actual.text) and
-                    expected.text != actual.text):
+                        expected.text != actual.text):
                     return XMLTextValueMismatch(state, expected.text,
                                                 actual.text)
             else:
@@ -421,7 +415,7 @@ class XMLMatches(object):
                     # allow for, say, arbitrary ordering of some
                     # elements
                     if (expected[expected_idx].tag in
-                        (etree.Comment, etree.ProcessingInstruction)):
+                            (etree.Comment, etree.ProcessingInstruction)):
                         expected_idx += 1
                         continue
 
@@ -445,7 +439,7 @@ class XMLMatches(object):
                 if expected_idx < len(expected):
                     for node in expected[expected_idx:]:
                         if (node.tag in
-                            (etree.Comment, etree.ProcessingInstruction)):
+                                (etree.Comment, etree.ProcessingInstruction)):
                             continue
 
                         return XMLExpectedChild(state, node.tag, actual_idx)

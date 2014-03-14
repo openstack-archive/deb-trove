@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -17,7 +15,6 @@
 
 from trove.openstack.common import log as logging
 import routes
-import webob.exc
 
 from trove.common import wsgi
 

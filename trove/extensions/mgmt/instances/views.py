@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -36,10 +34,10 @@ class MgmtInstanceView(InstanceDetailView):
                 'status': server.status,
                 'tenant_id': server.tenant_id,
             }
-            if hasattr(server, 'hostId'):
-                result['instance']['server']['host'] = server.hostId
-            else:
+            if hasattr(server, 'host'):
                 result['instance']['server']['host'] = server.host
+            else:
+                result['instance']['server']['host'] = server.hostId
             if hasattr(server, 'deleted'):
                 result['instance']['server']['deleted'] = server.deleted
             if hasattr(server, 'deleted_at'):
@@ -86,6 +84,7 @@ class MgmtInstanceDetailView(MgmtInstanceView):
                 "size": volume.size,
                 "status": volume.status,
                 "used": self.instance.volume_used or None,
+                "total": self.instance.volume_total or None,
             }
         else:
             result['instance']['volume'] = None

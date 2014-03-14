@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -18,8 +16,7 @@
 
 import datetime
 import inspect
-import re
-import signal
+import jinja2
 import sys
 import time
 import urlparse
@@ -29,10 +26,10 @@ import shutil
 
 from eventlet import event
 from eventlet import greenthread
-from eventlet import semaphore
-from eventlet.green import subprocess
 from eventlet.timeout import Timeout
+from passlib import utils as passlib_utils
 
+from trove.common import cfg
 from trove.common import exception
 from trove.openstack.common import importutils
 from trove.openstack.common import log as logging
@@ -41,6 +38,7 @@ from trove.openstack.common import timeutils
 from trove.openstack.common import utils as openstack_utils
 from trove.openstack.common.gettextutils import _
 
+CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 import_class = importutils.import_class
 import_object = importutils.import_object
@@ -48,6 +46,12 @@ import_module = importutils.import_module
 bool_from_string = openstack_utils.bool_from_string
 execute = processutils.execute
 isotime = timeutils.isotime
+
+CONF = cfg.CONF
+ENV = jinja2.Environment(loader=jinja2.ChoiceLoader([
+                         jinja2.FileSystemLoader(CONF.template_path),
+                         jinja2.PackageLoader("trove", "templates")
+                         ]))
 
 
 def create_method_args_string(*args, **kwargs):
@@ -270,9 +274,10 @@ def execute_with_timeout(*args, **kwargs):
     time = kwargs.get('timeout', 30)
 
     def cb_timeout():
-        msg = _("Time out after waiting"
-                " %(time)s seconds when running proc: %(args)s"
-                " %(kwargs)s") % locals()
+        msg = (_("Time out after waiting"
+                 " %(time)s seconds when running proc: %(args)s"
+                 " %(kwargs)s") % {'time': time, 'args': args,
+                                   'kwargs': kwargs})
         LOG.error(msg)
         raise exception.ProcessExecutionError(msg)
 
@@ -284,10 +289,48 @@ def execute_with_timeout(*args, **kwargs):
             LOG.error("Timeout reached but not from our timeout. This is bad!")
             raise
         else:
-            msg = _("Time out after waiting "
-                    "%(time)s seconds when running proc: %(args)s"
-                    " %(kwargs)s") % locals()
+            msg = (_("Time out after waiting "
+                     "%(time)s seconds when running proc: %(args)s"
+                     " %(kwargs)s") % {'time': time, 'args': args,
+                                       'kwargs': kwargs})
             LOG.error(msg)
             raise exception.ProcessExecutionError(msg)
     finally:
         timeout.cancel()
+
+
+def correct_id_with_req(id, request):
+    # Due to a shortcoming with the way Trove uses routes.mapper,
+    # URL entities right of the last slash that contain at least
+    # one . are routed to our service without that suffix, as
+    # it was interpreted as a filetype This method looks at the
+    # request, and if applicable, reattaches the suffix to the id.
+    routing_args = request.environ.get('wsgiorg.routing_args', [])
+    for routing_arg in routing_args:
+        try:
+            found = routing_arg.get('format', '')
+            if found and found not in CONF.expected_filetype_suffixes:
+                return "%s.%s" % (id, found)
+        except (AttributeError, KeyError):
+            # Not the relevant routing_args entry.
+            pass
+    return id
+
+
+def generate_random_password(password_length=CONF.default_password_length):
+    return passlib_utils.generate_password(size=password_length)
+
+
+def try_recover(func):
+    def _decorator(*args, **kwargs):
+        recover_func = kwargs.pop("recover_func", None)
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            if recover_func is not None:
+                recover_func(func)
+            else:
+                LOG.debug(_("No recovery method defined for %(func)s") % {
+                          'func': func.__name__})
+            raise
+    return _decorator

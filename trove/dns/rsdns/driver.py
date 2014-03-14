@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 Openstack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -117,7 +115,7 @@ class RsDnsDriver(object):
             msg = "TTL value '--dns_ttl=%s' should be greater than 300"
             raise Exception(msg % DNS_TTL)
 
-    def create_entry(self, entry):
+    def create_entry(self, entry, content):
         dns_zone = entry.dns_zone or self.default_dns_zone
         if dns_zone.id is None:
             raise TypeError("The entry's dns_zone must have an ID specified.")
@@ -127,7 +125,7 @@ class RsDnsDriver(object):
             future = self.dns_client.records.create(
                 domain=dns_zone.id,
                 record_name=name,
-                record_data=entry.content,
+                record_data=content,
                 record_type=entry.type,
                 record_ttl=entry.ttl)
             try:

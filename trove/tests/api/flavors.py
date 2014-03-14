@@ -1,4 +1,4 @@
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -18,14 +18,12 @@ import os
 from nose.tools import assert_equal
 from nose.tools import assert_false
 from nose.tools import assert_true
-from troveclient import exceptions
-from troveclient.flavors import Flavor
-from troveclient.flavors import Flavors
+from troveclient.compat import exceptions
+from troveclient.v1.flavors import Flavor
 
 from proboscis import before_class
 from proboscis import test
 from proboscis.asserts import assert_raises
-from proboscis import SkipTest
 
 from trove import tests
 from trove.tests.util import create_dbaas_client
@@ -44,7 +42,8 @@ user = None
 
 def assert_attributes_equal(name, os_flavor, dbaas_flavor):
     """Given an attribute name and two objects,
-    ensures the attribute is equal."""
+        ensures the attribute is equal.
+    """
     assert_true(hasattr(os_flavor, name),
                 "open stack flavor did not have attribute %s" % name)
     assert_true(hasattr(dbaas_flavor, name),

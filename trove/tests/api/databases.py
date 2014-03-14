@@ -14,17 +14,14 @@
 
 import time
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis import before_class
 from proboscis import test
 from proboscis.asserts import assert_equal
 from proboscis.asserts import assert_false
-from proboscis.asserts import assert_not_equal
 from proboscis.asserts import assert_raises
 from proboscis.asserts import assert_true
-from proboscis.asserts import fail
-from proboscis.decorators import expect_exception
 from proboscis.decorators import time_out
 
 from trove import tests
@@ -51,13 +48,13 @@ class TestMysqlAccess(object):
     def test_mysql_admin(self):
         """Ensure we aren't allowed access with os_admin and wrong password."""
         util.mysql_connection().assert_fails(
-            "os_admin", "asdfd-asdf234", instance_info.get_address())
+            instance_info.get_address(), "os_admin", "asdfd-asdf234")
 
     @test
     def test_mysql_root(self):
         """Ensure we aren't allowed access with root and wrong password."""
         util.mysql_connection().assert_fails(
-            "root", "dsfgnear", instance_info.get_address())
+            instance_info.get_address(), "root", "dsfgnear")
 
 
 @test(depends_on_groups=[GROUP_START],

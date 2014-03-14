@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -68,7 +66,7 @@ class Manager(periodic_task.PeriodicTasks):
             instance_tasks = models.BuiltInstanceTasks.load(context,
                                                             instance_id)
             instance_tasks.delete_async()
-        except exception.UnprocessableEntity as upe:
+        except exception.UnprocessableEntity:
             instance_tasks = models.FreshInstanceTasks.load(context,
                                                             instance_id)
             instance_tasks.delete_async()
@@ -76,18 +74,29 @@ class Manager(periodic_task.PeriodicTasks):
     def delete_backup(self, context, backup_id):
         models.BackupTasks.delete_backup(context, backup_id)
 
-    def create_backup(self, context, backup_id, instance_id):
+    def create_backup(self, context, backup_info, instance_id):
         instance_tasks = models.BuiltInstanceTasks.load(context, instance_id)
-        instance_tasks.create_backup(backup_id)
+        instance_tasks.create_backup(backup_info)
 
     def create_instance(self, context, instance_id, name, flavor,
-                        image_id, databases, users, service_type,
-                        volume_size, security_groups, backup_id):
+                        image_id, databases, users, datastore_manager,
+                        packages, volume_size, backup_id, availability_zone,
+                        root_password, nics, overrides):
         instance_tasks = FreshInstanceTasks.load(context, instance_id)
-        instance_tasks.create_instance(flavor, image_id,
-                                       databases, users, service_type,
-                                       volume_size, security_groups,
-                                       backup_id)
+        instance_tasks.create_instance(flavor, image_id, databases, users,
+                                       datastore_manager, packages,
+                                       volume_size, backup_id,
+                                       availability_zone, root_password, nics,
+                                       overrides)
+
+    def update_overrides(self, context, instance_id, overrides):
+        instance_tasks = models.BuiltInstanceTasks.load(context, instance_id)
+        instance_tasks.update_overrides(overrides)
+
+    def unassign_configuration(self, context, instance_id, flavor,
+                               configuration_id):
+        instance_tasks = models.BuiltInstanceTasks.load(context, instance_id)
+        instance_tasks.unassign_configuration(flavor, configuration_id)
 
     if CONF.exists_notification_transformer:
         @periodic_task.periodic_task(

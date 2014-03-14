@@ -14,7 +14,7 @@
 
 import time
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis import after_class
 from proboscis import before_class
@@ -31,6 +31,8 @@ from trove.tests.api.instances import instance_info
 from trove.tests import util
 from trove.tests.util import test_config
 from trove.tests.api.databases import TestMysqlAccess
+
+import urllib
 
 
 GROUP = "dbaas.api.users"
@@ -197,7 +199,6 @@ class TestUsers(object):
         # Nothing wrong with creating two users with the same name, so long
         # as their hosts are different.
         self.dbaas.users.create(instance_info.id, users)
-        hostnames = [h.replace('.', '%2e') for h in hostnames]
         for hostname in hostnames:
             self.dbaas.users.delete(instance_info.id, username,
                                     hostname=hostname)
@@ -214,7 +215,6 @@ class TestUsers(object):
                       "host": hostname, "databases": []})
         self.dbaas.users.create(instance_info.id, users)
         user_new = {"name": "testuser2"}
-        hostname = hostname.replace('.', '%2e')
         assert_raises(exceptions.BadRequest,
                       self.dbaas.users.update_attributes, instance_info.id,
                       old_name, user_new, hostname)
@@ -235,8 +235,6 @@ class TestUsers(object):
         users.append({"name": username, "password": "password",
                       "host": hostname2, "databases": []})
         self.dbaas.users.create(instance_info.id, users)
-        hostname1 = hostname1.replace('.', '%2e')
-        hostname2 = hostname2.replace('.', '%2e')
         user_new = {"host": "192.168.0.2"}
         assert_raises(exceptions.BadRequest,
                       self.dbaas.users.update_attributes, instance_info.id,
@@ -258,8 +256,6 @@ class TestUsers(object):
                       "host": hostname2, "databases": []})
         self.dbaas.users.create(instance_info.id, users)
         user_new = {"name": "testuser2", "host": "192.168.0.2"}
-        hostname1 = hostname1.replace('.', '%2e')
-        hostname2 = hostname2.replace('.', '%2e')
         assert_raises(exceptions.BadRequest,
                       self.dbaas.users.update_attributes, instance_info.id,
                       username, user_new, hostname1)
@@ -267,6 +263,28 @@ class TestUsers(object):
         self.dbaas.users.delete(instance_info.id, username, hostname=hostname1)
         self.dbaas.users.delete(instance_info.id, "testuser2",
                                 hostname=hostname2)
+
+    @test()
+    def test_updateduser_newhost_invalid(self):
+        # Ensure invalid hostnames/usernames aren't allowed to enter the system
+        users = []
+        username = "testuser1"
+        hostname1 = "192.168.0.1"
+        users.append({"name": username, "password": "password",
+                      "host": hostname1, "databases": []})
+        self.dbaas.users.create(instance_info.id, users)
+        hostname1 = hostname1.replace('.', '%2e')
+        assert_raises(exceptions.BadRequest,
+                      self.dbaas.users.update_attributes, instance_info.id,
+                      username, {"host": "badjuju"}, hostname1)
+        assert_equal(400, self.dbaas.last_http_code)
+
+        assert_raises(exceptions.BadRequest,
+                      self.dbaas.users.update_attributes, instance_info.id,
+                      username, {"name": " bad username   "}, hostname1)
+        assert_equal(400, self.dbaas.last_http_code)
+
+        self.dbaas.users.delete(instance_info.id, username, hostname=hostname1)
 
     @test()
     def test_cannot_change_rootpassword(self):
@@ -286,7 +304,6 @@ class TestUsers(object):
                       "host": hostname, "databases": []})
         self.dbaas.users.create(instance_info.id, users)
         user_new = {"host": ""}
-        hostname = hostname.replace('.', '%2e')
         assert_raises(exceptions.BadRequest,
                       self.dbaas.users.update_attributes, instance_info.id,
                       username, user_new, hostname)
@@ -409,6 +426,7 @@ class TestUsers(object):
         assert_true(len(users) <= limit)
         assert_true(users.next is not None)
         expected_marker = "%s@%s" % (users[-1].name, users[-1].host)
+        expected_marker = urllib.quote(expected_marker)
         assert_equal(marker, expected_marker)
         marker = users.next
 
@@ -425,8 +443,8 @@ class TestUsers(object):
 
     def _check_connection(self, username, password):
         if not FAKE:
-            util.mysql_connection().assert_fails(username, password,
-                                                 instance_info.get_address())
+            util.mysql_connection().assert_fails(instance_info.get_address(),
+                                                 username, password)
         # Also determine the db is gone via API.
         result = self.dbaas.users.list(instance_info.id)
         assert_equal(200, self.dbaas.last_http_code)

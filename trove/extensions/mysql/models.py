@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -82,8 +80,6 @@ class User(object):
         for user in users:
             user_name = user['_name']
             host_name = user['_host']
-            if host_name is None:
-                host_name = '%'
             userhost = "%s@%s" % (user_name, host_name)
             existing_users, _nadda = Users.load_with_client(
                 client,
@@ -144,12 +140,20 @@ class User(object):
                           user_attrs):
         load_and_verify(context, instance_id)
         client = create_guest_client(context, instance_id)
-        user_name = user_attrs.get('name')
-        host_name = user_attrs.get('host')
-        user = user_name or username
-        host = host_name or hostname
+
+        user_changed = user_attrs.get('name')
+        host_changed = user_attrs.get('host')
+
+        validate = guest_models.MySQLUser()
+        if host_changed:
+            validate.host = host_changed
+        if user_changed:
+            validate.name = user_changed
+
+        user = user_changed or username
+        host = host_changed or hostname
         userhost = "%s@%s" % (user, host)
-        if user_name or host_name:
+        if user_changed or host_changed:
             existing_users, _nadda = Users.load_with_client(
                 client,
                 limit=1,
@@ -193,7 +197,7 @@ class Root(object):
         root = create_guest_client(context, instance_id).enable_root()
         root_user = guest_models.RootUser()
         root_user.deserialize(root)
-        root_history = RootHistory.create(context, instance_id, user)
+        RootHistory.create(context, instance_id, user)
         return root_user
 
 
@@ -209,8 +213,8 @@ class RootHistory(object):
         self.created = utils.utcnow()
 
     def save(self):
-        LOG.debug(_("Saving %s: %s") % (self.__class__.__name__,
-                                        self.__dict__))
+        LOG.debug(_("Saving %(name)s: %(dict)s") %
+                  {'name': self.__class__.__name__, 'dict': self.__dict__})
         return get_db_api().save(self)
 
     @classmethod

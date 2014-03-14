@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -45,7 +43,7 @@ def db_version(options, repo_path=None):
         return versioning_api.db_version(sql_connection, repo_path)
     except versioning_exceptions.DatabaseNotControlledError:
         msg = ("database '%(sql_connection)s' is not under migration control"
-               % locals())
+               % {'sql_connection': sql_connection})
         raise exception.DatabaseMigrationError(msg)
 
 
@@ -62,7 +60,7 @@ def upgrade(options, version=None, repo_path=None):
     sql_connection = options['sql_connection']
     version_str = version or 'latest'
     logger.info("Upgrading %(sql_connection)s to version %(version_str)s" %
-                locals())
+                {'sql_connection': sql_connection, 'version_str': version_str})
     return versioning_api.upgrade(sql_connection, repo_path, version)
 
 
@@ -78,7 +76,7 @@ def downgrade(options, version, repo_path=None):
     repo_path = get_migrate_repo_path(repo_path)
     sql_connection = options['sql_connection']
     logger.info("Downgrading %(sql_connection)s to version %(version)s" %
-                locals())
+                {'sql_connection': sql_connection, 'version': version})
     return versioning_api.downgrade(sql_connection, repo_path, version)
 
 
@@ -93,7 +91,7 @@ def version_control(options, repo_path=None):
         _version_control(options)
     except versioning_exceptions.DatabaseAlreadyControlledError:
         msg = ("database '%(sql_connection)s' is already under migration "
-               "control" % locals())
+               "control" % {'sql_connection': sql_connection})
         raise exception.DatabaseMigrationError(msg)
 
 

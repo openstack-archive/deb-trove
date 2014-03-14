@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2013 OpenStack LLC
+# Copyright 2013 OpenStack Foundation
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,14 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from trove.common import wsgi
 from trove.backup import views
 from trove.backup.models import Backup
-from trove.common import exception
+from trove.common import apischema
 from trove.common import cfg
+from trove.common import pagination
+from trove.common import wsgi
 from trove.openstack.common import log as logging
 from trove.openstack.common.gettextutils import _
-import trove.common.apischema as apischema
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -40,8 +38,11 @@ class BackupController(wsgi.Controller):
         """
         LOG.debug("Listing Backups for tenant '%s'" % tenant_id)
         context = req.environ[wsgi.CONTEXT_KEY]
-        backups = Backup.list(context)
-        return wsgi.Result(views.BackupViews(backups).data(), 200)
+        backups, marker = Backup.list(context)
+        view = views.BackupViews(backups)
+        paged = pagination.SimplePaginatedDataView(req.url, 'backups', view,
+                                                   marker)
+        return wsgi.Result(paged.data(), 200)
 
     def show(self, req, tenant_id, id):
         """Return a single backup."""
@@ -58,7 +59,8 @@ class BackupController(wsgi.Controller):
         instance = data['instance']
         name = data['name']
         desc = data.get('description')
-        backup = Backup.create(context, instance, name, desc)
+        parent = data.get('parent_id')
+        backup = Backup.create(context, instance, name, desc, parent_id=parent)
         return wsgi.Result(views.BackupView(backup).data(), 202)
 
     def delete(self, req, tenant_id, id):

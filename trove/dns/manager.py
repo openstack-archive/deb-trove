@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 Openstack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -35,12 +33,12 @@ class DnsManager(object):
                  *args, **kwargs):
         if not dns_driver:
             dns_driver = CONF.dns_driver
-        dns_driver = utils.import_object(dns_driver)
+        dns_driver = utils.import_class(dns_driver)
         self.driver = dns_driver()
 
         if not dns_instance_entry_factory:
             dns_instance_entry_factory = CONF.dns_instance_entry_factory
-        entry_factory = utils.import_object(dns_instance_entry_factory)
+        entry_factory = utils.import_class(dns_instance_entry_factory)
         self.entry_factory = entry_factory()
 
     def create_instance_entry(self, instance_id, content):
@@ -52,9 +50,8 @@ class DnsManager(object):
         """
         entry = self.entry_factory.create_entry(instance_id)
         if entry:
-            entry.content = content[0]
             LOG.debug("Creating entry address %s." % str(entry))
-            self.driver.create_entry(entry)
+            self.driver.create_entry(entry, content)
         else:
             LOG.debug("Entry address not found for instance %s" % instance_id)
 

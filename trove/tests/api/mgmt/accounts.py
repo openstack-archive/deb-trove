@@ -12,21 +12,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from nose.plugins.skip import SkipTest
 
 from proboscis import after_class
 from proboscis import before_class
 from proboscis import test
-from proboscis.asserts import *
+from proboscis import asserts
 from proboscis.decorators import time_out
 
 from trove import tests
 from trove.tests.api.instances import instance_info
 from trove.tests.util import test_config
 from trove.tests.util import create_dbaas_client
-from trove.tests.util import poll_until
+from trove.common.utils import poll_until
 from trove.tests.config import CONFIG
 from trove.tests.util.users import Requirements
 from trove.tests.api.instances import existing_instance
@@ -46,29 +46,29 @@ class AccountsBeforeInstanceCreation(object):
     @test
     def test_invalid_account(self):
         raise SkipTest("Don't have a good way to know if accounts are valid.")
-        assert_raises(exceptions.NotFound, self.client.accounts.show,
-                      "asd#4#@fasdf")
+        asserts.assert_raises(exceptions.NotFound, self.client.accounts.show,
+                              "asd#4#@fasdf")
 
     @test
     def test_invalid_account_fails(self):
         account_info = self.client.accounts.show("badaccount")
-        assert_not_equal(self.user.tenant_id, account_info.id)
+        asserts.assert_not_equal(self.user.tenant_id, account_info.id)
 
     @test
     def test_account_zero_instances(self):
         account_info = self.client.accounts.show(self.user.tenant_id)
         expected_instances = 0 if not existing_instance() else 1
-        assert_equal(expected_instances, len(account_info.instances))
+        asserts.assert_equal(expected_instances, len(account_info.instances))
         expected = self.user.tenant_id
         if expected is None:
             expected = "None"
-        assert_equal(expected, account_info.id)
+        asserts.assert_equal(expected, account_info.id)
 
     @test
     def test_list_empty_accounts(self):
         accounts_info = self.client.accounts.index()
         expected_accounts = 0 if not existing_instance() else 1
-        assert_equal(expected_accounts, len(accounts_info.accounts))
+        asserts.assert_equal(expected_accounts, len(accounts_info.accounts))
 
 
 @test(groups=[tests.INSTANCES, GROUP], depends_on_groups=["dbaas.listing"])
@@ -90,27 +90,27 @@ class AccountsAfterInstanceCreation(object):
             expected = "None"
         print("account_id.id = '%s'" % account_info.id)
         print("expected = '%s'" % expected)
-        assert_equal(account_info.id, expected)
+        asserts.assert_equal(account_info.id, expected)
         # Instances: Here we know we've only created one instance.
-        assert_equal(1, len(account_info.instances))
-        assert_is_not_none(account_info.instances[0]['host'])
+        asserts.assert_equal(1, len(account_info.instances))
+        asserts.assert_is_not_none(account_info.instances[0]['host'])
         # We know the there's only 1 instance
         instance = account_info.instances[0]
         print("instances in account: %s" % instance)
-        assert_equal(instance['id'], instance_info.id)
-        assert_equal(instance['name'], instance_info.name)
-        assert_equal(instance['status'], "ACTIVE")
-        assert_is_not_none(instance['host'])
+        asserts.assert_equal(instance['id'], instance_info.id)
+        asserts.assert_equal(instance['name'], instance_info.name)
+        asserts.assert_equal(instance['status'], "ACTIVE")
+        asserts.assert_is_not_none(instance['host'])
 
     @test
     def test_list_accounts(self):
         if test_config.auth_strategy == "fake":
             raise SkipTest("Skipping this as auth is faked anyway.")
         accounts_info = self.client.accounts.index()
-        assert_equal(1, len(accounts_info.accounts))
+        asserts.assert_equal(1, len(accounts_info.accounts))
         account = accounts_info.accounts[0]
-        assert_equal(1, account['num_instances'])
-        assert_equal(instance_info.user.tenant_id, account['id'])
+        asserts.assert_equal(1, account['num_instances'])
+        asserts.assert_equal(instance_info.user.tenant_id, account['id'])
 
 
 @test(groups=[tests.POST_INSTANCES, GROUP],
@@ -125,7 +125,7 @@ class AccountsAfterInstanceDeletion(object):
     @test
     def test_no_details_empty_account(self):
         account_info = self.client.accounts.show(instance_info.user.tenant_id)
-        assert_equal(0, len(account_info.instances))
+        asserts.assert_equal(0, len(account_info.instances))
 
 
 @test(groups=["fake.dbaas.api.mgmt.allaccounts"],
@@ -170,8 +170,8 @@ class AllAccounts(object):
     def test_list_accounts_with_multiple_users(self):
         accounts_info = self.admin_client.accounts.index()
         for account in accounts_info.accounts:
-            assert_true(account['id'] in self.user_tenant_ids)
-            assert_equal(self.max, account['num_instances'])
+            asserts.assert_true(account['id'] in self.user_tenant_ids)
+            asserts.assert_equal(self.max, account['num_instances'])
 
     @after_class(always_run=True)
     @time_out(60)
@@ -180,11 +180,16 @@ class AllAccounts(object):
 
 
 @test(groups=["fake.%s.broken" % GROUP],
-      depends_on_groups=["services.initialize"])
+      depends_on_groups=["services.initialize"],
+      runs_after_groups=["dbaas.guest.shutdown"])
 class AccountWithBrokenInstance(object):
 
     @before_class
-    def setUp(self):
+    def setUpACCR(self):
+        from trove.taskmanager.models import CONF
+        self.old_dns_support = CONF.trove_dns_support
+        CONF.trove_dns_support = False
+
         self.user = test_config.users.find_user(Requirements(is_admin=True))
         self.client = create_dbaas_client(self.user)
         self.name = 'test_SERVER_ERROR'
@@ -203,7 +208,7 @@ class AccountWithBrokenInstance(object):
         self.instance = self.client.instances.get(self.response.id)
         print("Status: %s" % self.instance.status)
         msg = "Instance did not drop to error after server prov failure."
-        assert_equal(self.instance.status, "ERROR", msg)
+        asserts.assert_equal(self.instance.status, "ERROR", msg)
 
     @test
     def no_compute_instance_no_problem(self):
@@ -213,14 +218,19 @@ class AccountWithBrokenInstance(object):
         account_info = self.client.accounts.show(self.user.tenant_id)
         # All we care about is that accounts.show doesn't 500 on us
         # for having a broken instance in the roster.
-        assert_equal(len(account_info.instances), 1)
+        asserts.assert_equal(len(account_info.instances), 1)
         instance = account_info.instances[0]
-        assert_true(isinstance(instance['id'], basestring))
-        assert_equal(len(instance['id']), 36)
-        assert_equal(instance['name'], self.name)
-        assert_equal(instance['status'], "ERROR")
+        asserts.assert_true(isinstance(instance['id'], basestring))
+        asserts.assert_equal(len(instance['id']), 36)
+        asserts.assert_equal(instance['name'], self.name)
+        asserts.assert_equal(instance['status'], "ERROR")
         assert_is_none(instance['host'])
 
     @after_class
     def tear_down(self):
         self.client.instances.delete(self.response.id)
+
+    @after_class
+    def restore_dns(self):
+        from trove.taskmanager.models import CONF
+        CONF.trove_dns_support = self.old_dns_support

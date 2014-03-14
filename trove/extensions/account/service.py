@@ -15,16 +15,10 @@
 
 from trove.openstack.common import log as logging
 
-from novaclient import exceptions as nova_exceptions
-
-from trove.common import exception
-
 from trove.common import wsgi
 from trove.common.auth import admin_context
-from trove.common.remote import create_nova_client
 from trove.extensions.account import models
 from trove.extensions.account import views
-from trove.instance.models import DBInstance
 from trove.openstack.common.gettextutils import _
 import trove.common.apischema as apischema
 
@@ -39,8 +33,8 @@ class AccountController(wsgi.Controller):
     def show(self, req, tenant_id, id):
         """Return a account and instances associated with a single account."""
         LOG.info(_("req : '%s'\n\n") % req)
-        LOG.info(_("Showing account information for '%s' to '%s'") %
-                 (id, tenant_id))
+        LOG.info(_("Showing account information for '%(account)s' "
+                   "to '%(tenant)s'") % {'account': id, 'tenant': tenant_id})
 
         context = req.environ[wsgi.CONTEXT_KEY]
         account = models.Account.load(context, id)

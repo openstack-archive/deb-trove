@@ -17,14 +17,16 @@ from trove.common import cfg
 
 CONF = cfg.CONF
 
+url_ref = {
+    "type": "string",
+    "minLength": 8,
+    "pattern": 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]'
+               '|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+}
+
 flavorref = {
     'oneOf': [
-        {
-            "type": "string",
-            "minLength": 8,
-            "pattern": 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]'
-                       '|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-        },
+        url_ref,
         {
             "type": "string",
             "maxLength": 5,
@@ -85,6 +87,12 @@ volume = {
     }
 }
 
+nics = {
+    "type": "array",
+    "items": {
+        "type": "object",
+    }
+}
 
 databases_ref_list = {
     "type": "array",
@@ -166,6 +174,12 @@ users_list = {
     }
 }
 
+configuration_id = {
+    'oneOf': [
+        uuid
+    ]
+}
+
 instance = {
     "create": {
         "type": "object",
@@ -179,11 +193,11 @@ instance = {
                 "additionalProperties": True,
                 "properties": {
                     "name": non_empty_string,
+                    "configuration_id": configuration_id,
                     "flavorRef": flavorref,
                     "volume": volume,
                     "databases": databases_def,
                     "users": users_list,
-                    "service_type": non_empty_string,
                     "restorePoint": {
                         "type": "object",
                         "required": ["backupRef"],
@@ -191,7 +205,17 @@ instance = {
                         "properties": {
                             "backupRef": uuid
                         }
-                    }
+                    },
+                    "availability_zone": non_empty_string,
+                    "datastore": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "properties": {
+                            "type": non_empty_string,
+                            "version": non_empty_string
+                        }
+                    },
+                    "nics": nics
                 }
             }
         }
@@ -330,7 +354,71 @@ backup = {
                 "properties": {
                     "description": non_empty_string,
                     "instance": uuid,
+                    "name": non_empty_string,
+                    "parent_id": uuid
+                }
+            }
+        }
+    }
+}
+
+configuration = {
+    "create": {
+        "name": "configuration:create",
+        "type": "object",
+        "required": ["configuration"],
+        "properties": {
+            "configuration": {
+                "type": "object",
+                "required": ["values", "name"],
+                "properties": {
+                    "description": non_empty_string,
+                    "values": {
+                        "type": "object",
+                    },
+                    "name": non_empty_string,
+                    "datastore": {
+                        "type": "object",
+                        "additionalProperties": True,
+                        "properties": {
+                            "type": non_empty_string,
+                            "version": non_empty_string
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "update": {
+        "name": "configuration:update",
+        "type": "object",
+        "required": ["configuration"],
+        "properties": {
+            "configuration": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "description": non_empty_string,
+                    "values": {
+                        "type": "object",
+                    },
                     "name": non_empty_string
+                }
+            }
+        }
+    },
+    "edit": {
+        "name": "configuration:edit",
+        "type": "object",
+        "required": ["configuration"],
+        "properties": {
+            "configuration": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "values": {
+                        "type": "object",
+                    }
                 }
             }
         }

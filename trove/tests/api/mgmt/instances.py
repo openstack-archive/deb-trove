@@ -12,17 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis import before_class
 from proboscis import test
 from proboscis.asserts import assert_equal
 from proboscis.asserts import assert_raises
-from proboscis.asserts import assert_true
 from proboscis.check import Check
 from proboscis import SkipTest
 
-from trove import tests
 from trove.tests.config import CONFIG
 from trove.tests.util import create_client
 from trove.tests.util import create_dbaas_client
@@ -34,14 +32,14 @@ from trove.tests.api.instances import CreateInstance
 from trove.tests.api.instances import instance_info
 from trove.tests.api.instances import GROUP_START
 from trove.tests.api.instances import GROUP_TEST
-from trove.tests.util import poll_until
+from trove.common.utils import poll_until
 
 GROUP = "dbaas.api.mgmt.instances"
 
 
 @test(groups=[GROUP])
 def mgmt_index_requires_admin_account():
-    """ Verify that an admin context is required to call this function. """
+    """Verify that an admin context is required to call this function. """
     client = create_client(is_admin=False)
     assert_raises(exceptions.Unauthorized, client.management.index)
 
@@ -51,6 +49,12 @@ def flavor_check(flavor):
     with CollectionCheck("flavor", flavor) as check:
         check.has_element("id", basestring)
         check.has_element("links", list)
+
+
+def datastore_check(datastore):
+    with CollectionCheck("datastore", datastore) as check:
+        check.has_element("type", basestring)
+        check.has_element("version", basestring)
 
 
 def guest_status_check(guest_status):
@@ -63,11 +67,12 @@ def volume_check(volume):
         check.has_element("id", basestring)
         check.has_element("size", int)
         check.has_element("used", float)
+        check.has_element("total", float)
 
 
 @test(depends_on_groups=[GROUP_START], groups=[GROUP, GROUP_TEST])
 def mgmt_instance_get():
-    """ Tests the mgmt instances index method. """
+    """Tests the mgmt instances index method. """
     reqs = Requirements(is_admin=True)
     user = CONFIG.users.find_user(reqs)
     client = create_dbaas_client(user)
@@ -87,6 +92,7 @@ def mgmt_instance_get():
         # lets avoid creating more ordering work.
         instance.has_field('deleted_at', (basestring, None))
         instance.has_field('flavor', dict, flavor_check)
+        instance.has_field('datastore', dict, datastore_check)
         instance.has_field('guest_status', dict, guest_status_check)
         instance.has_field('id', basestring)
         instance.has_field('links', list)
@@ -103,11 +109,11 @@ def mgmt_instance_get():
         #TODO(tim-simpson): Validate additional fields, assert
         # no extra fields exist.
     if api_instance.server is not None:
-        print "the real content of server: %s" % dir(api_instance.server)
-        print "the type of server: %s" % type(api_instance.server)
-        print "the real content of api_instance: %s" % dir(api_instance)
-        print "the type of api_instance: %s" % type(api_instance)
-        print hasattr(api_instance, "server")
+        print("the real content of server: %s" % dir(api_instance.server))
+        print("the type of server: %s" % type(api_instance.server))
+        print("the real content of api_instance: %s" % dir(api_instance))
+        print("the type of api_instance: %s" % type(api_instance))
+        print(hasattr(api_instance, "server"))
 
         with CollectionCheck("server", api_instance.server) as server:
             server.has_element("addresses", dict)
@@ -175,6 +181,7 @@ class WhenMgmtInstanceGetIsCalledButServerIsNotReady(object):
             # lets avoid creating more ordering work.
             instance.has_field('deleted_at', (basestring, None))
             instance.has_field('flavor', dict, flavor_check)
+            instance.has_field('datastore', dict, datastore_check)
             instance.has_field('guest_status', dict, guest_status_check)
             instance.has_field('id', basestring)
             instance.has_field('links', list)
@@ -192,7 +199,7 @@ class WhenMgmtInstanceGetIsCalledButServerIsNotReady(object):
 
 @test(depends_on_classes=[CreateInstance], groups=[GROUP])
 class MgmtInstancesIndex(object):
-    """ Tests the mgmt instances index method. """
+    """Tests the mgmt instances index method. """
 
     @before_class
     def setUp(self):
@@ -211,6 +218,7 @@ class MgmtInstancesIndex(object):
             'deleted',
             'deleted_at',
             'flavor',
+            'datastore',
             'id',
             'links',
             'name',

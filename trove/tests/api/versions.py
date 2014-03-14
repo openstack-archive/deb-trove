@@ -17,7 +17,7 @@ from proboscis import test
 from proboscis.asserts import assert_equal
 from proboscis import SkipTest
 
-from troveclient.exceptions import ClientException
+from troveclient.compat.exceptions import ClientException
 from trove import tests
 from trove.tests.util import test_config
 from trove.tests.util import create_dbaas_client
@@ -62,28 +62,28 @@ class Versions(object):
 
     @test
     def test_no_slash_no_version(self):
-        body = self._request('')
+        self._request('')
 
     @test
     def test_no_slash_with_version(self):
         if test_config.auth_strategy == "fake":
             raise SkipTest("Skipping this test since auth is faked.")
-        body = self._request('/v1.0', response='401')
+        self._request('/v1.0', response='401')
 
     @test
     def test_with_slash_no_version(self):
-        body = self._request('/')
+        self._request('/')
 
     @test
     def test_with_slash_with_version(self):
         if test_config.auth_strategy == "fake":
             raise SkipTest("Skipping this test since auth is faked.")
-        body = self._request('/v1.0/', response='401')
+        self._request('/v1.0/', response='401')
 
     @test
     def test_request_no_version(self):
-        body = self._request('/dbaas/instances', response='404')
+        self._request('/dbaas/instances', response='404')
 
     @test
     def test_request_bogus_version(self):
-        body = self._request('/0.0/', response='404')
+        self._request('/0.0/', response='404')

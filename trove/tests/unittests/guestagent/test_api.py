@@ -28,9 +28,28 @@ from trove.guestagent import api
 import trove.openstack.common.rpc as rpc
 
 
+def _mock_call_pwd_change(cmd, users=None):
+    if users == 'dummy':
+        return True
+    else:
+        raise BaseException("Test Failed")
+
+
+def _mock_call(cmd, timerout, username=None, hostname=None,
+               database=None, databases=None):
+    #To check get_user, list_access, grant_access, revoke_access in cmd.
+    if cmd in ('get_user', 'list_access', 'grant_access', 'revoke_access'):
+        return True
+    else:
+        raise BaseException("Test Failed")
+
+
 class ApiTest(testtools.TestCase):
     def setUp(self):
         super(ApiTest, self).setUp()
+        self.guest = api.API('mock_content', 0)
+        self.guest._cast = _mock_call_pwd_change
+        self.guest._call = _mock_call
         self.FAKE_ID = 'instance-id-x23d2d'
         self.api = api.API(mock(), self.FAKE_ID)
         when(rpc).call(any(), any(), any(), any(int)).thenRaise(
@@ -45,6 +64,22 @@ class ApiTest(testtools.TestCase):
     def test_delete_queue(self):
         self.skipTest("find out if this delete_queue function is needed "
                       "anymore, Bug#1097482")
+
+    def test_change_passwords(self):
+        self.assertIsNone(self.guest.change_passwords("dummy"))
+
+    def test_get_user(self):
+        self.assertTrue(self.guest.get_user("dummyname", "dummyhost"))
+
+    def test_list_access(self):
+        self.assertTrue(self.guest.list_access("dummyname", "dummyhost"))
+
+    def test_grant_access(self):
+        self.assertTrue(self.guest.grant_access("dumname", "dumhost", "dumdb"))
+
+    def test_revoke_access(self):
+        self.assertTrue(self.guest.revoke_access("dumname", "dumhost",
+                                                 "dumdb"))
 
     def test_get_routing_key(self):
         self.assertEqual('guestagent.' + self.FAKE_ID,
@@ -202,9 +237,21 @@ class ApiTest(testtools.TestCase):
         self._verify_rpc_call(exp_msg)
 
     def test_create_backup(self):
-        exp_msg = RpcMsgMatcher('create_backup', 'backup_id')
+        exp_msg = RpcMsgMatcher('create_backup', 'backup_info')
         self._mock_rpc_cast(exp_msg)
-        self.api.create_backup('123')
+        self.api.create_backup({'id': '123'})
+        self._verify_rpc_cast(exp_msg)
+
+    def test_update_overrides(self):
+        exp_msg = RpcMsgMatcher('update_overrides', 'overrides', 'remove')
+        self._mock_rpc_cast(exp_msg)
+        self.api.update_overrides('123')
+        self._verify_rpc_cast(exp_msg)
+
+    def test_apply_overrides(self):
+        exp_msg = RpcMsgMatcher('apply_overrides', 'overrides')
+        self._mock_rpc_cast(exp_msg)
+        self.api.apply_overrides('123')
         self._verify_rpc_cast(exp_msg)
 
     def _verify_rpc_connection_and_cast(self, rpc, mock_conn, exp_msg):
@@ -217,14 +264,16 @@ class ApiTest(testtools.TestCase):
         mock_conn = mock()
         when(rpc).create_connection(new=True).thenReturn(mock_conn)
         when(mock_conn).create_consumer(any(), any(), any()).thenReturn(None)
-        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'databases', 'users',
-                                'device_path', 'mount_point', 'backup_id',
-                                'config_contents')
-
+        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'packages',
+                                'databases', 'users', 'device_path',
+                                'mount_point', 'backup_info',
+                                'config_contents', 'root_password',
+                                'overrides')
         when(rpc).cast(any(), any(), exp_msg).thenReturn(None)
 
-        self.api.prepare('2048', 'db1', 'user1', '/dev/vdt', '/mnt/opt',
-                         'bkup-1232', 'cont')
+        self.api.prepare('2048', 'package1', 'db1', 'user1', '/dev/vdt',
+                         '/mnt/opt', 'bkup-1232', 'cont', '1-2-3-4',
+                         'override')
 
         self._verify_rpc_connection_and_cast(rpc, mock_conn, exp_msg)
 
@@ -232,14 +281,17 @@ class ApiTest(testtools.TestCase):
         mock_conn = mock()
         when(rpc).create_connection(new=True).thenReturn(mock_conn)
         when(mock_conn).create_consumer(any(), any(), any()).thenReturn(None)
-        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'databases', 'users',
-                                'device_path', 'mount_point', 'backup_id',
-                                'config_contents')
+        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'packages',
+                                'databases', 'users', 'device_path',
+                                'mount_point', 'backup_info',
+                                'config_contents', 'root_password',
+                                'overrides')
         when(rpc).cast(any(), any(), exp_msg).thenReturn(None)
+        bkup = {'id': 'backup_id_123'}
 
-        self.api.prepare('2048', 'db1', 'user1', '/dev/vdt', '/mnt/opt',
-                         'backup_id_123', 'cont')
-
+        self.api.prepare('2048', 'package1', 'db1', 'user1', '/dev/vdt',
+                         '/mnt/opt', bkup, 'cont', '1-2-3-4',
+                         'overrides')
         self._verify_rpc_connection_and_cast(rpc, mock_conn, exp_msg)
 
     def test_upgrade(self):
@@ -256,11 +308,13 @@ class ApiTest(testtools.TestCase):
     def test_rpc_cast_with_consumer_exception(self):
         mock_conn = mock()
         when(rpc).create_connection(new=True).thenRaise(IOError('host down'))
-        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'databases', 'users',
-                                'device_path', 'mount_point')
+        exp_msg = RpcMsgMatcher('prepare', 'memory_mb', 'packages',
+                                'databases', 'users', 'device_path',
+                                'mount_point')
 
         with testtools.ExpectedException(exception.GuestError, '.* host down'):
-            self.api.prepare('2048', 'db1', 'user1', '/dev/vdt', '/mnt/opt')
+            self.api.prepare('2048', 'package1', 'db1', 'user1', '/dev/vdt',
+                             '/mnt/opt')
 
         verify(rpc).create_connection(new=True)
         verifyZeroInteractions(mock_conn)
@@ -306,6 +360,7 @@ class RpcMsgMatcher(mockito.matchers.Matcher):
     def __init__(self, method, *args_dict):
         self.wanted_method = method
         self.wanted_dict = KeysEqual('version', 'method', 'args', 'namespace')
+        args_dict = args_dict or [{}]
         self.args_dict = KeysEqual(*args_dict)
 
     def matches(self, arg):

@@ -12,16 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import time
-import re
 from random import choice
 
-from troveclient import exceptions
+from troveclient.compat import exceptions
 
 from proboscis import after_class
 from proboscis import before_class
 from proboscis import test
-from proboscis.asserts import *
+from proboscis import asserts
 
 from trove import tests
 from trove.tests.api.instances import instance_info
@@ -54,39 +52,43 @@ class UserAccessBase(object):
                  "databases": []} for name in usernames]
 
     def _grant_access_singular(self, user, databases, expected_response=202):
-        """ Grant a single user access to the databases listed.
-            Potentially, expect an exception in the process."""
+        """Grant a single user access to the databases listed.
+            Potentially, expect an exception in the process.
+        """
         try:
             self.dbaas.users.grant(instance_info.id, user, databases)
-        except exceptions.BadRequest as br:
-            assert_equal(400, expected_response)
-        except exceptions.NotFound as nf:
-            assert_equal(404, expected_response)
-        except exceptions.ClientException as ce:
-            assert_equal(500, expected_response)
+        except exceptions.BadRequest:
+            asserts.assert_equal(400, expected_response)
+        except exceptions.NotFound:
+            asserts.assert_equal(404, expected_response)
+        except exceptions.ClientException:
+            asserts.assert_equal(500, expected_response)
         finally:
-            assert_equal(expected_response, self.dbaas.last_http_code)
+            asserts.assert_equal(expected_response, self.dbaas.last_http_code)
 
     def _grant_access_plural(self, users, databases, expected_response=202):
-        """ Grant each user in the list access to all the databases listed.
-            Potentially, expect an exception in the process."""
+        """Grant each user in the list access to all the databases listed.
+            Potentially, expect an exception in the process.
+        """
         for user in users:
             self._grant_access_singular(user, databases, expected_response)
 
     def _revoke_access_singular(self, user, database, expected_response=202):
-        """ Revoke from a user access to the given database .
-            Potentially, expect an exception in the process."""
+        """Revoke from a user access to the given database .
+            Potentially, expect an exception in the process.
+        """
         try:
             self.dbaas.users.revoke(instance_info.id, user, database)
-            assert_true(expected_response, self.dbaas.last_http_code)
-        except exceptions.BadRequest as nf:
-            assert_equal(400, self.dbaas.last_http_code)
-        except exceptions.NotFound as nf:
-            assert_equal(404, self.dbaas.last_http_code)
+            asserts.assert_true(expected_response, self.dbaas.last_http_code)
+        except exceptions.BadRequest:
+            asserts.assert_equal(400, self.dbaas.last_http_code)
+        except exceptions.NotFound:
+            asserts.assert_equal(404, self.dbaas.last_http_code)
 
     def _revoke_access_plural(self, users, databases, expected_response=202):
-        """ Revoke from each user access to each database.
-            Potentially, expect an exception in the process."""
+        """Revoke from each user access to each database.
+            Potentially, expect an exception in the process.
+        """
         for user in users:
             for database in databases:
                 self._revoke_access_singular(user,
@@ -94,21 +96,29 @@ class UserAccessBase(object):
                                              expected_response)
 
     def _test_access(self, users, databases, expected_response=200):
-        """ Verify that each user in the list has access to each database in
-            the list."""
+        """Verify that each user in the list has access to each database in
+            the list.
+        """
         for user in users:
             access = self.dbaas.users.list_access(instance_info.id, user)
-            assert_equal(expected_response, self.dbaas.last_http_code)
+            asserts.assert_equal(expected_response, self.dbaas.last_http_code)
             access = [db.name for db in access]
-            assert_equal(set(access), set(databases))
+            asserts.assert_equal(set(access), set(databases))
+
+    def _test_ignore_access(self, users, databases, expected_response=200):
+        databases = [d for d in databases if d not in ['lost+found',
+                                                       'mysql',
+                                                       'information_schema']]
+        self._test_access(users, databases, expected_response)
 
     def _reset_access(self):
         for user in self.users:
             for database in self.databases + self.ghostdbs:
                 try:
                     self.dbaas.users.revoke(instance_info.id, user, database)
-                    assert_true(self.dbaas.last_http_code in [202, 404])
-                except exceptions.NotFound as nf:
+                    asserts.assert_true(self.dbaas.last_http_code in [202, 404]
+                                        )
+                except exceptions.NotFound:
                     # This is all right here, since we're resetting.
                     pass
         self._test_access(self.users, [])
@@ -135,9 +145,9 @@ class TestUserAccessPasswordChange(UserAccessBase):
 
         conn = util.mysql_connection()
         if success:
-            conn.create(username, password, instance_info.get_address())
+            conn.create(instance_info.get_address(), username, password)
         else:
-            conn.assert_fails(username, password, instance_info.get_address())
+            conn.assert_fails(instance_info.get_address(), username, password)
 
     def _pick_a_user(self):
         users = self._user_list_from_names(self.users)
@@ -147,33 +157,31 @@ class TestUserAccessPasswordChange(UserAccessBase):
     def test_change_password_bogus_user(self):
         user = self._pick_a_user()
         user["name"] = "thisuserhasanamethatstoolong"
-        password = user["password"]
-        assert_raises(exceptions.BadRequest,
-                      self.dbaas.users.change_passwords,
-                      instance_info.id, [user])
-        assert_equal(400, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.BadRequest,
+                              self.dbaas.users.change_passwords,
+                              instance_info.id, [user])
+        asserts.assert_equal(400, self.dbaas.last_http_code)
 
     @test()
     def test_change_password_nonexistent_user(self):
         user = self._pick_a_user()
         user["name"] = "thisuserDNE"
-        password = user["password"]
-        assert_raises(exceptions.NotFound,
-                      self.dbaas.users.change_passwords,
-                      instance_info.id, [user])
-        assert_equal(404, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.NotFound,
+                              self.dbaas.users.change_passwords,
+                              instance_info.id, [user])
+        asserts.assert_equal(404, self.dbaas.last_http_code)
 
     @test()
     def test_create_user_and_dbs(self):
         users = self._user_list_from_names(self.users)
         # Default password for everyone is 'password'.
         self.dbaas.users.create(instance_info.id, users)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
 
         databases = [{"name": db}
                      for db in self.databases]
         self.dbaas.databases.create(instance_info.id, databases)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
 
     @test(depends_on=[test_create_user_and_dbs])
     def test_initial_connection(self):
@@ -218,7 +226,7 @@ class TestUserAccessPasswordChange(UserAccessBase):
     def tearDown(self):
         for database in self.databases:
             self.dbaas.databases.delete(instance_info.id, database)
-            assert_equal(202, self.dbaas.last_http_code)
+            asserts.assert_equal(202, self.dbaas.last_http_code)
         for username in self.users:
             self.dbaas.users.delete(instance_info.id, username)
 
@@ -245,22 +253,22 @@ class TestUserAccessPositive(UserAccessBase):
         databases = self.dbaas.databases.list(instance_info.id)
         database_names = [db.name for db in databases]
         for ghost in self.ghostdbs:
-            assert_true(ghost not in database_names)
+            asserts.assert_true(ghost not in database_names)
         users = self.dbaas.users.list(instance_info.id)
         user_names = [user.name for user in users]
         for ghost in self.ghostusers:
-            assert_true(ghost not in user_names)
+            asserts.assert_true(ghost not in user_names)
 
     @test()
     def test_create_user_and_dbs(self):
         users = self._user_list_from_names(self.users)
         self.dbaas.users.create(instance_info.id, users)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
 
         databases = [{"name": db}
                      for db in self.databases]
         self.dbaas.databases.create(instance_info.id, databases)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
 
     @test(depends_on=[test_create_user_and_dbs])
     def test_no_access(self):
@@ -274,6 +282,16 @@ class TestUserAccessPositive(UserAccessBase):
         self._reset_access()
         self._grant_access_plural(self.users, self.databases)
         self._test_access(self.users, self.databases)
+
+    @test(depends_on=[test_no_access])
+    def test_grant_full_access_ignore_databases(self):
+        # The users are granted access to all test databases.
+        all_dbs = []
+        all_dbs.extend(self.databases)
+        all_dbs.extend(['lost+found', 'mysql', 'information_schema'])
+        self._reset_access()
+        self._grant_access_plural(self.users, self.databases)
+        self._test_ignore_access(self.users, self.databases)
 
     @test(depends_on=[test_grant_full_access])
     def test_grant_idempotence(self):
@@ -345,7 +363,7 @@ class TestUserAccessPositive(UserAccessBase):
         self._reset_access()
         for database in self.databases:
             self.dbaas.databases.delete(instance_info.id, database)
-            assert_equal(202, self.dbaas.last_http_code)
+            asserts.assert_equal(202, self.dbaas.last_http_code)
         for username in self.users:
             self.dbaas.users.delete(instance_info.id, username)
 
@@ -369,28 +387,28 @@ class TestUserAccessNegative(UserAccessBase):
         user_list = self._user_list_from_names(users)
         try:
             self.dbaas.users.create(instance_info.id, user_list)
-            assert_equal(self.dbaas.last_http_code, 202)
-        except exceptions.BadRequest as br:
-            assert_equal(self.dbaas.last_http_code, 400)
-        assert_equal(expected_response, self.dbaas.last_http_code)
+            asserts.assert_equal(self.dbaas.last_http_code, 202)
+        except exceptions.BadRequest:
+            asserts.assert_equal(self.dbaas.last_http_code, 400)
+        asserts.assert_equal(expected_response, self.dbaas.last_http_code)
 
     @test()
     def test_create_duplicate_user_and_dbs(self):
-        '''
-        create the same user to the first DB - allowed, not part of change
-        '''
+        """
+        Create the same user to the first DB - allowed, not part of change
+        """
         users = self._user_list_from_names(self.users)
         self.dbaas.users.create(instance_info.id, users)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
         databases = [{"name": db} for db in self.databases]
         self.dbaas.databases.create(instance_info.id, databases)
-        assert_equal(202, self.dbaas.last_http_code)
+        asserts.assert_equal(202, self.dbaas.last_http_code)
 
     @test(depends_on=[test_create_duplicate_user_and_dbs])
     def test_neg_duplicate_useraccess(self):
-        '''
+        """
         Grant duplicate users access to all database.
-        '''
+        """
         username = "qe_user.neg2E"
         self._add_users([username])
         self._add_users([username], 400)
@@ -409,10 +427,10 @@ class TestUserAccessNegative(UserAccessBase):
         # drop the user temporarily
         self.dbaas.users.delete(instance_info.id, user_list[0])
         # check his access - user should not be found
-        assert_raises(exceptions.NotFound,
-                      self.dbaas.users.list_access,
-                      instance_info.id,
-                      user_list[0])
+        asserts.assert_raises(exceptions.NotFound,
+                              self.dbaas.users.list_access,
+                              instance_info.id,
+                              user_list[0])
         # re-create the user
         self._add_users(user_list)
         # check his access - should not exist
@@ -433,16 +451,16 @@ class TestUserAccessNegative(UserAccessBase):
         access = None
         try:
             access = self.dbaas.users.list_access(instance_info.id, username)
-            assert_equal(200, self.dbaas.last_http_code)
-        except exceptions.BadRequest as br:
-            assert_equal(400, self.dbaas.last_http_code)
-        except exceptions.NotFound as nf:
-            assert_equal(404, self.dbaas.last_http_code)
+            asserts.assert_equal(200, self.dbaas.last_http_code)
+        except exceptions.BadRequest:
+            asserts.assert_equal(400, self.dbaas.last_http_code)
+        except exceptions.NotFound:
+            asserts.assert_equal(404, self.dbaas.last_http_code)
         finally:
-            assert_equal(access_response, self.dbaas.last_http_code)
+            asserts.assert_equal(access_response, self.dbaas.last_http_code)
         if access is not None:
             access = [db.name for db in access]
-            assert_equal(set(access), set(self.databases))
+            asserts.assert_equal(set(access), set(self.databases))
 
         self._revoke_access_plural([username], databases, revoke_response)
 
@@ -464,23 +482,24 @@ class TestUserAccessNegative(UserAccessBase):
         # Try and fail to create the user.
         empty_user = {"name": "", "host": "%",
                       "password": "password", "databases": []}
-        assert_raises(exceptions.BadRequest,
-                      self.dbaas.users.create,
-                      instance_info.id,
-                      [empty_user])
-        assert_equal(400, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.BadRequest,
+                              self.dbaas.users.create,
+                              instance_info.id,
+                              [empty_user])
+        asserts.assert_equal(400, self.dbaas.last_http_code)
 
-        assert_raises(exceptions.BadRequest, self.dbaas.users.grant,
-                      instance_info.id, "", [], "%")
-        assert_equal(400, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.BadRequest, self.dbaas.users.grant,
+                              instance_info.id, "", [], "%")
+        asserts.assert_equal(400, self.dbaas.last_http_code)
 
-        assert_raises(exceptions.BadRequest, self.dbaas.users.list_access,
-                      instance_info.id, "", "%")
-        assert_equal(400, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.BadRequest,
+                              self.dbaas.users.list_access,
+                              instance_info.id, "", "%")
+        asserts.assert_equal(400, self.dbaas.last_http_code)
 
-        assert_raises(exceptions.BadRequest, self.dbaas.users.revoke,
-                      instance_info.id, "", "db", "%")
-        assert_equal(400, self.dbaas.last_http_code)
+        asserts.assert_raises(exceptions.BadRequest, self.dbaas.users.revoke,
+                              instance_info.id, "", "db", "%")
+        asserts.assert_equal(400, self.dbaas.last_http_code)
 
     @test
     def test_user_nametoolong(self):
@@ -499,6 +518,6 @@ class TestUserAccessNegative(UserAccessBase):
 
         for database in self.databases:
             self.dbaas.databases.delete(instance_info.id, database)
-            assert_equal(202, self.dbaas.last_http_code)
+            asserts.assert_equal(202, self.dbaas.last_http_code)
         for username in self.users:
             self.dbaas.users.delete(instance_info.id, username)

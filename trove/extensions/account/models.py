@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -20,7 +18,6 @@ from trove.openstack.common import log as logging
 from trove.common.remote import create_nova_client
 from trove.instance.models import DBInstance
 from trove.extensions.mgmt.instances.models import MgmtInstances
-from trove.common.exception import Forbidden
 
 LOG = logging.getLogger(__name__)
 
@@ -32,8 +29,7 @@ class Server(object):
         self.id = server['id']
         self.status = server['status']
         self.name = server['name']
-        self.host = server['hostId']
-        self.host = server.get('hostId') or server['host']
+        self.host = server.get('host') or server['hostId']
 
     @staticmethod
     def list_from_account_server_list(servers):

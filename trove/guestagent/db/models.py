@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -389,7 +387,7 @@ class MySQLUser(Base):
                 # A, A.B, A.B.C, and A.B.C.D are all valid technically.
                 return False
             try:
-                octets = [int(octet, 10) for octet in octets]
+                octets = [int(octet, 10) for octet in octets if octet != '%']
             except ValueError:
                 # If these weren't decimal, there's a problem.
                 return False

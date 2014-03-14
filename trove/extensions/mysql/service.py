@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -20,6 +18,7 @@ import webob.exc
 from trove.common import exception
 from trove.common import pagination
 from trove.common import wsgi
+from trove.common.utils import correct_id_with_req
 from trove.extensions.mysql.common import populate_validated_databases
 from trove.extensions.mysql.common import populate_users
 from trove.extensions.mysql.common import unquote_user_host
@@ -38,8 +37,9 @@ class RootController(wsgi.Controller):
     """Controller for instance functionality"""
 
     def index(self, req, tenant_id, instance_id):
-        """ Returns True if root is enabled for the given instance;
-                    False otherwise. """
+        """Returns True if root is enabled for the given instance;
+                    False otherwise.
+        """
         LOG.info(_("Getting root enabled for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
@@ -47,7 +47,7 @@ class RootController(wsgi.Controller):
         return wsgi.Result(views.RootEnabledView(is_root_enabled).data(), 200)
 
     def create(self, req, tenant_id, instance_id):
-        """ Enable the root user for the db instance """
+        """Enable the root user for the db instance """
         LOG.info(_("Enabling root for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
@@ -82,8 +82,8 @@ class UserController(wsgi.Controller):
     def create(self, req, body, tenant_id, instance_id):
         """Creates a set of users"""
         LOG.info(_("Creating users for instance '%s'") % instance_id)
-        LOG.info(_("req : '%s'\n\n") % req)
-        LOG.info(_("body : '%s'\n\n") % body)
+        LOG.info(logging.mask_password(_("req : '%s'\n\n") % req))
+        LOG.info(logging.mask_password(_("body : '%s'\n\n") % body))
         context = req.environ[wsgi.CONTEXT_KEY]
         users = body['users']
         try:
@@ -97,6 +97,7 @@ class UserController(wsgi.Controller):
         LOG.info(_("Deleting user for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
+        id = correct_id_with_req(id, req)
         username, host = unquote_user_host(id)
         user = None
         try:
@@ -119,6 +120,7 @@ class UserController(wsgi.Controller):
         LOG.info(_("Showing a user for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
+        id = correct_id_with_req(id, req)
         username, host = unquote_user_host(id)
         user = None
         try:
@@ -133,8 +135,9 @@ class UserController(wsgi.Controller):
     def update(self, req, body, tenant_id, instance_id, id):
         """Change attributes for one user."""
         LOG.info(_("Updating user attributes for instance '%s'") % instance_id)
-        LOG.info(_("req : '%s'\n\n") % req)
+        LOG.info(logging.mask_password(_("req : '%s'\n\n") % req))
         context = req.environ[wsgi.CONTEXT_KEY]
+        id = correct_id_with_req(id, req)
         username, hostname = unquote_user_host(id)
         user = None
         user_attrs = body['user']
@@ -144,14 +147,17 @@ class UserController(wsgi.Controller):
             raise exception.BadRequest(msg=str(e))
         if not user:
             raise exception.UserNotFound(uuid=id)
-        models.User.update_attributes(context, instance_id, username, hostname,
-                                      user_attrs)
+        try:
+            models.User.update_attributes(context, instance_id, username,
+                                          hostname, user_attrs)
+        except (ValueError, AttributeError) as e:
+            raise exception.BadRequest(msg=str(e))
         return wsgi.Result(None, 202)
 
     def update_all(self, req, body, tenant_id, instance_id):
         """Change the password of one or more users."""
         LOG.info(_("Updating user passwords for instance '%s'") % instance_id)
-        LOG.info(_("req : '%s'\n\n") % req)
+        LOG.info(logging.mask_password(_("req : '%s'\n\n") % req))
         context = req.environ[wsgi.CONTEXT_KEY]
         users = body['users']
         model_users = []
@@ -202,7 +208,11 @@ class UserAccessController(wsgi.Controller):
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
         # Make sure this user exists.
+        user_id = correct_id_with_req(user_id, req)
         user = self._get_user(context, instance_id, user_id)
+        if not user:
+            LOG.error(_("No such user: %(user)s ") % {'user': user})
+            raise exception.UserNotFound(uuid=user)
         username, hostname = unquote_user_host(user_id)
         access = models.User.access(context, instance_id, username, hostname)
         view = views.UserAccessView(access.databases)
@@ -213,7 +223,11 @@ class UserAccessController(wsgi.Controller):
         LOG.info(_("Granting user access for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
+        user_id = correct_id_with_req(user_id, req)
         user = self._get_user(context, instance_id, user_id)
+        if not user:
+            LOG.error(_("No such user: %(user)s ") % {'user': user})
+            raise exception.UserNotFound(uuid=user)
         username, hostname = unquote_user_host(user_id)
         databases = [db['name'] for db in body['databases']]
         models.User.grant(context, instance_id, username, hostname, databases)
@@ -224,7 +238,11 @@ class UserAccessController(wsgi.Controller):
         LOG.info(_("Revoking user access for instance '%s'") % instance_id)
         LOG.info(_("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
+        user_id = correct_id_with_req(user_id, req)
         user = self._get_user(context, instance_id, user_id)
+        if not user:
+            LOG.error(_("No such user: %(user)s ") % {'user': user})
+            raise exception.UserNotFound(uuid=user)
         username, hostname = unquote_user_host(user_id)
         access = models.User.access(context, instance_id, username, hostname)
         databases = [db.name for db in access.databases]

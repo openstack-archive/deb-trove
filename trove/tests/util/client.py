@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2011 OpenStack, LLC.
+# Copyright (c) 2011 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,9 +25,10 @@
 """
 
 
-from proboscis.asserts import *
+from proboscis import asserts
+
 from trove.tests.config import CONFIG
-from troveclient.xml import TroveXmlClient
+from troveclient.compat.xml import TroveXmlClient
 from trove.openstack.common import processutils
 
 
@@ -65,7 +64,7 @@ class TestClient(object):
 
     def assert_http_code(self, expected_http_code):
         resp, body = self.real_client.client.last_response
-        assert_equal(resp.status, expected_http_code)
+        asserts.assert_equal(resp.status, expected_http_code)
 
     @property
     def last_http_code(self):
@@ -75,9 +74,10 @@ class TestClient(object):
     @staticmethod
     def find_flavor_self_href(flavor):
         self_links = [link for link in flavor.links if link['rel'] == 'self']
-        assert_true(len(self_links) > 0, "Flavor had no self href!")
+        asserts.assert_true(len(self_links) > 0, "Flavor had no self href!")
         flavor_href = self_links[0]['href']
-        assert_false(flavor_href is None, "Flavor link self href missing.")
+        asserts.assert_false(flavor_href is None,
+                             "Flavor link self href missing.")
         return flavor_href
 
     def find_flavors_by(self, condition, flavor_manager=None):
@@ -96,25 +96,11 @@ class TestClient(object):
     def find_flavor_and_self_href(self, flavor_id, flavor_manager=None):
         """Given an ID, returns flavor and its self href."""
         flavor_manager = flavor_manager or self.flavors
-        assert_false(flavor_id is None)
+        asserts.assert_false(flavor_id is None)
         flavor = flavor_manager.get(flavor_id)
-        assert_false(flavor is None)
+        asserts.assert_false(flavor is None)
         flavor_href = self.find_flavor_self_href(flavor)
         return flavor, flavor_href
-
-    def find_image_and_self_href(self, image_id):
-        """Given an ID, returns tuple with image and its self href."""
-        assert_false(image_id is None)
-        image = self.images.get(image_id)
-        assert_true(image is not None)
-        self_links = [link['href'] for link in image.links
-                      if link['rel'] == 'self']
-        assert_true(len(self_links) > 0,
-                    "Found image with ID %s but it had no self link!" %
-                    str(image_id))
-        image_href = self_links[0]
-        assert_false(image_href is None, "Image link self href missing.")
-        return image, image_href
 
     def __getattr__(self, item):
         return getattr(self.real_client, item)
@@ -129,8 +115,8 @@ def call_xmllint(name, body):
         args = [CONFIG.xml_temp_file]
         if CONFIG.get('xml_xsd', None):
             args += ["--schema", CONFIG.xml_xsd]
-        output = processutils.execute(CONFIG.xmllint_bin, *args,
-                                      check_exit_code=0, shell=False)
+        processutils.execute(CONFIG.xmllint_bin, *args,
+                             check_exit_code=0, shell=False)
     except processutils.ProcessExecutionError as pe:
         fail("Error validating XML! %s" % pe)
 

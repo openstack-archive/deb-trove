@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -25,6 +23,7 @@ from trove.common import wsgi
 from trove.extensions.mysql.common import populate_validated_databases
 from trove.extensions.mysql.common import populate_users
 from trove.instance import models, views
+from trove.datastore import models as datastore_models
 from trove.backup.models import Backup as backup_model
 from trove.backup import views as backup_views
 from trove.openstack.common import log as logging
@@ -37,6 +36,7 @@ LOG = logging.getLogger(__name__)
 
 
 class InstanceController(wsgi.Controller):
+
     """Controller for instance functionality"""
     schemas = apischema.instance.copy()
     if not CONF.trove_volume_support:
@@ -144,9 +144,12 @@ class InstanceController(wsgi.Controller):
         LOG.info(_("req : '%s'\n\n") % req)
         LOG.info(_("Indexing backups for instance '%s'") %
                  id)
-
-        backups = backup_model.list_for_instance(id)
-        return wsgi.Result(backup_views.BackupViews(backups).data(), 200)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        backups, marker = backup_model.list_for_instance(context, id)
+        view = backup_views.BackupViews(backups)
+        paged = pagination.SimplePaginatedDataView(req.url, 'backups', view,
+                                                   marker)
+        return wsgi.Result(paged.data(), 200)
 
     def show(self, req, tenant_id, id):
         """Return a single instance."""
@@ -175,22 +178,25 @@ class InstanceController(wsgi.Controller):
     def create(self, req, body, tenant_id):
         # TODO(hub-cap): turn this into middleware
         LOG.info(_("Creating a database instance for tenant '%s'") % tenant_id)
-        LOG.info(_("req : '%s'\n\n") % req)
-        LOG.info(_("body : '%s'\n\n") % body)
+        LOG.info(logging.mask_password(_("req : '%s'\n\n") % req))
+        LOG.info(logging.mask_password(_("body : '%s'\n\n") % body))
         context = req.environ[wsgi.CONTEXT_KEY]
-        # Set the service type to mysql if its not in the request
-        service_type = (body['instance'].get('service_type') or
-                        CONF.service_type)
-        service = models.ServiceImage.find_by(service_name=service_type)
-        image_id = service['image_id']
+        datastore_args = body['instance'].get('datastore', {})
+        datastore, datastore_version = (
+            datastore_models.get_datastore_version(**datastore_args))
+        image_id = datastore_version.image_id
         name = body['instance']['name']
         flavor_ref = body['instance']['flavorRef']
         flavor_id = utils.get_id_from_href(flavor_ref)
+
+        configuration = self._configuration_parse(context, body)
         databases = populate_validated_databases(
             body['instance'].get('databases', []))
+        database_names = [database.get('_name', '') for database in databases]
         users = None
         try:
-            users = populate_users(body['instance'].get('users', []))
+            users = populate_users(body['instance'].get('users', []),
+                                   database_names)
         except ValueError as ve:
             raise exception.BadRequest(msg=ve)
 
@@ -205,10 +211,64 @@ class InstanceController(wsgi.Controller):
         else:
             backup_id = None
 
+        if 'availability_zone' in body['instance']:
+            availability_zone = body['instance']['availability_zone']
+        else:
+            availability_zone = None
+
+        if 'nics' in body['instance']:
+            nics = body['instance']['nics']
+        else:
+            nics = None
+
         instance = models.Instance.create(context, name, flavor_id,
                                           image_id, databases, users,
-                                          service_type, volume_size,
-                                          backup_id)
+                                          datastore, datastore_version,
+                                          volume_size, backup_id,
+                                          availability_zone, nics,
+                                          configuration)
 
         view = views.InstanceDetailView(instance, req=req)
         return wsgi.Result(view.data(), 200)
+
+    def _configuration_parse(self, context, body):
+        if 'configuration' in body['instance']:
+            configuration_ref = body['instance']['configuration']
+            if configuration_ref:
+                configuration_id = utils.get_id_from_href(configuration_ref)
+                return configuration_id
+
+    def update(self, req, id, body, tenant_id):
+        """Updates the instance to attach/detach configuration."""
+        LOG.info(_("Updating instance for tenant id %s") % tenant_id)
+        LOG.info(_("req: %s") % req)
+        LOG.info(_("body: %s") % body)
+        context = req.environ[wsgi.CONTEXT_KEY]
+
+        instance = models.Instance.load(context, id)
+
+        # if configuration is set, then we will update the instance to use
+        # the new configuration.  If configuration is empty, we want to
+        # disassociate the instance from the configuration group and remove the
+        # active overrides file.
+
+        configuration_id = self._configuration_parse(context, body)
+
+        if configuration_id:
+            instance.assign_configuration(configuration_id)
+        else:
+            instance.unassign_configuration()
+        return wsgi.Result(None, 202)
+
+    def configuration(self, req, tenant_id, id):
+        """
+        Returns the default configuration template applied to the instance.
+        """
+        LOG.debug("getting default configuration for the instance(%s)" % id)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        instance = models.Instance.load(context, id)
+        LOG.debug("server: %s" % instance)
+        config = instance.get_default_configration_template()
+        LOG.debug("default config for instance is: %s" % config)
+        return wsgi.Result(views.DefaultConfigurationView(
+                           config).data(), 200)

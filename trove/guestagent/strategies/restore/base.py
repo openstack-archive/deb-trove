@@ -18,11 +18,8 @@ from trove.common import cfg
 from trove.common import exception
 from trove.common import utils
 from trove.openstack.common import log as logging
+from trove.openstack.common.gettextutils import _  # noqa
 from eventlet.green import subprocess
-import tempfile
-import pexpect
-import os
-import glob
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -30,11 +27,6 @@ CHUNK_SIZE = CONF.backup_chunk_size
 BACKUP_USE_GZIP = CONF.backup_use_gzip_compression
 BACKUP_USE_OPENSSL = CONF.backup_use_openssl_encryption
 BACKUP_DECRYPT_KEY = CONF.backup_aes_cbc_key
-RESET_ROOT_RETRY_TIMEOUT = 100
-RESET_ROOT_SLEEP_INTERVAL = 10
-RESET_ROOT_MYSQL_COMMAND = """
-SET PASSWORD FOR 'root'@'localhost'=PASSWORD('');
-"""
 
 
 def exec_with_root_helper(*cmd):
@@ -46,39 +38,12 @@ def exec_with_root_helper(*cmd):
         return False
 
 
-def mysql_is_running():
-    if exec_with_root_helper("/usr/bin/mysqladmin", "ping"):
-        LOG.info("The mysqld daemon is up and running.")
-        return True
-    else:
-        LOG.info("The mysqld daemon is not running.")
-        return False
-
-
-def mysql_is_not_running():
-    if exec_with_root_helper("/usr/bin/pgrep", "mysqld"):
-        LOG.info("The mysqld daemon is still running.")
-        return False
-    else:
-        LOG.info("The mysqld daemon is not running.")
-        return True
-
-
-def poll_until_then_raise(event, exception):
-    try:
-        utils.poll_until(event,
-                         sleep_time=RESET_ROOT_SLEEP_INTERVAL,
-                         time_out=RESET_ROOT_RETRY_TIMEOUT)
-    except exception.PollTimeOut:
-        raise exception
-
-
 class RestoreError(Exception):
     """Error running the Backup Command."""
 
 
 class RestoreRunner(Strategy):
-    """ Base class for Restore Strategy implementations """
+    """Base class for Restore Strategy implementations """
     """Restore a database from a previous backup."""
 
     __strategy_type__ = 'restore_runner'
@@ -86,7 +51,6 @@ class RestoreRunner(Strategy):
 
     # The actual system calls to run the restore and prepare
     restore_cmd = None
-    prepare_cmd = None
 
     # The backup format type
     restore_type = None
@@ -96,105 +60,48 @@ class RestoreRunner(Strategy):
     is_encrypted = BACKUP_USE_OPENSSL
     decrypt_key = BACKUP_DECRYPT_KEY
 
-    def __init__(self, restore_stream, **kwargs):
-        self.restore_stream = restore_stream
+    def __init__(self, storage, **kwargs):
+        self.storage = storage
+        self.location = kwargs.pop('location')
+        self.checksum = kwargs.pop('checksum')
         self.restore_location = kwargs.get('restore_location',
                                            '/var/lib/mysql')
         self.restore_cmd = (self.decrypt_cmd +
                             self.unzip_cmd +
                             (self.base_restore_cmd % kwargs))
-        self.prepare_cmd = self.base_prepare_cmd % kwargs \
-            if hasattr(self, 'base_prepare_cmd') else None
         super(RestoreRunner, self).__init__()
 
-    def __enter__(self):
-        """Return the runner"""
-        return self
+    def pre_restore(self):
+        """Hook that is called before the restore command"""
+        pass
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Clean up everything."""
-        if exc_type is not None:
-            return False
-
-        if hasattr(self, 'process'):
-            try:
-                self.process.terminate()
-            except OSError:
-                # Already stopped
-                pass
-            utils.raise_if_process_errored(self.process, RestoreError)
-
-        return True
+    def post_restore(self):
+        """Hook that is called after the restore command"""
+        pass
 
     def restore(self):
-        self._pre_restore()
+        self.pre_restore()
         content_length = self._run_restore()
-        self._run_prepare()
-        self._post_restore()
+        self.post_restore()
         return content_length
 
     def _run_restore(self):
-        with self.restore_stream as stream:
-            self.process = subprocess.Popen(self.restore_cmd, shell=True,
-                                            stdin=subprocess.PIPE,
-                                            stderr=subprocess.PIPE)
-            self.pid = self.process.pid
-            content_length = 0
-            chunk = stream.read(CHUNK_SIZE)
-            while chunk:
-                self.process.stdin.write(chunk)
-                content_length += len(chunk)
-                chunk = stream.read(CHUNK_SIZE)
-            self.process.stdin.close()
-            LOG.info("Restored %s bytes from swift via xbstream."
-                     % content_length)
+        return self._unpack(self.location, self.checksum, self.restore_cmd)
+
+    def _unpack(self, location, checksum, command):
+        stream = self.storage.load(location, checksum)
+        process = subprocess.Popen(command, shell=True,
+                                   stdin=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        content_length = 0
+        for chunk in stream:
+            process.stdin.write(chunk)
+            content_length += len(chunk)
+        process.stdin.close()
+        utils.raise_if_process_errored(process, RestoreError)
+        LOG.info(_("Restored %s bytes from stream.") % content_length)
 
         return content_length
-
-    def _run_prepare(self):
-        if hasattr(self, 'prepare_cmd'):
-            LOG.info("Running innobackupex prepare...")
-            self.prep_retcode = utils.execute(self.prepare_cmd,
-                                              shell=True)
-            LOG.info("Innobackupex prepare finished successfully")
-
-    def _spawn_with_init_file(self, temp_file):
-        child = pexpect.spawn("sudo mysqld_safe --init-file=%s" %
-                              temp_file.name)
-        try:
-            i = child.expect(['Starting mysqld daemon'])
-            if i == 0:
-                LOG.info("Starting mysqld daemon")
-        except pexpect.TIMEOUT as e:
-            LOG.error("wait_and_close_proc failed: %s" % e)
-        finally:
-            # There is a race condition here where we kill mysqld before
-            # the init file been executed. We need to ensure mysqld is up.
-            poll_until_then_raise(mysql_is_running,
-                                  RestoreError("Reset root password failed: "
-                                               "mysqld did not start!"))
-            LOG.info("Root password reset successfully!")
-            LOG.info("Cleaning up the temp mysqld process...")
-            child.delayafterclose = 1
-            child.delayafterterminate = 1
-            child.close(force=True)
-            utils.execute_with_timeout("sudo", "killall", "mysqld")
-            poll_until_then_raise(mysql_is_not_running,
-                                  RestoreError("Reset root password failed: "
-                                               "mysqld did not stop!"))
-
-    def _reset_root_password(self):
-        #Create temp file with reset root password
-        with tempfile.NamedTemporaryFile() as fp:
-            fp.write(RESET_ROOT_MYSQL_COMMAND)
-            fp.flush()
-            utils.execute_with_timeout("sudo", "chmod", "a+r", fp.name)
-            self._spawn_with_init_file(fp)
-
-    def _delete_old_binlogs(self):
-        filelist = glob.glob(self.restore_location + "/ib_logfile*")
-        for f in filelist:
-            os.unlink(f)
 
     @property
     def decrypt_cmd(self):

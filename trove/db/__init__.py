@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2011 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -49,6 +47,10 @@ class Query(object):
 
     def count(self):
         return self.db_api.count(self._query_func, self._model,
+                                 **self._conditions)
+
+    def first(self):
+        return self.db_api.first(self._query_func, self._model,
                                  **self._conditions)
 
     def __iter__(self):
@@ -106,5 +108,5 @@ def add_options(parser):
         metavar="CONNECTION",
         default=None,
         help="A valid SQLAlchemy connection string for the "
-             "registry database. Default: %default")
+             "registry database. Default: %(default)s.")
     parser.add_option_group(group)

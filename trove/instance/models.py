@@ -1,7 +1,6 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2010-2011 OpenStack Foundation
-# All Rights Reserved.
+#    Copyright 2010-2011 OpenStack Foundation
+#    Copyright 2013-2014 Rackspace Hosting
+#    All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -17,17 +16,24 @@
 
 """Model classes that form the core of instances functionality."""
 
+import re
 from datetime import datetime
 from novaclient import exceptions as nova_exceptions
 from trove.common import cfg
 from trove.common import exception
+from trove.common import template
+from trove.common.configurations import do_configs_require_restart
+import trove.common.instance as tr_instance
 from trove.common.remote import create_dns_client
 from trove.common.remote import create_guest_client
 from trove.common.remote import create_nova_client
 from trove.common.remote import create_cinder_client
+from trove.common import utils
+from trove.configuration.models import Configuration
 from trove.extensions.security_group.models import SecurityGroup
-from trove.extensions.security_group.models import SecurityGroupRule
+from trove.db import get_db_api
 from trove.db import models as dbmodels
+from trove.datastore import models as datastore_models
 from trove.backup.models import Backup
 from trove.quota.quota import run_with_quotas
 from trove.instance.tasks import InstanceTask
@@ -39,6 +45,11 @@ from trove.openstack.common.gettextutils import _
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+
+
+def filter_ips(ips, regex):
+    """Filter out IPs not matching regex."""
+    return [ip for ip in ips if re.search(regex, ip)]
 
 
 def load_server(context, instance_id, server_id):
@@ -65,6 +76,7 @@ class InstanceStatus(object):
     BACKUP = "BACKUP"
     SHUTDOWN = "SHUTDOWN"
     ERROR = "ERROR"
+    RESTART_REQUIRED = "RESTART_REQUIRED"
 
 
 def validate_volume_size(size):
@@ -113,20 +125,43 @@ class SimpleInstance(object):
 
     """
 
-    def __init__(self, context, db_info, service_status):
+    def __init__(self, context, db_info, service_status, root_password=None,
+                 ds_version=None, ds=None):
         self.context = context
         self.db_info = db_info
         self.service_status = service_status
+        self.root_pass = root_password
+        if ds_version is None:
+            self.ds_version = (datastore_models.DatastoreVersion.
+                               load_by_uuid(self.db_info.datastore_version_id))
+        if ds is None:
+            self.ds = (datastore_models.Datastore.
+                       load(self.ds_version.datastore_id))
 
     @property
     def addresses(self):
-        #TODO(tim.simpson): Review whether we should keep this... its a mess.
+        #TODO(tim.simpson): This code attaches two parts of the Nova server to
+        #                   db_info: "status" and "addresses". The idea
+        #                   originally was to listen to events to update this
+        #                   data and store it in the Trove database.
+        #                   However, it may have been unwise as a year and a
+        #                   half later we still have to load the server anyway
+        #                   and this makes the code confusing.
         if hasattr(self.db_info, 'addresses'):
             return self.db_info.addresses
+        else:
+            return None
 
     @property
     def created(self):
         return self.db_info.created
+
+    @property
+    def dns_ip_address(self):
+        """Returns the IP address to be used with DNS."""
+        ips = self.get_visible_ip_addresses()
+        if ips:
+            return ips[0]
 
     @property
     def flavor_id(self):
@@ -136,6 +171,21 @@ class SimpleInstance(object):
     @property
     def hostname(self):
         return self.db_info.hostname
+
+    def get_visible_ip_addresses(self):
+        """Returns IPs that will be visible to the user."""
+        if self.addresses is None:
+            return None
+        IPs = []
+        for label in self.addresses:
+            if (re.search(CONF.network_label_regex, label) and
+                    len(self.addresses[label]) > 0):
+                IPs.extend([addr.get('addr')
+                            for addr in self.addresses[label]])
+        # Includes ip addresses that match the regexp pattern
+        if CONF.ip_regex:
+            IPs = filter_ips(IPs, CONF.ip_regex)
+        return IPs
 
     @property
     def id(self):
@@ -178,11 +228,18 @@ class SimpleInstance(object):
             return InstanceStatus.REBOOT
         if 'RESIZING' == ACTION:
             return InstanceStatus.RESIZE
+        if 'RESTART_REQUIRED' == ACTION:
+            return InstanceStatus.RESTART_REQUIRED
 
         ### Check for server status.
         if self.db_info.server_status in ["BUILD", "ERROR", "REBOOT",
                                           "RESIZE"]:
             return self.db_info.server_status
+
+        # As far as Trove is concerned, Nova instances in VERIFY_RESIZE should
+        # still appear as though they are in RESIZE.
+        if self.db_info.server_status in ["VERIFY_RESIZE"]:
+            return InstanceStatus.RESIZE
 
         ### Check if there is a backup running for this instance
         if Backup.running(self.id):
@@ -193,17 +250,18 @@ class SimpleInstance(object):
             if self.db_info.server_status in ["ACTIVE", "SHUTDOWN", "DELETED"]:
                 return InstanceStatus.SHUTDOWN
             else:
-                msg = _("While shutting down instance (%s): server had "
-                        "status (%s).")
-                LOG.error(msg % (self.id, self.db_info.server_status))
+                LOG.error(_("While shutting down instance (%(instance)s): "
+                            "server had status (%(status)s).") %
+                          {'instance': self.id,
+                           'status': self.db_info.server_status})
                 return InstanceStatus.ERROR
 
         ### Check against the service status.
         # The service is only paused during a reboot.
-        if ServiceStatuses.PAUSED == self.service_status.status:
+        if tr_instance.ServiceStatuses.PAUSED == self.service_status.status:
             return InstanceStatus.REBOOT
         # If the service status is NEW, then we are building.
-        if ServiceStatuses.NEW == self.service_status.status:
+        if tr_instance.ServiceStatuses.NEW == self.service_status.status:
             return InstanceStatus.BUILD
 
         # For everything else we can look at the service status mapping.
@@ -222,8 +280,22 @@ class SimpleInstance(object):
         return self.db_info.volume_size
 
     @property
-    def service_type(self):
-        return self.db_info.service_type
+    def datastore_version(self):
+        return self.ds_version
+
+    @property
+    def datastore(self):
+        return self.ds
+
+    @property
+    def root_password(self):
+        return self.root_pass
+
+    @property
+    def configuration(self):
+        if self.db_info.configuration_id is not None:
+            return Configuration.load(self.context,
+                                      self.db_info.configuration_id)
 
 
 class DetailInstance(SimpleInstance):
@@ -236,6 +308,7 @@ class DetailInstance(SimpleInstance):
     def __init__(self, context, db_info, service_status):
         super(DetailInstance, self).__init__(context, db_info, service_status)
         self._volume_used = None
+        self._volume_total = None
 
     @property
     def volume_used(self):
@@ -244,6 +317,14 @@ class DetailInstance(SimpleInstance):
     @volume_used.setter
     def volume_used(self, value):
         self._volume_used = value
+
+    @property
+    def volume_total(self):
+        return self._volume_total
+
+    @volume_total.setter
+    def volume_total(self, value):
+        self._volume_total = value
 
 
 def get_db_info(context, id):
@@ -289,7 +370,7 @@ def load_instance(cls, context, id, needs_server=False):
                                                 id)
 
     service_status = InstanceServiceStatus.find_by(instance_id=id)
-    LOG.info("service status=%s" % service_status)
+    LOG.info("service status=%s" % service_status.status)
     return cls(context, db_info, server, service_status)
 
 
@@ -297,7 +378,7 @@ def load_instance_with_guest(cls, context, id):
     db_info = get_db_info(context, id)
     load_simple_instance_server_status(context, db_info)
     service_status = InstanceServiceStatus.find_by(instance_id=id)
-    LOG.info("service status=%s" % service_status)
+    LOG.info("service status=%s" % service_status.status)
     instance = cls(context, db_info, service_status)
     load_guest_info(instance, context, id)
     return instance
@@ -309,6 +390,7 @@ def load_guest_info(instance, context, id):
         try:
             volume_info = guest.get_volume_info()
             instance.volume_used = volume_info['used']
+            instance.volume_total = volume_info['total']
         except Exception as e:
             LOG.error(e)
     return instance
@@ -335,7 +417,8 @@ class BaseInstance(SimpleInstance):
             LOG.debug(_("  ... deleting compute id = %s") %
                       self.db_info.compute_instance_id)
             LOG.debug(_(" ... setting status to DELETING."))
-            self.update_db(task_status=InstanceTasks.DELETING)
+            self.update_db(task_status=InstanceTasks.DELETING,
+                           configuration_id=None)
             task_api.API(self.context).delete_instance(self.id)
 
         deltas = {'instances': -1}
@@ -386,7 +469,7 @@ class BaseInstance(SimpleInstance):
 
     def set_servicestatus_deleted(self):
         del_instance = InstanceServiceStatus.find_by(instance_id=self.id)
-        del_instance.set_status(ServiceStatuses.DELETED)
+        del_instance.set_status(tr_instance.ServiceStatuses.DELETED)
         del_instance.save()
 
     @property
@@ -417,8 +500,9 @@ class Instance(BuiltInstance):
     """
 
     @classmethod
-    def create(cls, context, name, flavor_id, image_id,
-               databases, users, service_type, volume_size, backup_id):
+    def create(cls, context, name, flavor_id, image_id, databases, users,
+               datastore, datastore_version, volume_size, backup_id,
+               availability_zone=None, nics=None, configuration_id=None):
 
         client = create_nova_client(context)
         try:
@@ -437,30 +521,44 @@ class Instance(BuiltInstance):
             if ephemeral_support and flavor.ephemeral == 0:
                 raise exception.LocalStorageNotSpecified(flavor=flavor_id)
 
+        if backup_id is not None:
+            backup_info = Backup.get_by_id(context, backup_id)
+            if backup_info.is_running:
+                raise exception.BackupNotCompleteError(backup_id=backup_id)
+
+            if not backup_info.check_swift_object_exist(
+                    context,
+                    verify_checksum=CONF.verify_swift_checksum_on_restore):
+                raise exception.BackupFileNotFound(
+                    location=backup_info.location)
+
+        if not nics and CONF.default_neutron_networks:
+            nics = []
+            for net_id in CONF.default_neutron_networks:
+                nics.append({"net-id": net_id})
+
         def _create_resources():
-            security_groups = None
-
-            if backup_id is not None:
-                backup_info = Backup.get_by_id(context, backup_id)
-                if backup_info.is_running:
-                    raise exception.BackupNotCompleteError(backup_id=backup_id)
-
-                location = backup_info.location
-                LOG.info(_("Checking if backup exist in '%s'") % location)
-                if not Backup.check_object_exist(context, location):
-                    raise exception.BackupFileNotFound(location=location)
 
             db_info = DBInstance.create(name=name, flavor_id=flavor_id,
                                         tenant_id=context.tenant,
                                         volume_size=volume_size,
-                                        service_type=service_type,
-                                        task_status=InstanceTasks.BUILDING)
-            LOG.debug(_("Tenant %s created new Trove instance %s...")
-                      % (context.tenant, db_info.id))
+                                        datastore_version_id=
+                                        datastore_version.id,
+                                        task_status=InstanceTasks.BUILDING,
+                                        configuration_id=configuration_id)
+            LOG.debug(_("Tenant %(tenant)s created new "
+                        "Trove instance %(db)s...") %
+                      {'tenant': context.tenant, 'db': db_info.id})
 
+            # if a configuration group is associated with an instance,
+            # generate an overrides dict to pass into the instance creation
+            # method
+
+            overrides = Configuration.get_configuration_overrides(
+                context, configuration_id)
             service_status = InstanceServiceStatus.create(
                 instance_id=db_info.id,
-                status=ServiceStatuses.NEW)
+                status=tr_instance.ServiceStatuses.NEW)
 
             if CONF.trove_dns_support:
                 dns_client = create_dns_client(context)
@@ -468,31 +566,37 @@ class Instance(BuiltInstance):
                 db_info.hostname = hostname
                 db_info.save()
 
-            if CONF.trove_security_groups_support:
-                security_group = SecurityGroup.create_for_instance(
-                    db_info.id,
-                    context)
-                if CONF.trove_security_groups_rules_support:
-                    SecurityGroupRule.create_sec_group_rule(
-                        security_group,
-                        CONF.trove_security_group_rule_protocol,
-                        CONF.trove_security_group_rule_port,
-                        CONF.trove_security_group_rule_port,
-                        CONF.trove_security_group_rule_cidr,
-                        context
-                    )
-                security_groups = [security_group["name"]]
+            root_password = None
+            if CONF.root_on_create and not backup_id:
+                root_password = utils.generate_random_password()
 
             task_api.API(context).create_instance(db_info.id, name, flavor,
                                                   image_id, databases, users,
-                                                  service_type, volume_size,
-                                                  security_groups, backup_id)
+                                                  datastore_version.manager,
+                                                  datastore_version.packages,
+                                                  volume_size, backup_id,
+                                                  availability_zone,
+                                                  root_password,
+                                                  nics,
+                                                  overrides)
 
-            return SimpleInstance(context, db_info, service_status)
+            return SimpleInstance(context, db_info, service_status,
+                                  root_password)
 
         return run_with_quotas(context.tenant,
                                deltas,
                                _create_resources)
+
+    def get_flavor(self):
+        client = create_nova_client(self.context)
+        return client.flavors.get(self.flavor_id)
+
+    def get_default_configration_template(self):
+        flavor = self.get_flavor()
+        LOG.debug("flavor: %s" % flavor)
+        config = template.SingleInstanceConfigTemplate(
+            self.ds_version.manager, flavor, id)
+        return config.render_dict()
 
     def resize_flavor(self, new_flavor_id):
         self.validate_can_perform_action()
@@ -532,13 +636,13 @@ class Instance(BuiltInstance):
             self.validate_can_perform_action()
             LOG.info("Resizing volume of instance %s..." % self.id)
             if not self.volume_size:
-                raise exception.BadRequest("Instance %s has no volume."
+                raise exception.BadRequest(_("Instance %s has no volume.")
                                            % self.id)
             old_size = self.volume_size
             if int(new_size) <= old_size:
-                msg = ("The new volume 'size' must be larger than the current "
-                       "volume size of '%s'")
-                raise exception.BadRequest(msg % old_size)
+                raise exception.BadRequest(_("The new volume 'size' must be "
+                                             "larger than the current volume "
+                                             "size of '%s'") % old_size)
             # Set the task to Resizing before sending off to the taskmanager
             self.update_db(task_status=InstanceTasks.RESIZING)
             task_api.API(self.context).resize_volume(new_size, self.id)
@@ -581,20 +685,72 @@ class Instance(BuiltInstance):
         """
         Raises exception if an instance action cannot currently be performed.
         """
+        # cases where action cannot be performed
         if self.db_info.server_status != 'ACTIVE':
             status = self.db_info.server_status
-        elif self.db_info.task_status != InstanceTasks.NONE:
+        elif (self.db_info.task_status != InstanceTasks.NONE and
+              self.db_info.task_status != InstanceTasks.RESTART_REQUIRED):
             status = self.db_info.task_status
         elif not self.service_status.status.action_is_allowed:
             status = self.status
         elif Backup.running(self.id):
             status = InstanceStatus.BACKUP
         else:
+            # action can be performed
             return
+
         msg = ("Instance is not currently available for an action to be "
                "performed (status was %s)." % status)
         LOG.error(msg)
         raise exception.UnprocessableEntity(msg)
+
+    def unassign_configuration(self):
+        LOG.debug(_("Unassigning the configuration from the instance %s")
+                  % self.id)
+        LOG.debug(_("Unassigning the configuration id %s")
+                  % self.configuration.id)
+        if self.configuration and self.configuration.id:
+            flavor = self.get_flavor()
+            config_id = self.configuration.id
+            task_api.API(self.context).unassign_configuration(self.id,
+                                                              flavor,
+                                                              config_id)
+        else:
+            LOG.debug("no configuration found on instance skipping.")
+
+    def assign_configuration(self, configuration_id):
+        try:
+            configuration = Configuration.load(self.context, configuration_id)
+        except exception.ModelNotFoundError:
+            raise exception.NotFound(
+                message='Configuration group id: %s could not be found'
+                % configuration_id)
+
+        config_ds_v = configuration.datastore_version_id
+        inst_ds_v = self.db_info.datastore_version_id
+        if (config_ds_v != inst_ds_v):
+            raise exception.ConfigurationDatastoreNotMatchInstance(
+                config_datastore_version=config_ds_v,
+                instance_datastore_version=inst_ds_v)
+
+        overrides = Configuration.get_configuration_overrides(
+            self.context, configuration.id)
+
+        LOG.info(overrides)
+
+        self.update_overrides(overrides)
+        self.update_db(configuration_id=configuration.id)
+
+    def update_overrides(self, overrides):
+        LOG.debug(_("Updating or removing overrides for instance %s")
+                  % self.id)
+        need_restart = do_configs_require_restart(
+            overrides, datastore_manager=self.ds_version.manager)
+        LOG.debug(_("config overrides has non-dynamic settings, "
+                    "requires a restart: %s") % need_restart)
+        if need_restart:
+            self.update_db(task_status=InstanceTasks.RESTART_REQUIRED)
+        task_api.API(self.context).update_overrides(self.id, overrides)
 
 
 def create_server_list_matcher(server_list):
@@ -611,8 +767,9 @@ def create_server_list_matcher(server_list):
                 instance_id=instance_id, server_id=server_id)
         else:
             # Should never happen, but never say never.
-            LOG.error(_("Server %s for instance %s was found twice!") %
-                      (server_id, instance_id))
+            LOG.error(_("Server %(server)s for instance %(instance)s was"
+                        "found twice!") % {'server': server_id,
+                                           'instance': instance_id})
             raise exception.TroveError(uuid=instance_id)
 
     return find_server
@@ -690,7 +847,8 @@ class DBInstance(dbmodels.DatabaseModelBase):
 
     _data_fields = ['name', 'created', 'compute_instance_id',
                     'task_id', 'task_description', 'task_start_time',
-                    'volume_id', 'deleted', 'tenant_id', 'service_type']
+                    'volume_id', 'deleted', 'tenant_id',
+                    'datastore_version_id', 'configuration_id']
 
     def __init__(self, task_status, **kwargs):
         kwargs["task_id"] = task_status.code
@@ -715,14 +873,9 @@ class DBInstance(dbmodels.DatabaseModelBase):
     task_status = property(get_task_status, set_task_status)
 
 
-class ServiceImage(dbmodels.DatabaseModelBase):
-    """Defines the status of the service being run."""
-
-    _data_fields = ['service_name', 'image_id']
-
-
 class InstanceServiceStatus(dbmodels.DatabaseModelBase):
-    _data_fields = ['instance_id', 'status_id', 'status_description']
+    _data_fields = ['instance_id', 'status_id', 'status_description',
+                    'updated_at']
 
     def __init__(self, status, **kwargs):
         kwargs["status_id"] = status.code
@@ -733,15 +886,19 @@ class InstanceServiceStatus(dbmodels.DatabaseModelBase):
     def _validate(self, errors):
         if self.status is None:
             errors['status'] = "Cannot be none."
-        if ServiceStatus.from_code(self.status_id) is None:
+        if tr_instance.ServiceStatus.from_code(self.status_id) is None:
             errors['status_id'] = "Not valid."
 
     def get_status(self):
-        return ServiceStatus.from_code(self.status_id)
+        return tr_instance.ServiceStatus.from_code(self.status_id)
 
     def set_status(self, value):
         self.status_id = value.code
         self.status_description = value.description
+
+    def save(self):
+        self['updated_at'] = utils.utcnow()
+        return get_db_api().save(self)
 
     status = property(get_status, set_status)
 
@@ -749,94 +906,8 @@ class InstanceServiceStatus(dbmodels.DatabaseModelBase):
 def persisted_models():
     return {
         'instance': DBInstance,
-        'service_image': ServiceImage,
         'service_statuses': InstanceServiceStatus,
     }
 
 
-class ServiceStatus(object):
-    """Represents the status of the app and in some rare cases the agent.
-
-    Code and description are what is stored in the database. "api_status"
-    refers to the status which comes back from the REST API.
-    """
-    _lookup = {}
-
-    def __init__(self, code, description, api_status):
-        self._code = code
-        self._description = description
-        self._api_status = api_status
-        ServiceStatus._lookup[code] = self
-
-    @property
-    def action_is_allowed(self):
-        allowed_statuses = [
-            ServiceStatuses.RUNNING._code,
-            ServiceStatuses.SHUTDOWN._code,
-            ServiceStatuses.CRASHED._code,
-            ServiceStatuses.BLOCKED._code,
-        ]
-        return self._code in allowed_statuses
-
-    @property
-    def api_status(self):
-        return self._api_status
-
-    @property
-    def code(self):
-        return self._code
-
-    @property
-    def description(self):
-        return self._description
-
-    def __eq__(self, other):
-        if not isinstance(other, ServiceStatus):
-            return False
-        return self.code == other.code
-
-    @staticmethod
-    def from_code(code):
-        if code not in ServiceStatus._lookup:
-            msg = 'Status code %s is not a valid ServiceStatus integer code.'
-            raise ValueError(msg % code)
-        return ServiceStatus._lookup[code]
-
-    @staticmethod
-    def from_description(desc):
-        all_items = ServiceStatus._lookup.items()
-        status_codes = [code for (code, status) in all_items if status == desc]
-        if not status_codes:
-            msg = 'Status description %s is not a valid ServiceStatus.'
-            raise ValueError(msg % desc)
-        return ServiceStatus._lookup[status_codes[0]]
-
-    @staticmethod
-    def is_valid_code(code):
-        return code in ServiceStatus._lookup
-
-    def __str__(self):
-        return self._description
-
-    def __repr__(self):
-        return self._api_status
-
-
-class ServiceStatuses(object):
-    RUNNING = ServiceStatus(0x01, 'running', 'ACTIVE')
-    BLOCKED = ServiceStatus(0x02, 'blocked', 'BLOCKED')
-    PAUSED = ServiceStatus(0x03, 'paused', 'SHUTDOWN')
-    SHUTDOWN = ServiceStatus(0x04, 'shutdown', 'SHUTDOWN')
-    CRASHED = ServiceStatus(0x06, 'crashed', 'SHUTDOWN')
-    FAILED = ServiceStatus(0x08, 'failed to spawn', 'FAILED')
-    BUILDING = ServiceStatus(0x09, 'building', 'BUILD')
-    UNKNOWN = ServiceStatus(0x16, 'unknown', 'ERROR')
-    NEW = ServiceStatus(0x17, 'new', 'NEW')
-    DELETED = ServiceStatus(0x05, 'deleted', 'DELETED')
-
-
-MYSQL_RESPONSIVE_STATUSES = [ServiceStatuses.RUNNING]
-
-
-# Dissuade further additions at run-time.
-ServiceStatus.__init__ = None
+MYSQL_RESPONSIVE_STATUSES = [tr_instance.ServiceStatuses.RUNNING]

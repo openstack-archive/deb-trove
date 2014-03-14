@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2010-2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -19,8 +17,9 @@ from trove.openstack.common import log as logging
 import time
 import re
 
-from trove.tests.fakes.common import get_event_spawer
+import eventlet
 from trove.common import exception as rd_exception
+from trove.common import instance as rd_instance
 from trove.tests.util import unquote_user_host
 
 DB = {}
@@ -35,8 +34,8 @@ class FakeGuest(object):
         self.dbs = {}
         self.root_was_enabled = False
         self.version = 1
-        self.event_spawn = get_event_spawer()
         self.grants = {}
+        self.overrides = {}
 
         # Our default admin user.
         self._create_user({
@@ -207,34 +206,34 @@ class FakeGuest(object):
                 % (username, hostname))
         return self.users.get((username, hostname), None)
 
-    def prepare(self, memory_mb, databases, users, device_path=None,
-                mount_point=None, backup_id=None, config_contents=None):
+    def prepare(self, memory_mb, packages, databases, users, device_path=None,
+                mount_point=None, backup_info=None, config_contents=None,
+                root_password=None, overrides=None):
         from trove.instance.models import DBInstance
         from trove.instance.models import InstanceServiceStatus
-        from trove.instance.models import ServiceStatuses
         from trove.guestagent.models import AgentHeartBeat
         LOG.debug("users... %s" % users)
         LOG.debug("databases... %s" % databases)
         instance_name = DBInstance.find_by(id=self.id).name
         self.create_user(users)
         self.create_database(databases)
+        self.overrides = overrides or {}
 
         def update_db():
             status = InstanceServiceStatus.find_by(instance_id=self.id)
             if instance_name.endswith('GUEST_ERROR'):
-                status.status = ServiceStatuses.FAILED
+                status.status = rd_instance.ServiceStatuses.FAILED
             else:
-                status.status = ServiceStatuses.RUNNING
+                status.status = rd_instance.ServiceStatuses.RUNNING
             status.save()
             AgentHeartBeat.create(instance_id=self.id)
-        self.event_spawn(1.0, update_db)
+        eventlet.spawn_after(1.0, update_db)
 
     def _set_status(self, new_status='RUNNING'):
         from trove.instance.models import InstanceServiceStatus
-        from trove.instance.models import ServiceStatuses
         print("Setting status to %s" % new_status)
-        states = {'RUNNING': ServiceStatuses.RUNNING,
-                  'SHUTDOWN': ServiceStatuses.SHUTDOWN,
+        states = {'RUNNING': rd_instance.ServiceStatuses.RUNNING,
+                  'SHUTDOWN': rd_instance.ServiceStatuses.SHUTDOWN,
                   }
         status = InstanceServiceStatus.find_by(instance_id=self.id)
         status.status = states[new_status]
@@ -260,8 +259,8 @@ class FakeGuest(object):
         self._set_status('SHUTDOWN')
 
     def get_volume_info(self):
-        """Return used volume information in GB."""
-        return {'used': 0.16}
+        """Return used and total volume filesystem information in GB."""
+        return {'used': 0.16, 'total': 4.0}
 
     def grant_access(self, username, hostname, databases):
         """Add a database to a users's grant list."""
@@ -278,7 +277,6 @@ class FakeGuest(object):
         if (username, hostname) not in self.users:
             raise rd_exception.UserNotFound(
                 "User %s cannot be found on the instance." % username)
-        g = self.grants.get((username, hostname), set())
         if database not in self.grants.get((username, hostname), set()):
             raise rd_exception.DatabaseNotFound(
                 "Database %s cannot be found on the instance." % database)
@@ -298,14 +296,32 @@ class FakeGuest(object):
                 } for db in current_grants]
         return dbs
 
-    def create_backup(self, backup_id):
+    def create_backup(self, backup_info):
         from trove.backup.models import Backup, BackupState
-        backup = Backup.get_by_id(context=None, backup_id=backup_id)
+        backup = Backup.get_by_id(context=None,
+                                  backup_id=backup_info['id'])
 
         def finish_create_backup():
             backup.state = BackupState.COMPLETED
+            backup.location = 'http://localhost/path/to/backup'
+            backup.checksum = 'fake-md5-sum'
             backup.save()
-        self.event_spawn(1.0, finish_create_backup)
+        eventlet.spawn_after(1.0, finish_create_backup)
+
+    def mount_volume(self, device_path=None, mount_point=None):
+        pass
+
+    def unmount_volume(self, device_path=None, mount_point=None):
+        pass
+
+    def resize_fs(self, device_path=None, mount_point=None):
+        pass
+
+    def update_overrides(self, overrides, remove=False):
+        self.overrides = overrides
+
+    def apply_overrides(self, overrides):
+        self.overrides = overrides
 
 
 def get_or_create(id):

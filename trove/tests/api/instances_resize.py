@@ -24,13 +24,14 @@ from trove.common.exception import PollTimeOut
 from trove.common import template
 from trove.common import utils
 from trove.common.context import TroveContext
+from trove.common import instance as rd_instance
 from trove.guestagent import api as guest
 from trove.instance.models import DBInstance
-from trove.instance.models import ServiceStatuses
 from trove.instance.tasks import InstanceTasks
 from trove.openstack.common.rpc.common import RPCException
 from trove.taskmanager import models as models
 from trove.tests.fakes import nova
+from trove.tests.util import test_config
 
 GROUP = 'dbaas.api.instances.resize'
 
@@ -51,7 +52,7 @@ class ResizeTestBase(TestCase):
             flavor_id=OLD_FLAVOR_ID,
             tenant_id=999,
             volume_size=None,
-            service_type='mysql',
+            datastore_version_id=test_config.dbaas_datastore_version_id,
             task_status=InstanceTasks.RESIZING)
         self.server = self.mock.CreateMock(Server)
         self.instance = models.BuiltInstanceTasks(context,
@@ -73,7 +74,8 @@ class ResizeTestBase(TestCase):
         try:
             self.instance.update_db(task_status=InstanceTasks.NONE)
             self.mock.ReplayAll()
-            self.assertRaises(Exception, self.action.execute)
+            excs = (Exception)
+            self.assertRaises(excs, self.action.execute)
             self.mock.VerifyAll()
         finally:
             self.mock.UnsetStubs()
@@ -81,6 +83,7 @@ class ResizeTestBase(TestCase):
 
     def _stop_db(self, reboot=True):
         self.guest.stop_db(do_not_start_on_reboot=reboot)
+        self.instance.service_status = rd_instance.ServiceStatuses.SHUTDOWN
 
     def _server_changes_to(self, new_status, new_flavor_id):
         def change():
@@ -116,7 +119,7 @@ class ResizeTests(ResizeTestBase):
 
     def _start_mysql(self):
         config = template.SingleInstanceConfigTemplate(
-            "mysql", NEW_FLAVOR.__dict__)
+            "mysql", NEW_FLAVOR.__dict__, self.instance.id)
         self.instance.guest.start_db_with_conf_changes(config.render())
 
     def test_guest_wont_stop_mysql(self):
@@ -134,6 +137,7 @@ class ResizeTests(ResizeTestBase):
         self.server.resize(NEW_FLAVOR_ID)
 
         self.mock.StubOutWithMock(utils, 'poll_until')
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)\
             .AndRaise(PollTimeOut)
 
@@ -141,6 +145,7 @@ class ResizeTests(ResizeTestBase):
         self._stop_db()
         self.server.resize(NEW_FLAVOR_ID)
         self._server_changes_to("VERIFY_RESIZE", OLD_FLAVOR_ID)
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance.guest.reset_configuration(mox.IgnoreArg())
         self.instance.server.revert_resize()
         self._server_changes_to("ACTIVE", OLD_FLAVOR_ID)
@@ -160,8 +165,9 @@ class ResizeTests(ResizeTestBase):
     def test_guest_is_not_okay(self):
         self._stop_db()
         self._nova_resizes_successfully()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance._set_service_status_to_paused()
-        self.instance.service_status = ServiceStatuses.PAUSED
+        self.instance.service_status = rd_instance.ServiceStatuses.PAUSED
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)\
             .AndRaise(PollTimeOut)
         self.instance.guest.reset_configuration(mox.IgnoreArg())
@@ -172,10 +178,13 @@ class ResizeTests(ResizeTestBase):
     def test_mysql_is_not_okay(self):
         self._stop_db()
         self._nova_resizes_successfully()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance._set_service_status_to_paused()
-        self.instance.service_status = ServiceStatuses.SHUTDOWN
+        self.instance.service_status = rd_instance.ServiceStatuses.SHUTDOWN
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self._start_mysql()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2,
+                         time_out=120).AndRaise(PollTimeOut)
         self.instance.guest.reset_configuration(mox.IgnoreArg())
         self.instance.server.revert_resize()
         self._server_changes_to("ACTIVE", OLD_FLAVOR_ID)
@@ -184,18 +193,21 @@ class ResizeTests(ResizeTestBase):
     def test_confirm_resize_fails(self):
         self._stop_db()
         self._nova_resizes_successfully()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance._set_service_status_to_paused()
-        self.instance.service_status = ServiceStatuses.RUNNING
+        self.instance.service_status = rd_instance.ServiceStatuses.RUNNING
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self._start_mysql()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.server.status = "SHUTDOWN"
         self.instance.server.confirm_resize()
 
     def test_revert_nova_fails(self):
         self._stop_db()
         self._nova_resizes_successfully()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance._set_service_status_to_paused()
-        self.instance.service_status = ServiceStatuses.PAUSED
+        self.instance.service_status = rd_instance.ServiceStatuses.PAUSED
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)\
             .AndRaise(PollTimeOut)
         self.instance.guest.reset_configuration(mox.IgnoreArg())
@@ -230,8 +242,10 @@ class MigrateTests(ResizeTestBase):
         self._stop_db()
         self.server.migrate(force_host=None)
         self._server_changes_to("VERIFY_RESIZE", NEW_FLAVOR_ID)
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance._set_service_status_to_paused()
-        self.instance.service_status = ServiceStatuses.RUNNING
+        self.instance.service_status = rd_instance.ServiceStatuses.RUNNING
         utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self._start_mysql()
+        utils.poll_until(mox.IgnoreArg(), sleep_time=2, time_out=120)
         self.instance.server.confirm_resize()

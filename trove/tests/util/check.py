@@ -90,14 +90,10 @@ class Checker(object):
 
     def __exit__(self, _type, value, tb):
         self.protected = False
-        if len(self.messages) == 0:
-            final_message = None
-        else:
-            final_message = '\n'.join(self.messages)
-        if _type is not None:  # An error occurred
-            if len(self.messages) == 0:
-                raise _type(*value.args), None, tb
-            self._add_exception(_type, value, tb)
+        if _type is not None:
+            # An error occurred other than an assertion failure.
+            # Return False to allow the Exception to be raised
+            return False
         if len(self.messages) != 0:
             final_message = '\n'.join(self.messages)
             raise ASSERTION_ERROR(final_message)
@@ -201,6 +197,7 @@ class TypeCheck(Check):
             if not match:
                 self.fail("%s attribute %s is of type %s (expected one of "
                           "the following: %s)." % (self.name, attribute_name,
-                          type(value), attribute_type))
+                                                   type(value),
+                                                   attribute_type))
             if match and additional_checks:
                 additional_checks(value)
