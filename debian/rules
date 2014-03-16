@@ -29,8 +29,10 @@ override_dh_auto_build:
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func trove-api.config
 
 override_dh_sphinxdoc:
-	PYTHONPATH=. sphinx-build doc/source debian/trove-doc/usr/share/doc/trove-doc/html
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	PYTHONPATH=. sphinx-build -b html doc/source debian/trove-doc/usr/share/doc/trove-doc/html
 	dh_sphinxdoc -O--buildsystem=python_distutils
+endif
 
 override_dh_install:
 	dh_install
@@ -48,8 +50,8 @@ override_dh_install:
 	install -D -m 0664 $(CURDIR)/etc/trove/api-paste.ini $(CURDIR)/debian/trove-common/usr/share/trove-common/api-paste.ini
 
 
-ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 	#run_tests.py --test-config=etc/tests/xml.localhost.test.conf
 	#python setup.py testr --slowest --testr-args='--subunit  '
 	set -e && \
