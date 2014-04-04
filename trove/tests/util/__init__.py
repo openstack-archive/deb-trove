@@ -38,6 +38,7 @@ from sqlalchemy import create_engine
 
 from troveclient.compat import exceptions
 
+from proboscis.asserts import assert_true
 from proboscis.asserts import Check
 from proboscis.asserts import fail
 from proboscis import SkipTest
@@ -181,7 +182,6 @@ def dns_checker(mgmt_instance):
     Uses a helper class which, given a mgmt instance (returned by the mgmt
     API) can confirm that the DNS record provisioned correctly.
     """
-    skip_if_xml()  # The mgmt instance won't look the same, so skip this.
     if CONFIG.values.get('trove_dns_checker') is not None:
         checker = import_class(CONFIG.trove_dns_checker)
         checker()(mgmt_instance)
@@ -194,11 +194,6 @@ def process(cmd):
                                stderr=subprocess.PIPE)
     result = process.communicate()
     return result
-
-
-def skip_if_xml():
-    if "xml" in CONFIG.values.get('trove_client_cls', ''):
-        raise SkipTest("This feature does not work with XML.")
 
 
 def string_in_list(str, substr_list):
@@ -227,6 +222,14 @@ def iso_time(time_string):
     except ValueError:
         pass
     return '%sZ' % ts
+
+
+def assert_contains(exception_message, substrings):
+    for substring in substrings:
+        assert_true(substring in exception_message,
+                    message="'%s' not in '%s'"
+                    % (substring, exception_message))
+
 
 # TODO(dukhlov): Still required by trove integration
 # Should be removed after trove integration fix

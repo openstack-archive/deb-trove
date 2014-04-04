@@ -15,8 +15,11 @@
 from mock import Mock
 from testtools import TestCase
 from trove.common import cfg
+from trove.common.instance import ServiceStatuses
 from trove.instance.models import filter_ips
+from trove.instance.models import InstanceServiceStatus
 from trove.instance.models import DBInstance
+from trove.instance.models import Instance
 from trove.instance.models import SimpleInstance
 from trove.instance.tasks import InstanceTasks
 
@@ -28,7 +31,9 @@ class SimpleInstanceTest(TestCase):
     def setUp(self):
         super(SimpleInstanceTest, self).setUp()
         db_info = DBInstance(InstanceTasks.BUILDING, name="TestInstance")
-        self.instance = SimpleInstance(None, db_info, "BUILD",
+        self.instance = SimpleInstance(None, db_info,
+                                       InstanceServiceStatus(
+                                           ServiceStatuses.BUILDING),
                                        ds_version=Mock(), ds=Mock())
         db_info.addresses = {"private": [{"addr": "123.123.123.123"}],
                              "internal": [{"addr": "10.123.123.123"}],
@@ -41,6 +46,10 @@ class SimpleInstanceTest(TestCase):
         CONF.network_label_regex = self.orig_conf
         CONF.ip_start = None
         CONF.ip_regex = self.orig_ip_regex
+
+    def test_get_root_on_create(self):
+        root_on_create_val = Instance.get_root_on_create('redis')
+        self.assertFalse(root_on_create_val)
 
     def test_filter_ips(self):
         CONF.network_label_regex = '.*'

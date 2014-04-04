@@ -54,7 +54,7 @@ class TestInstanceController(TestCase):
         self.assertThat(len(errors), Is(len(msg)))
         i = 0
         while i < len(msg):
-            self.assertThat(errors[i].message, Equals(msg[i]))
+            self.assertIn(errors[i].message, msg)
             if path:
                 self.assertThat(path, Equals(properties[i]))
             else:
@@ -179,12 +179,6 @@ class TestInstanceController(TestCase):
 
     def test_validate_resize_instance_int(self):
         body = {"resize": {"flavorRef": 2}}
-        schema = self.controller.get_schema('action', body)
-        validator = jsonschema.Draft4Validator(schema)
-        self.assertTrue(validator.is_valid(body))
-
-    def test_validate_resize_instance_int_xml(self):
-        body = {"resize": {"flavorRef": "2"}}
         schema = self.controller.get_schema('action', body)
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))

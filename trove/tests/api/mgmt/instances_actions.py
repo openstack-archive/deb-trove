@@ -13,6 +13,7 @@
 #    under the License.
 
 import mox
+import trove.common.instance as tr_instance
 from trove.backup import models as backup_models
 from trove.common.context import TroveContext
 from trove.instance.tasks import InstanceTasks
@@ -50,6 +51,7 @@ class MgmtInstanceBase(object):
         self.context = TroveContext(is_admin=True)
         self.tenant_id = 999
         self.db_info = DBInstance.create(
+            id="inst-id-1",
             name="instance",
             flavor_id=1,
             datastore_version_id=test_config.dbaas_datastore_version_id,
@@ -57,10 +59,12 @@ class MgmtInstanceBase(object):
             volume_size=None,
             task_status=InstanceTasks.NONE)
         self.server = self.mock.CreateMock(Server)
-        self.instance = imodels.Instance(self.context,
-                                         self.db_info,
-                                         self.server,
-                                         service_status="ACTIVE")
+        self.instance = imodels.Instance(
+            self.context,
+            self.db_info,
+            self.server,
+            datastore_status=imodels.InstanceServiceStatus(
+                tr_instance.ServiceStatuses.RUNNING))
 
     def _make_request(self, path='/', context=None, **kwargs):
         from webob import Request
@@ -122,12 +126,6 @@ class RestartTaskStatusTests(MgmtInstanceBase):
     def mgmt_restart_task_returns_json(self):
         resp = self.reset_task_status()
         out = resp.data("application/json")
-        assert_equal(out, None)
-
-    @test
-    def mgmt_restart_task_returns_xml(self):
-        resp = self.reset_task_status()
-        out = resp.data("application/xml")
         assert_equal(out, None)
 
     @test

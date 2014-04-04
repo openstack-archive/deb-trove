@@ -22,7 +22,7 @@ Requirements
 
 - PC with freshly installed Ubuntu 12.04 to run Trove services. This will be referred to as "local PC"
 
-- Running Openstack Grizzly environment. All of Grizzly's services must be accessible directly from the local PC
+- Running OpenStack Grizzly environment. All of Grizzly's services must be accessible directly from the local PC
 
 - AMQP service provided by RabbitMQ
 
@@ -212,7 +212,7 @@ Prepare database
 ----------------
 * Initialize the database::
 
-    # trove-manage --config-file=<PathToTroveConf> db_wipe trove_test.sqlite mysql fake
+    # trove-manage --config-file=<PathToTroveConf> db_recreate trove_test.sqlite mysql fake
 
 * Setup trove to use the uploaded image. Enter the following in a single line, note quotes (') and backquotes(`)::
 
@@ -255,6 +255,6 @@ the following lines are added to trove.conf::
 where NETWORK_NAME should be replaced with real name of the nova network to which the instance is connected to.
 
 One possible way to find the nova network name is to execute the 'nova list' command. The output will list
-all Openstack instances for the tenant, including network information. Look for ::
+all OpenStack instances for the tenant, including network information. Look for ::
 
     NETWORK_NAME=IP_ADDRESS

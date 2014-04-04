@@ -19,6 +19,7 @@
 import re
 from datetime import datetime
 from novaclient import exceptions as nova_exceptions
+from oslo.config.cfg import NoSuchOptError
 from trove.common import cfg
 from trove.common import exception
 from trove.common import template
@@ -53,7 +54,17 @@ def filter_ips(ips, regex):
 
 
 def load_server(context, instance_id, server_id):
-    """Loads a server or raises an exception."""
+    """
+    Loads a server or raises an exception.
+    :param context: request context used to access nova
+    :param instance_id: the trove instance id corresponding to the nova server
+    (informational only)
+    :param server_id: the compute instance id which will be retrieved from nova
+    :type context: trove.common.context.TroveContext
+    :type instance_id: unicode
+    :type server_id: unicode
+    :rtype: novaclient.v1_1.servers.Server
+    """
     client = create_nova_client(context)
     try:
         server = client.servers.get(server_id)
@@ -119,17 +130,34 @@ AGENT_INVALID_STATUSES = ["BUILD", "REBOOT", "RESIZE"]
 
 class SimpleInstance(object):
     """A simple view of an instance.
-
     This gets loaded directly from the local database, so its cheaper than
-    creating the fully loaded Instance.
-
+    creating the fully loaded Instance.  As the name implies this class knows
+    nothing of the underlying Nova Compute Instance (i.e. server)
+    -----------
+    |         |
+    |    i    |
+    | t  n    |
+    | r  s  ---------------------
+    | o  t  |  datastore/guest  |
+    | v  a  ---------------------
+    | e  n    |
+    |    c    |
+    |    e    |
+    |         |
+    -----------
     """
 
-    def __init__(self, context, db_info, service_status, root_password=None,
+    def __init__(self, context, db_info, datastore_status, root_password=None,
                  ds_version=None, ds=None):
+        """
+        :type context: trove.common.context.TroveContext
+        :type db_info: trove.instance.models.DBInstance
+        :type datastore_status: trove.instance.models.InstanceServiceStatus
+        :type root_password: str
+        """
         self.context = context
         self.db_info = db_info
-        self.service_status = service_status
+        self.datastore_status = datastore_status
         self.root_pass = root_password
         if ds_version is None:
             self.ds_version = (datastore_models.DatastoreVersion.
@@ -200,9 +228,12 @@ class SimpleInstance(object):
         return self.status in [InstanceStatus.BUILD]
 
     @property
-    def is_sql_running(self):
-        """True if the service status indicates MySQL is up and running."""
-        return self.service_status.status in MYSQL_RESPONSIVE_STATUSES
+    def is_datastore_running(self):
+        """True if the service status indicates datastore is up and running."""
+        return self.datastore_status.status in MYSQL_RESPONSIVE_STATUSES
+
+    def datastore_status_matches(self, service_status):
+        return self.datastore_status.status == service_status
 
     @property
     def name(self):
@@ -213,22 +244,42 @@ class SimpleInstance(object):
         return self.db_info.compute_instance_id
 
     @property
+    def datastore_status(self):
+        """
+        Returns the Service Status for this instance.  For example, the status
+        of the mysql datastore which is running on the server...not the server
+        status itself.
+        :return: the current status of the datastore
+        :rtype: trove.instance.models.InstanceServiceStatus
+        """
+        return self.__datastore_status
+
+    @datastore_status.setter
+    def datastore_status(self, datastore_status):
+        if datastore_status and not isinstance(datastore_status,
+                                               InstanceServiceStatus):
+            raise ValueError("datastore_status must be of type "
+                             "InstanceServiceStatus. Got %s instead." %
+                             datastore_status.__class__.__name__)
+        self.__datastore_status = datastore_status
+
+    @property
     def status(self):
         ### Check for taskmanager errors.
         if self.db_info.task_status.is_error:
             return InstanceStatus.ERROR
 
         ### Check for taskmanager status.
-        ACTION = self.db_info.task_status.action
-        if 'BUILDING' == ACTION:
+        action = self.db_info.task_status.action
+        if 'BUILDING' == action:
             if 'ERROR' == self.db_info.server_status:
                 return InstanceStatus.ERROR
             return InstanceStatus.BUILD
-        if 'REBOOTING' == ACTION:
+        if 'REBOOTING' == action:
             return InstanceStatus.REBOOT
-        if 'RESIZING' == ACTION:
+        if 'RESIZING' == action:
             return InstanceStatus.RESIZE
-        if 'RESTART_REQUIRED' == ACTION:
+        if 'RESTART_REQUIRED' == action:
             return InstanceStatus.RESTART_REQUIRED
 
         ### Check for server status.
@@ -246,7 +297,7 @@ class SimpleInstance(object):
             return InstanceStatus.BACKUP
 
         ### Report as Shutdown while deleting, unless there's an error.
-        if 'DELETING' == ACTION:
+        if 'DELETING' == action:
             if self.db_info.server_status in ["ACTIVE", "SHUTDOWN", "DELETED"]:
                 return InstanceStatus.SHUTDOWN
             else:
@@ -258,14 +309,14 @@ class SimpleInstance(object):
 
         ### Check against the service status.
         # The service is only paused during a reboot.
-        if tr_instance.ServiceStatuses.PAUSED == self.service_status.status:
+        if tr_instance.ServiceStatuses.PAUSED == self.datastore_status.status:
             return InstanceStatus.REBOOT
         # If the service status is NEW, then we are building.
-        if tr_instance.ServiceStatuses.NEW == self.service_status.status:
+        if tr_instance.ServiceStatuses.NEW == self.datastore_status.status:
             return InstanceStatus.BUILD
 
         # For everything else we can look at the service status mapping.
-        return self.service_status.status.api_status
+        return self.datastore_status.status.api_status
 
     @property
     def updated(self):
@@ -305,8 +356,9 @@ class DetailInstance(SimpleInstance):
     instance from the guest.
     """
 
-    def __init__(self, context, db_info, service_status):
-        super(DetailInstance, self).__init__(context, db_info, service_status)
+    def __init__(self, context, db_info, datastore_status):
+        super(DetailInstance, self).__init__(context, db_info,
+                                             datastore_status)
         self._volume_used = None
         self._volume_total = None
 
@@ -328,6 +380,16 @@ class DetailInstance(SimpleInstance):
 
 
 def get_db_info(context, id):
+    """
+    Retrieves an instance of the managed datastore from the persisted
+    storage based on the ID and Context
+    :param context: the context which owns the instance
+    :type context: trove.common.context.TroveContext
+    :param id: the unique ID of the instance
+    :type id: unicode or str
+    :return: a record of the instance as its state exists in persisted storage
+    :rtype: trove.instance.models.DBInstance
+    """
     if context is None:
         raise TypeError("Argument context not defined.")
     elif id is None:
@@ -377,9 +439,9 @@ def load_instance(cls, context, id, needs_server=False):
 def load_instance_with_guest(cls, context, id):
     db_info = get_db_info(context, id)
     load_simple_instance_server_status(context, db_info)
-    service_status = InstanceServiceStatus.find_by(instance_id=id)
-    LOG.info("service status=%s" % service_status.status)
-    instance = cls(context, db_info, service_status)
+    datastore_status = InstanceServiceStatus.find_by(instance_id=id)
+    LOG.info("datastore status=%s" % datastore_status.status)
+    instance = cls(context, db_info, datastore_status)
     load_guest_info(instance, context, id)
     return instance
 
@@ -397,10 +459,40 @@ def load_guest_info(instance, context, id):
 
 
 class BaseInstance(SimpleInstance):
-    """Represents an instance."""
+    """Represents an instance.
+    -----------
+    |         |
+    |    i  ---------------------
+    | t  n  |  compute instance |
+    | r  s  ---------------------
+    | o  t    |
+    | v  a    |
+    | e  n  ---------------------
+    |    c  |  datastore/guest  |
+    |    e  ---------------------
+    |         |
+    -----------
+    """
 
-    def __init__(self, context, db_info, server, service_status):
-        super(BaseInstance, self).__init__(context, db_info, service_status)
+    def __init__(self, context, db_info, server, datastore_status):
+        """
+        Creates a new initialized representation of an instance composed of its
+        state in the database and its state from Nova
+
+        :param context: the request context which contains the tenant that owns
+        this instance
+        :param db_info: the current state of this instance as it exists in the
+        db
+        :param server: the current state of this instance as it exists in the
+        Nova
+        :param datastore_status: the current state of the datastore on this
+        instance at it exists in the db
+        :type context: trove.common.context.TroveContext
+        :type db_info: trove.instance.models.DBInstance
+        :type server: novaclient.v1_1.servers.Server
+        :typdatastore_statusus: trove.instance.models.InstanceServiceStatus
+        """
+        super(BaseInstance, self).__init__(context, db_info, datastore_status)
         self.server = server
         self._guest = None
         self._nova_client = None
@@ -478,6 +570,10 @@ class BaseInstance(SimpleInstance):
             self._volume_client = create_cinder_client(self.context)
         return self._volume_client
 
+    def reset_task_status(self):
+        LOG.info(_("Settting task status to NONE on instance %s...") % self.id)
+        self.update_db(task_status=InstanceTasks.NONE)
+
 
 class FreshInstance(BaseInstance):
     @classmethod
@@ -498,6 +594,17 @@ class Instance(BuiltInstance):
     pass them between threads.
 
     """
+
+    @classmethod
+    def get_root_on_create(cls, datastore_manager):
+        try:
+            root_on_create = CONF.get(datastore_manager).root_on_create
+            return root_on_create
+        except NoSuchOptError:
+            LOG.debug(_("root_on_create not configured for %s"
+                        " hence defaulting the value to False")
+                      % datastore_manager)
+            return False
 
     @classmethod
     def create(cls, context, name, flavor_id, image_id, databases, users,
@@ -532,6 +639,17 @@ class Instance(BuiltInstance):
                 raise exception.BackupFileNotFound(
                     location=backup_info.location)
 
+            backup_db_info = DBInstance.find_by(
+                context=context, id=backup_info.instance_id)
+            if (backup_db_info.datastore_version_id
+                    != datastore_version.id):
+                ds_version = (datastore_models.DatastoreVersion.
+                              load_by_uuid(backup_db_info.datastore_version_id)
+                              )
+                raise exception.BackupDatastoreVersionMismatchError(
+                    version1=ds_version.name,
+                    version2=datastore_version.name)
+
         if not nics and CONF.default_neutron_networks:
             nics = []
             for net_id in CONF.default_neutron_networks:
@@ -556,7 +674,7 @@ class Instance(BuiltInstance):
 
             overrides = Configuration.get_configuration_overrides(
                 context, configuration_id)
-            service_status = InstanceServiceStatus.create(
+            datastore_status = InstanceServiceStatus.create(
                 instance_id=db_info.id,
                 status=tr_instance.ServiceStatuses.NEW)
 
@@ -567,7 +685,8 @@ class Instance(BuiltInstance):
                 db_info.save()
 
             root_password = None
-            if CONF.root_on_create and not backup_id:
+            if cls.get_root_on_create(
+                    datastore_version.manager) and not backup_id:
                 root_password = utils.generate_random_password()
 
             task_api.API(context).create_instance(db_info.id, name, flavor,
@@ -580,7 +699,7 @@ class Instance(BuiltInstance):
                                                   nics,
                                                   overrides)
 
-            return SimpleInstance(context, db_info, service_status,
+            return SimpleInstance(context, db_info, datastore_status,
                                   root_password)
 
         return run_with_quotas(context.tenant,
@@ -677,10 +796,6 @@ class Instance(BuiltInstance):
         self.update_db(task_status=InstanceTasks.MIGRATING)
         task_api.API(self.context).migrate(self.id, host)
 
-    def reset_task_status(self):
-        LOG.info("Settting task status to NONE on instance %s..." % self.id)
-        self.update_db(task_status=InstanceTasks.NONE)
-
     def validate_can_perform_action(self):
         """
         Raises exception if an instance action cannot currently be performed.
@@ -691,7 +806,7 @@ class Instance(BuiltInstance):
         elif (self.db_info.task_status != InstanceTasks.NONE and
               self.db_info.task_status != InstanceTasks.RESTART_REQUIRED):
             status = self.db_info.task_status
-        elif not self.service_status.status.action_is_allowed:
+        elif not self.datastore_status.status.action_is_allowed:
             status = self.status
         elif Backup.running(self.id):
             status = InstanceStatus.BACKUP
@@ -825,18 +940,20 @@ class Instances(object):
                 #TODO(tim.simpson): End of hack.
 
                 #volumes = find_volumes(server.id)
-                status = InstanceServiceStatus.find_by(instance_id=db.id)
-                LOG.info(_("Server api_status(%s)") %
-                         status.status.api_status)
-                if not status.status:  # This should never happen.
+                datastore_status = InstanceServiceStatus.find_by(
+                    instance_id=db.id)
+                if not datastore_status.status:  # This should never happen.
                     LOG.error(_("Server status could not be read for "
                                 "instance id(%s)") % db.id)
                     continue
+                LOG.info(_("Server api_status(%s)") %
+                         datastore_status.status.api_status)
             except exception.ModelNotFoundError:
                 LOG.error(_("Server status could not be read for "
                             "instance id(%s)") % db.id)
                 continue
-            ret.append(load_instance(context, db, status, server=server))
+            ret.append(load_instance(context, db, datastore_status,
+                                     server=server))
         return ret
 
 
@@ -851,6 +968,13 @@ class DBInstance(dbmodels.DatabaseModelBase):
                     'datastore_version_id', 'configuration_id']
 
     def __init__(self, task_status, **kwargs):
+        """
+        Creates a new persistable entity of the Trove Guest Instance for
+        purposes recording its current state and record of modifications
+        :param task_status: the current state details of any activity or error
+         that is running on this guest instance (e.g. resizing, deleting)
+        :type task_status: trove.instance.tasks.InstanceTask
+        """
         kwargs["task_id"] = task_status.code
         kwargs["task_description"] = task_status.db_text
         kwargs["deleted"] = False
@@ -890,9 +1014,21 @@ class InstanceServiceStatus(dbmodels.DatabaseModelBase):
             errors['status_id'] = "Not valid."
 
     def get_status(self):
+        """
+        Returns the current enumerated status of the Service running on the
+        instance
+        :return: a ServiceStatus reference indicating the currently stored
+        status of the service
+        :rtype: trove.common.instance.ServiceStatus
+        """
         return tr_instance.ServiceStatus.from_code(self.status_id)
 
     def set_status(self, value):
+        """
+        Sets the status of the hosted service
+        :param value: current state of the hosted service
+        :type value: trove.common.instance.ServiceStatus
+        """
         self.status_id = value.code
         self.status_description = value.description
 
