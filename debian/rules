@@ -56,8 +56,7 @@ ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 	#python setup.py testr --slowest --testr-args='--subunit  '
 	set -e && \
 		TEMP_REZ=`mktemp -t` && \
-		python setup.py testr --slowest --testr-args='--subunit  ' \
-			| tee $$TEMP_REZ | subunit2pyunit && \
-		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats && \
+		python setup.py testr --slowest --testr-args='--subunit  ' | tee $$TEMP_REZ | subunit2pyunit || true ; \
+		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats || true ; \
 		rm -f $$TEMP_REZ || true
 endif
