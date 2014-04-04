@@ -1,4 +1,4 @@
-openstack-trove (2014.1~b3-1) experimental; urgency=medium
+openstack-trove (2014.1~rc1-1) experimental; urgency=medium
 
   * New upstream release.
   * Added initial German debconf translation (Closes: #739450).
@@ -6,6 +6,13 @@ openstack-trove (2014.1~b3-1) experimental; urgency=medium
     released under BSD-2-clauses (Closes: #735274).
 
  -- Thomas Goirand <zigo@debian.org>  Sun, 02 Mar 2014 17:20:02 +0800
+
+openstack-trove (2013.2-5) unstable; urgency=medium
+
+  * Rebuild with the new SQLAlchemy 0.9
+  * Fixed unit tests output.
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 16 Mar 2014 09:45:14 +0000
 
 openstack-trove (2013.2-4) unstable; urgency=medium
 
