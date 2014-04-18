@@ -1,3 +1,10 @@
+openstack-trove (2014.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Uploading to unstable.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 14:14:29 +0000
+
 openstack-trove (2014.1~rc1-1) experimental; urgency=medium
 
   * New upstream release.
