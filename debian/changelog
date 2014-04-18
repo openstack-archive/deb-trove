@@ -2,6 +2,7 @@ openstack-trove (2014.1-1) unstable; urgency=medium
 
   * New upstream release.
   * Uploading to unstable.
+  * Standards-Version: is now 3.9.5.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 14:14:29 +0000
 
