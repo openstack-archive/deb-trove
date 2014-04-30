@@ -1,6 +1,6 @@
-openstack-trove (2014.1~rc1-1) experimental; urgency=medium
+openstack-trove (2014.1-1) unstable; urgency=medium
 
-  * New upstream release.
+  * New upstream release (Closes: #746105).
   * Added initial German debconf translation (Closes: #739450).
   * Corrected debian/copyright for the doc/source/_static/nature.css which is
     released under BSD-2-clauses (Closes: #735274).
