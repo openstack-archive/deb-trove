@@ -11,7 +11,7 @@ if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	pkgos_write_new_conf trove trove.conf
 	pkgos_write_new_conf trove api-paste.ini
 	pkgos_dbc_postinst /etc/trove/trove.conf DEFAULT sql_connection trove $@
-	pkgos_write_admin_creds /etc/trove/api-paste.ini filter:tokenauth trove
+	pkgos_write_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
 	trove-manage db_sync
 	db_stop
 fi

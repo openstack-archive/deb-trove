@@ -1,19 +1,12 @@
 openstack-trove (2014.1-1) unstable; urgency=medium
 
-  * New upstream release.
-  * Uploading to unstable.
-  * Standards-Version: is now 3.9.5.
-
- -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 14:14:29 +0000
-
-openstack-trove (2014.1~rc1-1) experimental; urgency=medium
-
-  * New upstream release.
+  * New upstream release (Closes: #746105).
   * Added initial German debconf translation (Closes: #739450).
   * Corrected debian/copyright for the doc/source/_static/nature.css which is
     released under BSD-2-clauses (Closes: #735274).
+  * Standards-Version: is now 3.9.5.
 
- -- Thomas Goirand <zigo@debian.org>  Sun, 02 Mar 2014 17:20:02 +0800
+ -- Thomas Goirand <zigo@debian.org>  Fri, 18 Apr 2014 14:14:29 +0000
 
 openstack-trove (2013.2-5) unstable; urgency=medium
 
