@@ -36,7 +36,7 @@ class VolumeDevice(object):
         self.device_path = device_path
 
     def migrate_data(self, mysql_base):
-        """Synchronize the data from the mysql directory to the new volume """
+        """Synchronize the data from the mysql directory to the new volume."""
         self.mount(TMP_MOUNT_POINT, write_to_fstab=False)
         if not mysql_base[-1] == '/':
             mysql_base = "%s/" % mysql_base
@@ -57,7 +57,8 @@ class VolumeDevice(object):
             utils.execute('sudo', 'blockdev', '--getsize64', self.device_path,
                           attempts=num_tries)
         except ProcessExecutionError:
-            raise GuestError("InvalidDevicePath(path=%s)" % self.device_path)
+            raise GuestError(_("InvalidDevicePath(path=%s)") %
+                             self.device_path)
 
     def _check_format(self):
         """Checks that an unmounted volume is formatted."""
@@ -67,10 +68,12 @@ class VolumeDevice(object):
             if i == 0:
                 return
             volume_fstype = CONF.volume_fstype
-            raise IOError('Device path at %s did not seem to be %s.' %
-                          (self.device_path, volume_fstype))
+            raise IOError(
+                _('Device path at {0} did not seem to be {1}.').format(
+                    self.device_path, volume_fstype))
+
         except pexpect.EOF:
-            raise IOError("Volume was not formatted.")
+            raise IOError(_("Volume was not formatted."))
         child.expect(pexpect.EOF)
 
     def _format(self):
@@ -99,16 +102,18 @@ class VolumeDevice(object):
             mount_point.write_to_fstab()
 
     def resize_fs(self, mount_point):
-        """Resize the filesystem on the specified device"""
+        """Resize the filesystem on the specified device."""
         self._check_device_exists()
         try:
             # check if the device is mounted at mount_point before e2fsck
             if not os.path.ismount(mount_point):
-                utils.execute("sudo", "e2fsck", "-f", "-n", self.device_path)
-            utils.execute("sudo", "resize2fs", self.device_path)
+                utils.execute("e2fsck", "-f", "-p", self.device_path,
+                              run_as_root=True, root_helper="sudo")
+            utils.execute("resize2fs", self.device_path,
+                          run_as_root=True, root_helper="sudo")
         except ProcessExecutionError as err:
             LOG.error(err)
-            raise GuestError("Error resizing the filesystem: %s" %
+            raise GuestError(_("Error resizing the filesystem: %s") %
                              self.device_path)
 
     def unmount(self, mount_point):
@@ -116,6 +121,28 @@ class VolumeDevice(object):
             cmd = "sudo umount %s" % mount_point
             child = pexpect.spawn(cmd)
             child.expect(pexpect.EOF)
+
+    def unmount_device(self, device_path):
+        # unmount if device is already mounted
+        mount_points = self.mount_points(device_path)
+        for mnt in mount_points:
+            LOG.info(_("Device %(device)s is already mounted in "
+                       "%(mount_point)s") %
+                     {'device': device_path, 'mount_point': mnt})
+            LOG.info(_("Unmounting %s") % mnt)
+            self.unmount(mnt)
+
+    def mount_points(self, device_path):
+        """Returns a list of mount points on the specified device."""
+        try:
+            cmd = "grep %s /etc/mtab | awk '{print $2}'" % device_path
+            stdout, stderr = utils.execute(cmd, shell=True)
+            return stdout.strip().split('\n')
+
+        except ProcessExecutionError as err:
+            LOG.error(err)
+            raise GuestError(_("Could not obtain a list of mount points for "
+                               "device: %s") % device_path)
 
 
 class VolumeMountPoint(object):
@@ -129,10 +156,10 @@ class VolumeMountPoint(object):
     def mount(self):
         if not os.path.exists(self.mount_point):
             utils.execute("sudo", "mkdir", "-p", self.mount_point)
-        LOG.debug("Mounting volume. Device path:%s, mount_point:%s, "
-                  "volume_type:%s, mount options:%s" %
-                  (self.device_path, self.mount_point, self.volume_fstype,
-                   self.mount_options))
+        LOG.debug("Mounting volume. Device path:{0}, mount_point:{1}, "
+                  "volume_type:{2}, mount options:{3}".format(
+                      self.device_path, self.mount_point, self.volume_fstype,
+                      self.mount_options))
         cmd = ("sudo mount -t %s -o %s %s %s" %
                (self.volume_fstype, self.mount_options, self.device_path,
                 self.mount_point))
@@ -143,7 +170,7 @@ class VolumeMountPoint(object):
         fstab_line = ("%s\t%s\t%s\t%s\t0\t0" %
                       (self.device_path, self.mount_point, self.volume_fstype,
                        self.mount_options))
-        LOG.debug(_("Writing new line to fstab:%s") % fstab_line)
+        LOG.debug("Writing new line to fstab:%s" % fstab_line)
         with open('/etc/fstab', "r") as fstab:
             fstab_content = fstab.read()
         with NamedTemporaryFile(delete=False) as tempfstab:

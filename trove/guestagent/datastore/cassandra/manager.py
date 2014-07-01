@@ -37,14 +37,14 @@ class Manager(periodic_task.PeriodicTasks):
 
     @periodic_task.periodic_task(ticks_between_runs=3)
     def update_status(self, context):
-        """Update the status of the Cassandra service"""
+        """Update the status of the Cassandra service."""
         self.appStatus.update()
 
     def restart(self, context):
         self.app.restart()
 
     def get_filesystem_stats(self, context, fs_path):
-        """Gets the filesystem stats for the path given. """
+        """Gets the filesystem stats for the path given."""
         mount_point = CONF.get(
             'mysql' if not MANAGER else MANAGER).mount_point
         return dbaas.get_filesystem_volume_stats(mount_point)
@@ -72,13 +72,15 @@ class Manager(periodic_task.PeriodicTasks):
             self.app.make_host_reachable()
         if device_path:
             device = volume.VolumeDevice(device_path)
+            # unmount if device is already mounted
+            device.unmount_device(device_path)
             device.format()
             if os.path.exists(mount_point):
                 #rsync exiting data
                 device.migrate_data(mount_point)
             #mount the volume
             device.mount(mount_point)
-            LOG.debug(_("Mounting new volume."))
+            LOG.debug("Mounting new volume.")
             self.app.restart()
 
         self.appStatus.end_install_or_restart()
@@ -153,17 +155,17 @@ class Manager(periodic_task.PeriodicTasks):
     def mount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.mount(mount_point, write_to_fstab=False)
-        LOG.debug(_("Mounted the volume."))
+        LOG.debug("Mounted the volume.")
 
     def unmount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.unmount(mount_point)
-        LOG.debug(_("Unmounted the volume."))
+        LOG.debug("Unmounted the volume.")
 
     def resize_fs(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.resize_fs(mount_point)
-        LOG.debug(_("Resized the filesystem"))
+        LOG.debug("Resized the filesystem")
 
     def update_overrides(self, context, overrides, remove=False):
         raise exception.DatastoreOperationNotSupported(

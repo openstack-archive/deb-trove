@@ -14,8 +14,33 @@ bind_port = 8779
 # Number of child processes to run
 #trove_api_workers=5
 
-# AMQP Connection info
+# The RabbitMQ broker address where a single node is used.
+# (string value)
+#rabbit_host=localhost
+
+# The RabbitMQ broker port where a single node is used.
+# (integer value)
+#rabbit_port=5672
+
+# RabbitMQ HA cluster host:port pairs. (list value)
+#rabbit_hosts=$rabbit_host:$rabbit_port
+
+# Connect over SSL for RabbitMQ. (boolean value)
+#rabbit_use_ssl=false
+
+# The RabbitMQ userid. (string value)
+#rabbit_userid=guest
+
+# The RabbitMQ password. (string value)
 rabbit_password=f7999d1955c5014aa32c
+
+# The RabbitMQ virtual host. (string value)
+#rabbit_virtual_host=/
+
+# RabbitMQ topic used for OpenStack notifications. (list value)
+#rabbit_notification_topic = ['notifications']
+
+rpc_backend = trove.openstack.common.rpc.impl_kombu
 
 # SQLAlchemy connection string for the reference implementation
 # registry server. Any valid SQLAlchemy connection string is fine.
@@ -47,9 +72,24 @@ api_extensions_path = trove/extensions/routes
 
 # Configuration options for talking to nova via the novaclient.
 trove_auth_url = http://0.0.0.0:5000/v2.0
-nova_compute_url = http://localhost:8774/v2
-cinder_url = http://localhost:8776/v1
-swift_url = http://localhost:8080/v1/AUTH_
+#nova_compute_url = http://localhost:8774/v2
+#cinder_url = http://localhost:8776/v1
+#swift_url = http://localhost:8080/v1/AUTH_
+
+# nova_compute_url, cinder_url, swift_url, and heat_url can all be fetched
+# from Keystone. To fetch from Keystone, comment out nova_compute_url,
+# cinder_url, swift_url, and heat_url and optionally uncomment the lines below.
+
+# Region name of this node. Used when searching catalog. Default value is None.
+#os_region_name = RegionOne
+# Service type to use when searching catalog.
+#nova_compute_service_type = compute
+# Service type to use when searching catalog.
+#cinder_service_type = volumev2
+# Service type to use when searching catalog.
+#swift_service_type = object-store
+# Service type to use when searching catalog.
+#heat_service_type = orchestration
 
 # Config option for showing the IP address that nova doles out
 network_label_regex = ^private$
@@ -72,6 +112,7 @@ http_get_rate = 200
 http_post_rate = 200
 http_put_rate = 200
 http_delete_rate = 200
+http_mgmt_post_rate = 200
 
 # Trove DNS
 trove_dns_support = False
@@ -111,14 +152,6 @@ api_paste_config = api-paste.ini
 
 # ============ notifer queue kombu connection options ========================
 
-notifier_queue_hostname = localhost
-notifier_queue_userid = guest
-notifier_queue_password = guest
-notifier_queue_ssl = False
-notifier_queue_port = 5672
-notifier_queue_virtual_host = /
-notifier_queue_transport = memory
-
 control_exchange = trove
 
 # ============ Logging information =============================
@@ -140,22 +173,12 @@ control_exchange = trove
 #ca_file = /path/to/ca_file
 
 [mysql]
-
 root_on_create = False
-
-# ================= Security groups related ========================
-# Each future datastore implementation should implement
-# its own oslo group with defined in it:
-# - tcp_ports; upd_ports;
-
-[mysql]
 # Format (single port or port range): A, B-C
 # where C greater than B
 tcp_ports = 3306
 
 [redis]
-# Format (single port or port range): A, B-C
-# where C greater than B
 tcp_ports = 6379
 
 [cassandra]

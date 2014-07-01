@@ -13,11 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
+
 from trove.common import cfg
 from trove.common import exception
 from trove.guestagent import dbaas
 from trove.guestagent import volume
 from trove.guestagent.datastore.couchbase import service
+from trove.guestagent.datastore.couchbase import system
 from trove.openstack.common import log as logging
 from trove.openstack.common import periodic_task
 from trove.openstack.common.gettextutils import _
@@ -50,8 +53,7 @@ class Manager(periodic_task.PeriodicTasks):
             operation='change_passwords', datastore=MANAGER)
 
     def reset_configuration(self, context, configuration):
-        raise exception.DatastoreOperationNotSupported(
-            operation='reset_configuration', datastore=MANAGER)
+        self.app.reset_configuration(configuration)
 
     def prepare(self, context, packages, databases, memory_mb, users,
                 device_path=None, mount_point=None, backup_info=None,
@@ -62,13 +64,19 @@ class Manager(periodic_task.PeriodicTasks):
         prepare handles all the base configuration of the Couchbase instance.
         """
         self.appStatus.begin_install()
+        self.app.install_if_needed(packages)
         if device_path:
             device = volume.VolumeDevice(device_path)
+            # unmount if device is already mounted
+            device.unmount_device(device_path)
             device.format()
             device.mount(mount_point)
-            LOG.debug(_('Mounted the volume.'))
-        self.app.install_if_needed(packages)
+            LOG.debug('Mounted the volume.')
+        self.app.start_db_with_conf_changes(config_contents)
         LOG.info(_('Securing couchbase now.'))
+        if root_password:
+            self.app.enable_root(root_password)
+        self.app.initial_setup()
         self.app.complete_install_or_restart()
         LOG.info(_('"prepare" couchbase call has finished.'))
 
@@ -81,8 +89,7 @@ class Manager(periodic_task.PeriodicTasks):
         self.app.restart()
 
     def start_db_with_conf_changes(self, context, config_contents):
-        raise exception.DatastoreOperationNotSupported(
-            operation='start_db_with_conf_changes', datastore=MANAGER)
+        self.app.start_db_with_conf_changes(config_contents)
 
     def stop_db(self, context, do_not_start_on_reboot=False):
         """
@@ -93,7 +100,7 @@ class Manager(periodic_task.PeriodicTasks):
         self.app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
 
     def get_filesystem_stats(self, context, fs_path):
-        """Gets the filesystem stats for the path given. """
+        """Gets the filesystem stats for the path given."""
         mount_point = CONF.get(
             'mysql' if not MANAGER else MANAGER).mount_point
         return dbaas.get_filesystem_volume_stats(mount_point)
@@ -145,12 +152,10 @@ class Manager(periodic_task.PeriodicTasks):
             operation='list_users', datastore=MANAGER)
 
     def enable_root(self, context):
-        raise exception.DatastoreOperationNotSupported(
-            operation='enable_root', datastore=MANAGER)
+        return self.app.enable_root()
 
     def is_root_enabled(self, context):
-        raise exception.DatastoreOperationNotSupported(
-            operation='is_root_enabled', datastore=MANAGER)
+        return os.path.exists(system.pwd_file)
 
     def _perform_restore(self, backup_info, context, restore_location, app):
         raise exception.DatastoreOperationNotSupported(
@@ -163,17 +168,17 @@ class Manager(periodic_task.PeriodicTasks):
     def mount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.mount(mount_point, write_to_fstab=False)
-        LOG.debug(_("Mounted the volume."))
+        LOG.debug("Mounted the volume.")
 
     def unmount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.unmount(mount_point)
-        LOG.debug(_("Unmounted the volume."))
+        LOG.debug("Unmounted the volume.")
 
     def resize_fs(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.resize_fs(mount_point)
-        LOG.debug(_("Resized the filesystem."))
+        LOG.debug("Resized the filesystem.")
 
     def update_overrides(self, context, overrides, remove=False):
         raise exception.DatastoreOperationNotSupported(

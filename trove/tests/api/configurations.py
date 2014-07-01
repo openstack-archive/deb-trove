@@ -138,7 +138,7 @@ class CreateConfigurations(object):
 
     @test
     def test_expected_configurations_parameters(self):
-        """test get expected configurations parameters"""
+        """Test get expected configurations parameters."""
         expected_attrs = ["configuration-parameters"]
         instance_info.dbaas.configuration_parameters.parameters(
             instance_info.dbaas_datastore,
@@ -182,21 +182,21 @@ class CreateConfigurations(object):
 
     @test
     def test_configurations_create_invalid_values(self):
-        """test create configurations with invalid values"""
+        """Test create configurations with invalid values."""
         values = '{"this_is_invalid": 123}'
         assert_unprocessable(instance_info.dbaas.configurations.create,
                              CONFIG_NAME, values, CONFIG_DESC)
 
     @test
     def test_configurations_create_invalid_value_type(self):
-        """test create configuration with invalild value type"""
+        """Test create configuration with invalild value type."""
         values = '{"key_buffer_size": "this is a string not int"}'
         assert_unprocessable(instance_info.dbaas.configurations.create,
                              CONFIG_NAME, values, CONFIG_DESC)
 
     @test
     def test_configurations_create_value_out_of_bounds(self):
-        """test create configuration with value out of bounds"""
+        """Test create configuration with value out of bounds."""
         values = '{"connect_timeout": 1000000}'
         assert_unprocessable(instance_info.dbaas.configurations.create,
                              CONFIG_NAME, values, CONFIG_DESC)
@@ -259,7 +259,16 @@ class AfterConfigurationsCreation(object):
         assert_equal(resp.status, 202)
 
     @test(depends_on=[test_assign_configuration_to_valid_instance])
-    @time_out(10)
+    def test_assign_configuration_to_instance_with_config(self):
+        # test assigning a configuration to an instance that
+        # already has an assigned configuration
+        config_id = configuration_info.id
+        assert_raises(exceptions.BadRequest,
+                      instance_info.dbaas.instances.modify, instance_info.id,
+                      configuration=config_id)
+
+    @test(depends_on=[test_assign_configuration_to_valid_instance])
+    @time_out(30)
     def test_get_configuration_details_from_instance_validation(self):
         # validate that the configuraiton was applied correctly to the instance
         inst = instance_info.dbaas.instances.get(instance_info.id)
@@ -405,7 +414,7 @@ class ListConfigurations(object):
         poll_until(result_is_active)
 
     @test(depends_on=[test_restart_service_should_return_active])
-    @time_out(10)
+    @time_out(30)
     def test_get_configuration_details_from_instance_validation(self):
         # validate that the configuraiton was applied correctly to the instance
         inst = instance_info.dbaas.instances.get(instance_info.id)
@@ -475,7 +484,7 @@ class WaitForConfigurationInstanceToFinish(object):
         poll_until(result_is_active)
 
     @test(depends_on=[test_instance_with_configuration_active])
-    @time_out(10)
+    @time_out(30)
     def test_get_configuration_details_from_instance_validation(self):
         # validate that the configuraiton was applied correctly to the instance
         inst = instance_info.dbaas.instances.get(configuration_instance.id)
@@ -530,8 +539,18 @@ class DeleteConfigurations(object):
         poll_until(result_has_no_configuration)
         inst_info = configuration_instance
         poll_until(result_has_no_configuration)
+        instance = instance_info.dbaas.instances.get(instance_info.id)
+        assert_equal('RESTART_REQUIRED', instance.status)
 
     @test(depends_on=[test_unassign_configuration_from_instances])
+    def test_assign_in_wrong_state(self):
+        # test assigning a config to an instance in RESTART state
+        assert_raises(exceptions.BadRequest,
+                      instance_info.dbaas.instances.modify,
+                      configuration_instance.id,
+                      configuration=configuration_info.id)
+
+    @test(depends_on=[test_assign_in_wrong_state])
     def test_no_instances_on_configuration(self):
         # test there is no configuration on the instance after unassigning
         result = instance_info.dbaas.configurations.get(configuration_info.id)

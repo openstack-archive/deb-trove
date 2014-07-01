@@ -36,12 +36,12 @@ class CassandraApp(object):
     """Prepares DBaaS on a Guest container."""
 
     def __init__(self, status):
-        """By default login with root no password for initial setup. """
+        """By default login with root no password for initial setup."""
         self.state_change_wait_time = CONF.state_change_wait_time
         self.status = status
 
     def install_if_needed(self, packages):
-        """Prepare the guest machine with a cassandra server installation"""
+        """Prepare the guest machine with a cassandra server installation."""
         LOG.info(_("Preparing Guest as Cassandra Server"))
         if not packager.pkg_is_installed(packages):
             self._install_db(packages)
@@ -92,7 +92,8 @@ class CassandraApp(object):
         if do_not_start_on_reboot:
             self._disable_db_on_boot()
         utils.execute_with_timeout(system.STOP_CASSANDRA,
-                                   shell=True)
+                                   shell=True,
+                                   timeout=system.SERVICE_STOP_TIMEOUT)
 
         if not (self.status.wait_for_real_status_to_change_to(
                 rd_instance.ServiceStatuses.SHUTDOWN,
@@ -112,9 +113,9 @@ class CassandraApp(object):
 
     def _install_db(self, packages):
         """Install cassandra server"""
-        LOG.debug(_("Installing cassandra server"))
-        packager.pkg_install(packages, None, system.TIME_OUT)
-        LOG.debug(_("Finished installing cassandra server"))
+        LOG.debug("Installing cassandra server")
+        packager.pkg_install(packages, None, system.INSTALL_TIMEOUT)
+        LOG.debug("Finished installing cassandra server")
 
     def write_config(self, config_contents):
         LOG.info(_('Defining temp config holder at '
@@ -128,7 +129,7 @@ class CassandraApp(object):
         LOG.info(_('Overriding old config'))
 
     def read_conf(self):
-        """Returns cassandra.yaml in dict structure"""
+        """Returns cassandra.yaml in dict structure."""
 
         LOG.info(_("Opening cassandra.yaml"))
         with open(system.CASSANDRA_CONF, 'r') as config:
@@ -137,7 +138,7 @@ class CassandraApp(object):
         return yamled
 
     def update_config_with_single(self, key, value):
-        """Updates single key:value in cassandra.yaml"""
+        """Updates single key:value in 'cassandra.yaml'."""
 
         yamled = self.read_conf()
         yamled.update({key: value})
@@ -148,7 +149,7 @@ class CassandraApp(object):
         self.write_config(dump)
 
     def update_conf_with_group(self, group):
-        """Updates group of key:value in cassandra.yaml"""
+        """Updates group of key:value in 'cassandra.yaml'."""
 
         yamled = self.read_conf()
         for key, value in group.iteritems():

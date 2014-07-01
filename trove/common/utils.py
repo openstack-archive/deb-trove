@@ -19,7 +19,7 @@ import inspect
 import jinja2
 import sys
 import time
-import urlparse
+import six.moves.urllib.parse as urlparse
 import uuid
 import os
 import shutil
@@ -271,7 +271,7 @@ def get_id_from_href(href):
 
 
 def execute_with_timeout(*args, **kwargs):
-    time = kwargs.get('timeout', 30)
+    time = kwargs.pop('timeout', 30)
 
     def cb_timeout():
         msg = (_("Time out after waiting"
@@ -330,7 +330,7 @@ def try_recover(func):
             if recover_func is not None:
                 recover_func(func)
             else:
-                LOG.debug(_("No recovery method defined for %(func)s") % {
+                LOG.debug("No recovery method defined for %(func)s" % {
                           'func': func.__name__})
             raise
     return _decorator

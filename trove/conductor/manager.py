@@ -38,11 +38,12 @@ class Manager(periodic_task.PeriodicTasks):
             "method": method_name,
             "sent": sent,
         }
-        LOG.debug(_("Instance %(instance)s sent %(method)s at %(sent)s ")
+        LOG.debug("Instance %(instance)s sent %(method)s at %(sent)s "
                   % fields)
 
         if sent is None:
-            LOG.error(_("Sent field not present. Cannot compare."))
+            LOG.error(_("[Instance %s] sent field not present. Cannot "
+                        "compare.") % instance_id)
             return False
 
         seen = None
@@ -54,7 +55,8 @@ class Manager(periodic_task.PeriodicTasks):
             pass
 
         if seen is None:
-            LOG.debug(_("Did not find any previous message. Creating."))
+            LOG.debug("[Instance %s] Did not find any previous message. "
+                      "Creating." % instance_id)
             seen = LastSeen.create(instance_id=instance_id,
                                    method_name=method_name,
                                    sent=sent)
@@ -63,18 +65,20 @@ class Manager(periodic_task.PeriodicTasks):
 
         last_sent = float(seen.sent)
         if last_sent < sent:
-            LOG.debug(_("Rec'd message is younger than last seen. Updating."))
+            LOG.debug("[Instance %s] Rec'd message is younger than last "
+                      "seen. Updating." % instance_id)
             seen.sent = sent
             seen.save()
             return False
 
         else:
-            LOG.error(_("Rec'd message is older than last seen. Discarding."))
+            LOG.info(_("[Instance %s] Rec'd message is older than last seen. "
+                       "Discarding.") % instance_id)
             return True
 
     def heartbeat(self, context, instance_id, payload, sent=None):
-        LOG.debug(_("Instance ID: %s") % str(instance_id))
-        LOG.debug(_("Payload: %s") % str(payload))
+        LOG.debug("Instance ID: %s" % str(instance_id))
+        LOG.debug("Payload: %s" % str(payload))
         status = t_models.InstanceServiceStatus.find_by(
             instance_id=instance_id)
         if self._message_too_old(instance_id, 'heartbeat', sent):
@@ -86,8 +90,8 @@ class Manager(periodic_task.PeriodicTasks):
 
     def update_backup(self, context, instance_id, backup_id,
                       sent=None, **backup_fields):
-        LOG.debug(_("Instance ID: %s") % str(instance_id))
-        LOG.debug(_("Backup ID: %s") % str(backup_id))
+        LOG.debug("Instance ID: %s" % str(instance_id))
+        LOG.debug("Backup ID: %s" % str(backup_id))
         backup = bkup_models.DBBackup.find_by(id=backup_id)
         # TODO(datsun180b): use context to verify tenant matches
 
@@ -99,17 +103,20 @@ class Manager(periodic_task.PeriodicTasks):
             fields = {
                 'expected': backup_id,
                 'found': backup.id,
+                'instance': str(instance_id),
             }
-            LOG.error(_("Backup IDs mismatch! Expected %(expected)s, "
-                        "found %(found)s") % fields)
+            LOG.error(_("[Instance: %(instance)s] Backup IDs mismatch! "
+                        "Expected %(expected)s, found %(found)s") % fields)
             return
         if instance_id != backup.instance_id:
             fields = {
                 'expected': instance_id,
                 'found': backup.instance_id,
+                'instance': str(instance_id),
             }
-            LOG.error(_("Backup instance IDs mismatch! Expected %(expected)s, "
-                        "found %(found)s") % fields)
+            LOG.error(_("[Instance: %(instance)s] Backup instance IDs "
+                        "mismatch! Expected %(expected)s, found "
+                        "%(found)s") % fields)
             return
 
         for k, v in backup_fields.items():
@@ -118,6 +125,6 @@ class Manager(periodic_task.PeriodicTasks):
                     'key': k,
                     'value': v,
                 }
-                LOG.debug(_("Backup %(key)s: %(value)s") % fields)
+                LOG.debug("Backup %(key)s: %(value)s" % fields)
                 setattr(backup, k, v)
         backup.save()

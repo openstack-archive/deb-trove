@@ -117,13 +117,6 @@ def load_simple_instance_server_status(context, db_info):
             db_info.addresses = {}
 
 
-# If the compute server is in any of these states we can't perform any
-# actions (delete, resize, etc).
-SERVER_INVALID_ACTION_STATUSES = ["BUILD", "REBOOT", "REBUILD", "RESIZE"]
-
-# Statuses in which an instance can have an action performed.
-VALID_ACTION_STATUSES = ["ACTIVE"]
-
 # Invalid states to contact the agent
 AGENT_INVALID_STATUSES = ["BUILD", "REBOOT", "RESIZE"]
 
@@ -506,9 +499,9 @@ class BaseInstance(SimpleInstance):
             if self.is_building:
                 raise exception.UnprocessableEntity("Instance %s is not ready."
                                                     % self.id)
-            LOG.debug(_("  ... deleting compute id = %s") %
+            LOG.debug("  ... deleting compute id = %s" %
                       self.db_info.compute_instance_id)
-            LOG.debug(_(" ... setting status to DELETING."))
+            LOG.debug(" ... setting status to DELETING.")
             self.update_db(task_status=InstanceTasks.DELETING,
                            configuration_id=None)
             task_api.API(self.context).delete_instance(self.id)
@@ -521,6 +514,7 @@ class BaseInstance(SimpleInstance):
                                _delete_resources)
 
     def _delete_resources(self, deleted_at):
+        """Implemented in subclass."""
         pass
 
     def delete_async(self):
@@ -601,8 +595,8 @@ class Instance(BuiltInstance):
             root_on_create = CONF.get(datastore_manager).root_on_create
             return root_on_create
         except NoSuchOptError:
-            LOG.debug(_("root_on_create not configured for %s"
-                        " hence defaulting the value to False")
+            LOG.debug("root_on_create not configured for %s"
+                      " hence defaulting the value to False"
                       % datastore_manager)
             return False
 
@@ -664,8 +658,8 @@ class Instance(BuiltInstance):
                                         datastore_version.id,
                                         task_status=InstanceTasks.BUILDING,
                                         configuration_id=configuration_id)
-            LOG.debug(_("Tenant %(tenant)s created new "
-                        "Trove instance %(db)s...") %
+            LOG.debug("Tenant %(tenant)s created new "
+                      "Trove instance %(db)s..." %
                       {'tenant': context.tenant, 'db': db_info.id})
 
             # if a configuration group is associated with an instance,
@@ -714,7 +708,7 @@ class Instance(BuiltInstance):
         flavor = self.get_flavor()
         LOG.debug("flavor: %s" % flavor)
         config = template.SingleInstanceConfigTemplate(
-            self.ds_version.manager, flavor, id)
+            self.ds_version, flavor, id)
         return config.render_dict()
 
     def resize_flavor(self, new_flavor_id):
@@ -819,14 +813,39 @@ class Instance(BuiltInstance):
         LOG.error(msg)
         raise exception.UnprocessableEntity(msg)
 
+    def _validate_can_perform_assign(self):
+        """
+        Raises exception if a configuration assign cannot
+        currently be performed
+        """
+        # check if the instance already has a configuration assigned
+        if self.db_info.configuration_id:
+            raise exception.ConfigurationAlreadyAttached(
+                instance_id=self.id,
+                configuration_id=self.db_info.configuration_id)
+
+        # check if the instance is not ACTIVE or has tasks
+        status = None
+        if self.db_info.server_status != InstanceStatus.ACTIVE:
+            status = self.db_info.server_status
+        elif self.db_info.task_status != InstanceTasks.NONE:
+            status = self.db_info.task_status.action
+
+        if status:
+            raise exception.InvalidInstanceState(instance_id=self.id,
+                                                 status=status)
+
     def unassign_configuration(self):
-        LOG.debug(_("Unassigning the configuration from the instance %s")
+        LOG.debug("Unassigning the configuration from the instance %s"
                   % self.id)
-        LOG.debug(_("Unassigning the configuration id %s")
-                  % self.configuration.id)
         if self.configuration and self.configuration.id:
+            LOG.debug("Unassigning the configuration id %s"
+                      % self.configuration.id)
             flavor = self.get_flavor()
             config_id = self.configuration.id
+            LOG.debug("configuration being unassigned; "
+                      "marking restart required")
+            self.update_db(task_status=InstanceTasks.RESTART_REQUIRED)
             task_api.API(self.context).unassign_configuration(self.id,
                                                               flavor,
                                                               config_id)
@@ -834,6 +853,8 @@ class Instance(BuiltInstance):
             LOG.debug("no configuration found on instance skipping.")
 
     def assign_configuration(self, configuration_id):
+        self._validate_can_perform_assign()
+
         try:
             configuration = Configuration.load(self.context, configuration_id)
         except exception.ModelNotFoundError:
@@ -857,12 +878,12 @@ class Instance(BuiltInstance):
         self.update_db(configuration_id=configuration.id)
 
     def update_overrides(self, overrides):
-        LOG.debug(_("Updating or removing overrides for instance %s")
+        LOG.debug("Updating or removing overrides for instance %s"
                   % self.id)
         need_restart = do_configs_require_restart(
             overrides, datastore_manager=self.ds_version.manager)
-        LOG.debug(_("config overrides has non-dynamic settings, "
-                    "requires a restart: %s") % need_restart)
+        LOG.debug("config overrides has non-dynamic settings, "
+                  "requires a restart: %s" % need_restart)
         if need_restart:
             self.update_db(task_status=InstanceTasks.RESTART_REQUIRED)
         task_api.API(self.context).update_overrides(self.id, overrides)

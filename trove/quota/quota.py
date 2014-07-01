@@ -272,7 +272,7 @@ class QuotaEngine(object):
 
         reservations = self._driver.reserve(tenant_id, self._resources, deltas)
 
-        LOG.debug(_("Created reservations %(reservations)s") %
+        LOG.debug("Created reservations %(reservations)s" %
                   {'reservations': reservations})
 
         return reservations
@@ -320,7 +320,7 @@ QUOTAS.register_resources(resources)
 
 
 def run_with_quotas(tenant_id, deltas, f):
-    """Quota wrapper """
+    """Quota wrapper."""
 
     reservations = QUOTAS.reserve(tenant_id, **deltas)
     result = None

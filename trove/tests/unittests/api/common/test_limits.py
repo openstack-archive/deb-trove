@@ -18,12 +18,13 @@ Tests dealing with HTTP rate-limiting.
 """
 
 import httplib
-import StringIO
 from trove.quota.models import Quota
 import testtools
 import webob
 
 from mock import Mock, MagicMock
+import six
+
 from trove.common import limits
 from trove.common.limits import Limit
 from trove.limits import views
@@ -34,6 +35,7 @@ from trove.quota.quota import QUOTAS
 TEST_LIMITS = [
     Limit("GET", "/delayed", "^/delayed", 1, limits.PER_MINUTE),
     Limit("POST", "*", ".*", 7, limits.PER_MINUTE),
+    Limit("POST", "/mgmt", "^/mgmt", 3, limits.PER_MINUTE),
     Limit("PUT", "*", "", 10, limits.PER_MINUTE),
 ]
 
@@ -177,7 +179,7 @@ class LimitsControllerTest(BaseLimitTestSuite):
 
 
 class TestLimiter(limits.Limiter):
-    """Note: This was taken from Nova"""
+    """Note: This was taken from Nova."""
     pass
 
 
@@ -378,7 +380,7 @@ class LimiterTest(BaseLimitTestSuite):
     def test_delay_PUT(self):
         """
         Ensure the 11th PUT will result in a delay of 6.0 seconds until
-        the next request will be granced.
+        the next request will be granted.
         """
         expected = [None] * 10 + [6.0]
         results = list(self._check(11, "PUT", "/anything"))
@@ -388,7 +390,7 @@ class LimiterTest(BaseLimitTestSuite):
     def test_delay_POST(self):
         """
         Ensure the 8th POST will result in a delay of 6.0 seconds until
-        the next request will be granced.
+        the next request will be granted.
         """
         expected = [None] * 7
         results = list(self._check(7, "POST", "/anything"))
@@ -398,10 +400,23 @@ class LimiterTest(BaseLimitTestSuite):
         results = self._check_sum(1, "POST", "/anything")
         self.assertAlmostEqual(expected, results, 8)
 
+    def test_delay_POST_mgmt(self):
+        """
+        Ensure the 4th mgmt POST will result in a delay of 6.0 seconds until
+        the next request will be granted.
+        """
+        expected = [None] * 3
+        results = list(self._check(3, "POST", "/mgmt"))
+        self.assertEqual(expected, results)
+
+        expected = 60.0 / 3.0
+        results = self._check_sum(1, "POST", "/mgmt")
+        self.assertAlmostEqual(expected, results, 4)
+
     def test_delay_GET(self):
         # Ensure the 11th GET will result in NO delay.
         expected = [None] * 11
-        results = list(self._check(11, "GET", "/anything"))
+        results = list(self._check(11, "GET", "/mgmt"))
 
         self.assertEqual(expected, results)
 
@@ -545,7 +560,7 @@ class FakeHttplibSocket(object):
 
     def __init__(self, response_string):
         """Initialize new `FakeHttplibSocket`."""
-        self._buffer = StringIO.StringIO(response_string)
+        self._buffer = six.StringIO(response_string)
 
     def makefile(self, _mode, _other):
         """Returns the socket's internal buffer."""

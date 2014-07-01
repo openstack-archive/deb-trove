@@ -38,10 +38,10 @@ class MongoDBApp(object):
         self.status = status
 
     def install_if_needed(self, packages):
-        """Prepare the guest machine with a MongoDB installation"""
+        """Prepare the guest machine with a MongoDB installation."""
         LOG.info(_("Preparing Guest as MongoDB"))
         if not system.PACKAGER.pkg_is_installed(packages):
-            LOG.debug(_("Installing packages: %s") % str(packages))
+            LOG.debug("Installing packages: %s" % str(packages))
             system.PACKAGER.pkg_install(packages, {}, system.TIME_OUT)
         LOG.info(_("Finished installing MongoDB server"))
 

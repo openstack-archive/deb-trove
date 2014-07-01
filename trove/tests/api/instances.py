@@ -620,6 +620,7 @@ class CreateInstance(object):
                       "databases": [{"name": "firstdb"}]})
         instance_info.users = users
         instance_info.dbaas_datastore = CONFIG.dbaas_datastore
+        instance_info.dbaas_datastore_version = CONFIG.dbaas_datastore_version
         if VOLUME_SUPPORT:
             instance_info.volume = {'size': 1}
         else:
@@ -908,7 +909,7 @@ class TestAfterInstanceCreatedGuestData(object):
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
       groups=[GROUP, GROUP_START, GROUP_START_SIMPLE, "dbaas.listing"])
 class TestInstanceListing(object):
-    """Test the listing of the instance information """
+    """Test the listing of the instance information."""
 
     @before_class
     def setUp(self):
@@ -982,7 +983,8 @@ class TestInstanceListing(object):
         else:
             assert_true(isinstance(instance_info.volume['size'], float))
         if create_new_instance():
-            assert_true(0.12 < instance.volume['used'] < 0.25)
+            assert_true(0.0 < instance.volume['used']
+                        < instance.volume['size'])
 
     @test(enabled=EPHEMERAL_SUPPORT)
     def test_ephemeral_mount(self):
@@ -1060,7 +1062,7 @@ class TestCreateNotification(object):
 @test(depends_on_groups=['dbaas.api.instances.actions'],
       groups=[GROUP, tests.INSTANCES, "dbaas.diagnostics"])
 class CheckDiagnosticsAfterTests(object):
-    """Check the diagnostics after running api commands on an instance. """
+    """Check the diagnostics after running api commands on an instance."""
     @test
     def test_check_diagnostics_on_instance_after_tests(self):
         diagnostics = dbaas_admin.diagnostics.get(instance_info.id)
@@ -1076,7 +1078,7 @@ class CheckDiagnosticsAfterTests(object):
       runs_after_groups=[GROUP_START,
                          GROUP_START_SIMPLE, GROUP_TEST, tests.INSTANCES])
 class DeleteInstance(object):
-    """Delete the created instance """
+    """Delete the created instance."""
 
     @time_out(3 * 60)
     @test
@@ -1098,10 +1100,10 @@ class DeleteInstance(object):
             result = True
             while result is not None:
                 attempts += 1
-                time.sleep(1)
                 result = dbaas.instances.get(instance_info.id)
                 assert_equal(200, dbaas.last_http_code)
                 assert_equal("SHUTDOWN", result.status)
+                time.sleep(1)
         except exceptions.NotFound:
             pass
         except Exception as ex:
@@ -1239,7 +1241,7 @@ class VerifyInstanceMgmtInfo(object):
 
 
 class CheckInstance(AttrCheck):
-    """Class to check various attributes of Instance details"""
+    """Class to check various attributes of Instance details."""
 
     def __init__(self, instance):
         super(CheckInstance, self).__init__()

@@ -219,7 +219,9 @@ class MySqlAdminTest(testtools.TestCase):
                          "Create database queries are not the same")
 
         self.assertEqual(1, dbaas.LocalSqlClient.execute.call_count,
-                         "The client object was not 2 times")
+                         "The client object was not called exactly once, " +
+                         "it was called %d times"
+                         % dbaas.LocalSqlClient.execute.call_count)
 
     def test_create_database_more_than_1(self):
 
@@ -244,7 +246,9 @@ class MySqlAdminTest(testtools.TestCase):
                          "Create database queries are not the same")
 
         self.assertEqual(2, dbaas.LocalSqlClient.execute.call_count,
-                         "The client object was not 2 times")
+                         "The client object was not called exactly twice, " +
+                         "it was called %d times"
+                         % dbaas.LocalSqlClient.execute.call_count)
 
     def test_create_database_no_db(self):
 
@@ -1234,48 +1238,52 @@ class TestRedisApp(testtools.TestCase):
                     self.assertTrue(utils.execute_with_timeout.called)
 
     def test_enable_redis_on_boot_without_upstart(self):
-        with patch.object(os.path, 'isfile', return_value=False):
+        cmd = '123'
+        with patch.object(operating_system, 'service_discovery',
+                          return_value={'cmd_enable': cmd}):
             with patch.object(utils, 'execute_with_timeout',
                               return_value=None):
                 self.app._enable_redis_on_boot()
-                os.path.isfile.assert_any_call(RedisSystem.REDIS_INIT)
+                operating_system.service_discovery.assert_any_call(
+                    RedisSystem.SERVICE_CANDIDATES)
                 utils.execute_with_timeout.assert_any_call(
-                    'sudo ' + RedisSystem.REDIS_CMD_ENABLE,
-                    shell=True)
+                    cmd, shell=True)
 
     def test_enable_redis_on_boot_with_upstart(self):
-        with patch.object(os.path, 'isfile', return_value=True):
+        cmd = '123'
+        with patch.object(operating_system, 'service_discovery',
+                          return_value={'cmd_enable': cmd}):
             with patch.object(utils, 'execute_with_timeout',
                               return_value=None):
                 self.app._enable_redis_on_boot()
-                os.path.isfile.assert_any_call(RedisSystem.REDIS_INIT)
+                operating_system.service_discovery.assert_any_call(
+                    RedisSystem.SERVICE_CANDIDATES)
                 utils.execute_with_timeout.assert_any_call(
-                    "sudo sed -i '/^manual$/d' " + RedisSystem.REDIS_INIT,
-                    shell=True)
+                    cmd, shell=True)
 
     def test_disable_redis_on_boot_with_upstart(self):
-        with patch.object(os.path, 'isfile', return_value=True):
+        cmd = '123'
+        with patch.object(operating_system, 'service_discovery',
+                          return_value={'cmd_disable': cmd}):
             with patch.object(utils, 'execute_with_timeout',
                               return_value=None):
                 self.app._disable_redis_on_boot()
-                os.path.isfile.assert_any_call(RedisSystem.REDIS_INIT)
+                operating_system.service_discovery.assert_any_call(
+                    RedisSystem.SERVICE_CANDIDATES)
                 utils.execute_with_timeout.assert_any_call(
-                    'echo',
-                    "'manual'",
-                    '>>',
-                    RedisSystem.REDIS_INIT,
-                    run_as_root=True,
-                    root_helper='sudo')
+                    cmd, shell=True)
 
     def test_disable_redis_on_boot_without_upstart(self):
-        with patch.object(os.path, 'isfile', return_value=False):
+        cmd = '123'
+        with patch.object(operating_system, 'service_discovery',
+                          return_value={'cmd_disable': cmd}):
             with patch.object(utils, 'execute_with_timeout',
                               return_value=None):
                 self.app._disable_redis_on_boot()
-                os.path.isfile.assert_any_call(RedisSystem.REDIS_INIT)
+                operating_system.service_discovery.assert_any_call(
+                    RedisSystem.SERVICE_CANDIDATES)
                 utils.execute_with_timeout.assert_any_call(
-                    'sudo ' + RedisSystem.REDIS_CMD_DISABLE,
-                    shell=True)
+                    cmd, shell=True)
 
     def test_stop_db_without_fail(self):
         mock_status = MagicMock()
@@ -1591,13 +1599,11 @@ class CouchbaseAppTest(testtools.TestCase):
         self.assertTrue(conductor_api.API.heartbeat.called)
 
     def test_install_when_couchbase_installed(self):
-        self.couchbaseApp.initial_setup = Mock()
         couchservice.packager.pkg_is_installed = Mock(return_value=True)
         couchservice.utils.execute_with_timeout = Mock()
 
         self.couchbaseApp.install_if_needed(["package"])
         self.assertTrue(couchservice.packager.pkg_is_installed.called)
-        self.assertTrue(self.couchbaseApp.initial_setup.called)
         self.assert_reported_status(rd_instance.ServiceStatuses.NEW)
 
 

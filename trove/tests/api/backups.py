@@ -15,12 +15,13 @@
 from proboscis.asserts import assert_equal
 from proboscis.asserts import assert_not_equal
 from proboscis.asserts import assert_raises
-from proboscis.asserts import assert_true
+from proboscis.asserts import fail
 from proboscis import test
 from proboscis import SkipTest
 from proboscis.decorators import time_out
 from trove.common.utils import poll_until
 from trove.common.utils import generate_uuid
+from trove.common import exception
 from trove.tests.util import create_dbaas_client
 from trove.tests.util.users import Requirements
 from trove.tests.config import CONFIG
@@ -54,7 +55,7 @@ class CreateBackups(object):
 
     @test
     def test_backup_create_instance_invalid(self):
-        """test create backup with unknown instance"""
+        """Test create backup with unknown instance."""
         invalid_inst_id = 'invalid-inst-id'
         try:
             instance_info.dbaas.backups.create(BACKUP_NAME, invalid_inst_id,
@@ -72,13 +73,13 @@ class CreateBackups(object):
 
     @test
     def test_backup_create_instance_not_found(self):
-        """test create backup with unknown instance"""
+        """Test create backup with unknown instance."""
         assert_raises(exceptions.NotFound, instance_info.dbaas.backups.create,
                       BACKUP_NAME, generate_uuid(), BACKUP_DESC)
 
     @test
     def test_backup_create_instance(self):
-        """test create backup for a given instance"""
+        """Test create backup for a given instance."""
         # Necessary to test that the count increases.
         global backup_count_prior_to_create
         backup_count_prior_to_create = len(instance_info.dbaas.backups.list())
@@ -105,20 +106,20 @@ class AfterBackupCreation(object):
 
     @test
     def test_instance_action_right_after_backup_create(self):
-        """test any instance action while backup is running"""
+        """Test any instance action while backup is running."""
         assert_unprocessable(instance_info.dbaas.instances.resize_instance,
                              instance_info.id, 1)
 
     @test
     def test_backup_create_another_backup_running(self):
-        """test create backup when another backup is running"""
+        """Test create backup when another backup is running."""
         assert_unprocessable(instance_info.dbaas.backups.create,
                              'backup_test2', instance_info.id,
                              'test description2')
 
     @test
     def test_backup_delete_still_running(self):
-        """test delete backup when it is running"""
+        """Test delete backup when it is running."""
         result = instance_info.dbaas.backups.list()
         backup = result[0]
         assert_unprocessable(instance_info.dbaas.backups.delete, backup.id)
@@ -152,7 +153,7 @@ class ListBackups(object):
 
     @test
     def test_backup_list(self):
-        """test list backups"""
+        """Test list backups."""
         result = instance_info.dbaas.backups.list()
         assert_equal(backup_count_prior_to_create + 1, len(result))
         backup = result[0]
@@ -164,7 +165,7 @@ class ListBackups(object):
 
     @test
     def test_backup_list_for_instance(self):
-        """test backup list for instance"""
+        """Test backup list for instance."""
         result = instance_info.dbaas.instances.backups(instance_info.id)
         assert_equal(backup_count_for_instance_prior_to_create + 1,
                      len(result))
@@ -177,7 +178,7 @@ class ListBackups(object):
 
     @test
     def test_backup_get(self):
-        """test get backup"""
+        """Test get backup."""
         backup = instance_info.dbaas.backups.get(backup_info.id)
         assert_equal(backup_info.id, backup.id)
         assert_equal(backup_info.name, backup.name)
@@ -230,14 +231,12 @@ class IncrementalBackups(object):
         assert_equal(backup_info.id, incremental_info.parent_id)
 
 
-@test(runs_after=[IncrementalBackups],
-      groups=[GROUP, tests.INSTANCES])
+@test(groups=[GROUP, tests.INSTANCES])
 class RestoreUsingBackup(object):
 
-    @test
-    def test_restore(self):
-        """test restore"""
-        restorePoint = {"backupRef": incremental_info.id}
+    @classmethod
+    def _restore(cls, backup_ref):
+        restorePoint = {"backupRef": backup_ref}
         result = instance_info.dbaas.instances.create(
             instance_info.name + "_restore",
             instance_info.dbaas_flavor_href,
@@ -245,23 +244,28 @@ class RestoreUsingBackup(object):
             restorePoint=restorePoint)
         assert_equal(200, instance_info.dbaas.last_http_code)
         assert_equal("BUILD", result.status)
+        return result.id
+
+    @test(depends_on=[WaitForBackupCreateToFinish])
+    def test_restore(self):
         global restore_instance_id
-        restore_instance_id = result.id
+        restore_instance_id = self._restore(backup_info.id)
+
+    @test(depends_on=[IncrementalBackups])
+    def test_restore_incremental(self):
+        global incremental_restore_instance_id
+        incremental_restore_instance_id = self._restore(incremental_info.id)
 
 
-@test(depends_on_classes=[RestoreUsingBackup],
-      runs_after=[RestoreUsingBackup],
-      groups=[GROUP, tests.INSTANCES])
+@test(groups=[GROUP, tests.INSTANCES])
 class WaitForRestoreToFinish(object):
-    """
-        Wait until the instance is finished restoring.
-    """
 
-    @test
-    def test_instance_restored(self):
+    @classmethod
+    def _poll(cls, instance_id_to_poll):
+        """Shared "instance restored" test logic."""
         # This version just checks the REST API status.
         def result_is_active():
-            instance = instance_info.dbaas.instances.get(restore_instance_id)
+            instance = instance_info.dbaas.instances.get(instance_id_to_poll)
             if instance.status == "ACTIVE":
                 return True
             else:
@@ -275,41 +279,84 @@ class WaitForRestoreToFinish(object):
         poll_until(result_is_active, time_out=TIMEOUT_INSTANCE_CREATE,
                    sleep_time=10)
 
+    """
+        Wait until the instance is finished restoring from full backup.
+    """
+    @test(depends_on=[RestoreUsingBackup.test_restore])
+    def test_instance_restored(self):
+        try:
+            self._poll(restore_instance_id)
+        except exception.PollTimeOut:
+            fail('Timed out')
 
-@test(depends_on_classes=[RestoreUsingBackup, WaitForRestoreToFinish],
-      runs_after=[WaitForRestoreToFinish],
-      enabled=(not CONFIG.fake_mode),
+    """
+        Wait until the instance is finished restoring from incremental backup.
+    """
+    @test(depends_on=[RestoreUsingBackup.test_restore_incremental])
+    def test_instance_restored_incremental(self):
+        try:
+            self._poll(incremental_restore_instance_id)
+        except exception.PollTimeOut:
+            fail('Timed out')
+
+
+@test(enabled=(not CONFIG.fake_mode),
       groups=[GROUP, tests.INSTANCES])
 class VerifyRestore(object):
 
-    @test
-    def test_database_restored(self):
-        databases = instance_info.dbaas.databases.list(restore_instance_id)
-        dbs = [d.name for d in databases]
-        assert_true(incremental_db in dbs,
-                    "%s not found on restored instance" % incremental_db)
+    @classmethod
+    def _poll(cls, instance_id, db):
+        def db_is_found():
+            databases = instance_info.dbaas.databases.list(instance_id)
+            if db in [d.name for d in databases]:
+                return True
+            else:
+                return False
+
+        poll_until(db_is_found, time_out=60 * 10, sleep_time=10)
+
+    @test(depends_on=[WaitForRestoreToFinish.
+          test_instance_restored_incremental])
+    def test_database_restored_incremental(self):
+        try:
+            self._poll(incremental_restore_instance_id, incremental_db)
+        except exception.PollTimeOut:
+            fail('Timed out')
 
 
-@test(runs_after=[VerifyRestore],
-      groups=[GROUP, tests.INSTANCES])
+@test(groups=[GROUP, tests.INSTANCES])
 class DeleteRestoreInstance(object):
 
-    @test
-    def test_delete_restored_instance(self):
-        """test delete restored instance"""
-        instance_info.dbaas.instances.delete(restore_instance_id)
+    @classmethod
+    def _delete(cls, instance_id):
+        """Test delete restored instance."""
+        instance_info.dbaas.instances.delete(instance_id)
         assert_equal(202, instance_info.dbaas.last_http_code)
 
         def instance_is_gone():
             try:
-                instance_info.dbaas.instances.get(restore_instance_id)
+                instance_info.dbaas.instances.get(instance_id)
                 return False
             except exceptions.NotFound:
                 return True
 
         poll_until(instance_is_gone, time_out=TIMEOUT_INSTANCE_DELETE)
         assert_raises(exceptions.NotFound, instance_info.dbaas.instances.get,
-                      restore_instance_id)
+                      instance_id)
+
+    @test(runs_after=[WaitForRestoreToFinish.test_instance_restored])
+    def test_delete_restored_instance(self):
+        try:
+            self._delete(restore_instance_id)
+        except exception.PollTimeOut:
+            fail('Timed out')
+
+    @test(runs_after=[VerifyRestore.test_database_restored_incremental])
+    def test_delete_restored_instance_incremental(self):
+        try:
+            self._delete(incremental_restore_instance_id)
+        except exception.PollTimeOut:
+            fail('Timed out')
 
 
 @test(runs_after=[DeleteRestoreInstance],
@@ -318,13 +365,13 @@ class DeleteBackups(object):
 
     @test
     def test_backup_delete_not_found(self):
-        """test delete unknown backup"""
+        """Test delete unknown backup."""
         assert_raises(exceptions.NotFound, instance_info.dbaas.backups.delete,
                       'nonexistent_backup')
 
     @test
     def test_backup_delete_other(self):
-        """Test another user cannot delete backup"""
+        """Test another user cannot delete backup."""
         # Test to make sure that user in other tenant is not able
         # to DELETE this backup
         reqs = Requirements(is_admin=False)
@@ -337,7 +384,7 @@ class DeleteBackups(object):
 
     @test(runs_after=[test_backup_delete_other])
     def test_backup_delete(self):
-        """test backup deletion"""
+        """Test backup deletion."""
         instance_info.dbaas.backups.delete(backup_info.id)
         assert_equal(202, instance_info.dbaas.last_http_code)
 
@@ -352,7 +399,7 @@ class DeleteBackups(object):
 
     @test(runs_after=[test_backup_delete])
     def test_incremental_deleted(self):
-        """test backup children are deleted"""
+        """Test backup children are deleted."""
         if incremental_info is None:
             raise SkipTest("Incremental Backup not created")
         assert_raises(exceptions.NotFound, instance_info.dbaas.backups.get,
