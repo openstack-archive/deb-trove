@@ -1,3 +1,9 @@
+openstack-trove (2014.2~b1-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 01 Jul 2014 23:11:55 +0800
+
 openstack-trove (2014.1-4) unstable; urgency=medium
 
   * Now build-depends: openstack-pkg-tools version >= 12~.
