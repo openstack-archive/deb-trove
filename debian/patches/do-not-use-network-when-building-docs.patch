@@ -2,10 +2,10 @@ Description: Do not use network when building docs
  Removes the use of sphinx.ext.intersphinx plugin.
 Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
-Last-Update: 2014-01-13
+Last-Update: 2014-07-02
 
---- openstack-trove-2013.2.orig/doc/source/conf.py
-+++ openstack-trove-2013.2/doc/source/conf.py
+--- openstack-trove-2014.2~b1.orig/doc/source/conf.py
++++ openstack-trove-2014.2~b1/doc/source/conf.py
 @@ -13,8 +13,7 @@
  
  # Add any Sphinx extension module names here, as strings. They can be
@@ -13,6 +13,6 @@ Last-Update: 2014-01-13
 -extensions = ['sphinx.ext.intersphinx',
 -              'sphinx.ext.todo',
 +extensions = ['sphinx.ext.todo',
-               'sphinx.ext.viewcode']
+               'sphinx.ext.viewcode',
+               'oslosphinx']
  
- # Add any paths that contain templates here, relative to this directory.

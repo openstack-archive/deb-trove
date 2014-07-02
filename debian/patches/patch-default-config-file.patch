@@ -3,9 +3,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: not-needed
 Last-Update: 2013-10-03
 
---- trove-2013.2~rc1.orig/etc/trove/trove.conf.sample
-+++ trove-2013.2~rc1/etc/trove/trove.conf.sample
-@@ -20,9 +20,7 @@ rabbit_password=f7999d1955c5014aa32c
+Index: openstack-trove/etc/trove/trove.conf.sample
+===================================================================
+--- openstack-trove.orig/etc/trove/trove.conf.sample	2014-07-01 23:28:54.000000000 +0800
++++ openstack-trove/etc/trove/trove.conf.sample	2014-07-02 15:11:12.000000000 +0800
+@@ -45,9 +45,7 @@
  # SQLAlchemy connection string for the reference implementation
  # registry server. Any valid SQLAlchemy connection string is fine.
  # See: http://www.sqlalchemy.org/docs/05/reference/sqlalchemy/connections.html#sqlalchemy.create_engine
