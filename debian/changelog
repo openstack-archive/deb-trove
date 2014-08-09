@@ -1,6 +1,7 @@
 openstack-trove (2014.1.2-1) unstable; urgency=medium
 
   * New upstream point release.
+  * Refreshed patches.
 
  -- Thomas Goirand <zigo@debian.org>  Sat, 09 Aug 2014 10:29:41 +0800
 

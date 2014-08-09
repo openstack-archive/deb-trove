@@ -5,11 +5,10 @@ Last-Update: 2013-10-23
 
 --- openstack-trove-2013.2.orig/etc/trove/api-paste.ini
 +++ openstack-trove-2013.2/etc/trove/api-paste.ini
-@@ -18,7 +18,9 @@ paste.filter_factory = keystoneclient.mi
+@@ -18,6 +18,9 @@
  auth_host = 127.0.0.1
  auth_port = 35357
  auth_protocol = http
--admin_token = be19c524ddc92109a224
 +admin_tenant_name = %SERVICE_TENANT_NAME%
 +admin_user = %SERVICE_USER%
 +admin_password = %SERVICE_PASSWORD%
