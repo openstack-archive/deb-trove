@@ -208,7 +208,7 @@ class FakeGuest(object):
 
     def prepare(self, memory_mb, packages, databases, users, device_path=None,
                 mount_point=None, backup_info=None, config_contents=None,
-                root_password=None, overrides=None):
+                root_password=None, overrides=None, cluster_config=None):
         from trove.instance.models import DBInstance
         from trove.instance.models import InstanceServiceStatus
         from trove.guestagent.models import AgentHeartBeat
@@ -322,6 +322,24 @@ class FakeGuest(object):
 
     def apply_overrides(self, overrides):
         self.overrides = overrides
+
+    def get_replication_snapshot(self, snapshot_info):
+        self.create_backup(snapshot_info)
+        return {
+            'dataset':
+            {
+                'datastore_manager': 'mysql',
+                'dataset_size': '0.0',
+                'volume_size': '10.0',
+                'snapshot_id': None
+            },
+            'replication_strategy': 'replication_strategy',
+            'master': '1',
+            'log_position': '100'
+        }
+
+    def attach_replication_slave(self, snapshot, slave_config):
+        pass
 
 
 def get_or_create(id):

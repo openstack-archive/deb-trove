@@ -76,7 +76,7 @@ class fake_Server:
 class fake_ServerManager:
     def create(self, name, image_id, flavor_id, files, userdata,
                security_groups, block_device_mapping, availability_zone=None,
-               nics=None):
+               nics=None, config_drive=False):
         server = fake_Server()
         server.id = "server_id"
         server.name = name
@@ -359,6 +359,7 @@ class ResizeVolumeTest(testtools.TestCase):
         class FakeGroup():
             def __init__(self):
                 self.mount_point = 'var/lib/mysql'
+                self.device_path = '/dev/vdb'
         taskmanager_models.CONF.get = Mock(return_value=FakeGroup())
 
     def tearDown(self):

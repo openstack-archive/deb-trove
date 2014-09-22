@@ -16,17 +16,18 @@
 from trove.openstack.common import log as logging
 
 from trove.common import extensions
+from trove.extensions.mgmt.clusters.service import ClusterController
 from trove.extensions.mgmt.instances.service import MgmtInstanceController
 from trove.extensions.mgmt.host.service import HostController
 from trove.extensions.mgmt.quota.service import QuotaController
 from trove.extensions.mgmt.host.instance import service as hostservice
 from trove.extensions.mgmt.volume.service import StorageController
-
+from trove.extensions.mgmt.upgrade.service import UpgradeController
 
 LOG = logging.getLogger(__name__)
 
 
-class Mgmt(extensions.ExtensionsDescriptor):
+class Mgmt(extensions.ExtensionDescriptor):
 
     def get_name(self):
         return "Mgmt"
@@ -45,6 +46,7 @@ class Mgmt(extensions.ExtensionsDescriptor):
 
     def get_resources(self):
         resources = []
+
         instances = extensions.ResourceExtension(
             '{tenant_id}/mgmt/instances',
             MgmtInstanceController(),
@@ -53,6 +55,12 @@ class Mgmt(extensions.ExtensionsDescriptor):
                             'hwinfo': 'GET',
                             'action': 'POST'})
         resources.append(instances)
+
+        clusters = extensions.ResourceExtension(
+            '{tenant_id}/mgmt/clusters',
+            ClusterController(),
+            member_actions={'action': 'POST'})
+        resources.append(clusters)
 
         hosts = extensions.ResourceExtension(
             '{tenant_id}/mgmt/hosts',
@@ -79,5 +87,11 @@ class Mgmt(extensions.ExtensionsDescriptor):
                     'collection_name': '{tenant_id}/mgmt/hosts'},
             collection_actions={'action': 'POST'})
         resources.append(host_instances)
+
+        upgrade = extensions.ResourceExtension(
+            '{tenant_id}/mgmt/instances/{instance_id}/upgrade',
+            UpgradeController(),
+            member_actions={})
+        resources.append(upgrade)
 
         return resources

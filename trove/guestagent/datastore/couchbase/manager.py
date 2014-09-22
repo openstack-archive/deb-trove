@@ -17,6 +17,8 @@ import os
 
 from trove.common import cfg
 from trove.common import exception
+from trove.common import instance as rd_instance
+from trove.guestagent import backup
 from trove.guestagent import dbaas
 from trove.guestagent import volume
 from trove.guestagent.datastore.couchbase import service
@@ -57,7 +59,8 @@ class Manager(periodic_task.PeriodicTasks):
 
     def prepare(self, context, packages, databases, memory_mb, users,
                 device_path=None, mount_point=None, backup_info=None,
-                config_contents=None, root_password=None, overrides=None):
+                config_contents=None, root_password=None, overrides=None,
+                cluster_config=None):
         """
         This is called when the trove instance first comes online.
         It is the first rpc message passed from the task manager.
@@ -71,14 +74,19 @@ class Manager(periodic_task.PeriodicTasks):
             device.unmount_device(device_path)
             device.format()
             device.mount(mount_point)
-            LOG.debug('Mounted the volume.')
+            LOG.debug('Mounted the volume (%s).' % device_path)
         self.app.start_db_with_conf_changes(config_contents)
-        LOG.info(_('Securing couchbase now.'))
+        LOG.debug('Securing couchbase now.')
         if root_password:
             self.app.enable_root(root_password)
         self.app.initial_setup()
+        if backup_info:
+            LOG.debug('Now going to perform restore.')
+            self._perform_restore(backup_info,
+                                  context,
+                                  mount_point)
         self.app.complete_install_or_restart()
-        LOG.info(_('"prepare" couchbase call has finished.'))
+        LOG.info(_('Completed setup of Couchbase database instance.'))
 
     def restart(self, context):
         """
@@ -157,33 +165,70 @@ class Manager(periodic_task.PeriodicTasks):
     def is_root_enabled(self, context):
         return os.path.exists(system.pwd_file)
 
-    def _perform_restore(self, backup_info, context, restore_location, app):
-        raise exception.DatastoreOperationNotSupported(
-            operation='_perform_restore', datastore=MANAGER)
+    def _perform_restore(self, backup_info, context, restore_location):
+        """
+        Restores all couchbase buckets and their documents from the
+        backup.
+        """
+        LOG.info(_("Restoring database from backup %s") %
+                 backup_info['id'])
+        try:
+            backup.restore(context, backup_info, restore_location)
+        except Exception as e:
+            LOG.error(_("Error performing restore from backup %s") %
+                      backup_info['id'])
+            LOG.error(e)
+            self.status.set_status(rd_instance.ServiceStatuses.FAILED)
+            raise
+        LOG.info(_("Restored database successfully"))
 
     def create_backup(self, context, backup_info):
-        raise exception.DatastoreOperationNotSupported(
-            operation='create_backup', datastore=MANAGER)
+        """
+        Backup all couchbase buckets and their documents.
+        """
+        backup.backup(context, backup_info)
 
     def mount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.mount(mount_point, write_to_fstab=False)
-        LOG.debug("Mounted the volume.")
+        LOG.debug("Mounted the device %s at the mount_point %s." %
+                  (device_path, mount_point))
 
     def unmount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.unmount(mount_point)
-        LOG.debug("Unmounted the volume.")
+        LOG.debug("Unmounted the device %s from the mount point %s." %
+                  (device_path, mount_point))
 
     def resize_fs(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
         device.resize_fs(mount_point)
-        LOG.debug("Resized the filesystem.")
+        LOG.debug("Resized the filesystem at %s." % mount_point)
 
     def update_overrides(self, context, overrides, remove=False):
+        LOG.debug("Updating overrides.")
         raise exception.DatastoreOperationNotSupported(
             operation='update_overrides', datastore=MANAGER)
 
     def apply_overrides(self, context, overrides):
+        LOG.debug("Applying overrides.")
         raise exception.DatastoreOperationNotSupported(
             operation='apply_overrides', datastore=MANAGER)
+
+    def get_replication_snapshot(self, context, snapshot_info):
+        raise exception.DatastoreOperationNotSupported(
+            operation='get_replication_snapshot', datastore=MANAGER)
+
+    def attach_replication_slave(self, context, snapshot, slave_config):
+        LOG.debug("Attaching replication slave.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='attach_replication_slave', datastore=MANAGER)
+
+    def detach_replica(self, context):
+        raise exception.DatastoreOperationNotSupported(
+            operation='detach_replica', datastore=MANAGER)
+
+    def demote_replication_master(self, context):
+        LOG.debug("Demoting replication slave.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='demote_replication_master', datastore=MANAGER)

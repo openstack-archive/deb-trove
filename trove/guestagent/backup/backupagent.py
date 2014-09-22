@@ -31,41 +31,107 @@ from trove.openstack.common.gettextutils import _  # noqa
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
-MANAGER = CONF.datastore_manager
-# If datastore manager is not mentioned in guest
-# configuration file, would be used mysql as datastore_manager by the default
-STRATEGY = CONF.get('mysql' if not MANAGER else MANAGER).backup_strategy
-NAMESPACE = CONF.backup_namespace
+CONFIG_MANAGER = CONF.get('mysql'
+                          if not CONF.datastore_manager
+                          else CONF.datastore_manager)
 
-RUNNER = get_backup_strategy(STRATEGY, NAMESPACE)
+STRATEGY = CONFIG_MANAGER.backup_strategy
+BACKUP_NAMESPACE = CONFIG_MANAGER.backup_namespace
+RESTORE_NAMESPACE = CONFIG_MANAGER.restore_namespace
+RUNNER = get_backup_strategy(STRATEGY, BACKUP_NAMESPACE)
 EXTRA_OPTS = CONF.backup_runner_options.get(STRATEGY, '')
 
 # Try to get the incremental strategy or return the default 'backup_strategy'
-INCREMENTAL = CONF.backup_incremental_strategy.get(STRATEGY,
-                                                   STRATEGY)
+INCREMENTAL = CONFIG_MANAGER.backup_incremental_strategy.get(
+    STRATEGY, STRATEGY)
 
-INCREMENTAL_RUNNER = get_backup_strategy(INCREMENTAL, NAMESPACE)
+INCREMENTAL_RUNNER = get_backup_strategy(INCREMENTAL, BACKUP_NAMESPACE)
 
 
 class BackupAgent(object):
-
     def _get_restore_runner(self, backup_type):
         """Returns the RestoreRunner associated with this backup type."""
         try:
-            runner = get_restore_strategy(backup_type, CONF.restore_namespace)
+            runner = get_restore_strategy(backup_type, RESTORE_NAMESPACE)
         except ImportError:
-            raise UnknownBackupType("Unknown Backup type: %s" % backup_type)
+            raise UnknownBackupType("Unknown Backup type: %s in namespace %s"
+                                    % (backup_type, RESTORE_NAMESPACE))
         return runner
 
-    def execute_backup(self, context, backup_info,
-                       runner=RUNNER, extra_opts=EXTRA_OPTS):
+    def stream_backup_to_storage(self, backup_info, runner, storage,
+                                 parent_metadata={}, extra_opts=EXTRA_OPTS):
         backup_id = backup_info['id']
         ctxt = trove_context.TroveContext(
             user=CONF.nova_proxy_admin_user,
             auth_token=CONF.nova_proxy_admin_pass)
         conductor = conductor_api.API(ctxt)
 
-        LOG.info(_("Running backup %(id)s") % backup_info)
+        # Store the size of the filesystem before the backup.
+        mount_point = CONFIG_MANAGER.mount_point
+        stats = get_filesystem_volume_stats(mount_point)
+        backup_state = {
+            'backup_id': backup_id,
+            'size': stats.get('used', 0.0),
+            'state': BackupState.BUILDING,
+        }
+        conductor.update_backup(CONF.guest_id,
+                                sent=timeutils.float_utcnow(),
+                                **backup_state)
+        LOG.debug("Updated state for %s to %s.", backup_id, backup_state)
+
+        with runner(filename=backup_id, extra_opts=extra_opts,
+                    **parent_metadata) as bkup:
+            try:
+                LOG.debug("Starting backup %s.", backup_id)
+                success, note, checksum, location = storage.save(
+                    bkup.manifest,
+                    bkup)
+
+                backup_state.update({
+                    'checksum': checksum,
+                    'location': location,
+                    'note': note,
+                    'success': success,
+                    'backup_type': bkup.backup_type,
+                })
+
+                LOG.debug("Backup %(backup_id)s completed status: "
+                          "%(success)s.", backup_state)
+                LOG.debug("Backup %(backup_id)s file swift checksum: "
+                          "%(checksum)s.", backup_state)
+                LOG.debug("Backup %(backup_id)s location: "
+                          "%(location)s.", backup_state)
+
+                if not success:
+                    raise BackupError(note)
+
+                meta = bkup.metadata()
+                meta['datastore'] = backup_info['datastore']
+                meta['datastore_version'] = backup_info[
+                    'datastore_version']
+                storage.save_metadata(location, meta)
+
+                backup_state.update({'state': BackupState.COMPLETED})
+
+                return meta
+
+            except Exception:
+                LOG.exception(
+                    _("Error saving backup: %(backup_id)s.") % backup_state)
+                backup_state.update({'state': BackupState.FAILED})
+                raise
+            finally:
+                LOG.info(_("Completed backup %(backup_id)s.") % backup_state)
+                conductor.update_backup(CONF.guest_id,
+                                        sent=timeutils.float_utcnow(),
+                                        **backup_state)
+                LOG.debug("Updated state for %s to %s.",
+                          backup_id, backup_state)
+
+    def execute_backup(self, context, backup_info,
+                       runner=RUNNER, extra_opts=EXTRA_OPTS):
+
+        LOG.debug("Running backup %(id)s.", backup_info)
         storage = get_storage_strategy(
             CONF.storage_strategy,
             CONF.storage_namespace)(context)
@@ -74,7 +140,7 @@ class BackupAgent(object):
         parent_metadata = {}
         if backup_info.get('parent'):
             runner = INCREMENTAL_RUNNER
-            LOG.info(_("Using incremental runner: %s") % runner.__name__)
+            LOG.debug("Using incremental backup runner: %s.", runner.__name__)
             parent = backup_info['parent']
             parent_metadata = storage.load_metadata(parent['location'],
                                                     parent['checksum'])
@@ -85,78 +151,16 @@ class BackupAgent(object):
                 'parent_checksum': parent['checksum']
             })
 
-        # Store the size of the filesystem before the backup.
-        mount_point = CONF.get('mysql' if not CONF.datastore_manager
-                               else CONF.datastore_manager).mount_point
-        stats = get_filesystem_volume_stats(mount_point)
-        backup = {
-            'backup_id': backup_id,
-            'size': stats.get('used', 0.0),
-            'state': BackupState.BUILDING,
-        }
-        conductor.update_backup(CONF.guest_id,
-                                sent=timeutils.float_utcnow(),
-                                **backup)
-
-        try:
-            with runner(filename=backup_id, extra_opts=extra_opts,
-                        **parent_metadata) as bkup:
-                try:
-                    LOG.info(_("Starting Backup %s"), backup_id)
-                    success, note, checksum, location = storage.save(
-                        bkup.manifest,
-                        bkup)
-
-                    backup.update({
-                        'checksum': checksum,
-                        'location': location,
-                        'note': note,
-                        'success': success,
-                        'backup_type': bkup.backup_type,
-                    })
-
-                    LOG.info(_("Backup %(backup_id)s completed status: "
-                               "%(success)s") % backup)
-                    LOG.info(_("Backup %(backup_id)s file swift checksum: "
-                               "%(checksum)s") % backup)
-                    LOG.info(_("Backup %(backup_id)s location: "
-                               "%(location)s") % backup)
-
-                    if not success:
-                        raise BackupError(note)
-
-                    storage.save_metadata(location, bkup.metadata())
-
-                except Exception:
-                    LOG.exception(_("Error saving %(backup_id)s Backup") %
-                                  backup)
-                    backup.update({'state': BackupState.FAILED})
-                    conductor.update_backup(CONF.guest_id,
-                                            sent=timeutils.float_utcnow(),
-                                            **backup)
-                    raise
-
-        except Exception:
-            LOG.exception(_("Error running backup: %(backup_id)s") % backup)
-            backup.update({'state': BackupState.FAILED})
-            conductor.update_backup(CONF.guest_id,
-                                    sent=timeutils.float_utcnow(),
-                                    **backup)
-            raise
-        else:
-            LOG.info(_("Saving %(backup_id)s Backup Info to model") % backup)
-            backup.update({'state': BackupState.COMPLETED})
-            conductor.update_backup(CONF.guest_id,
-                                    sent=timeutils.float_utcnow(),
-                                    **backup)
+        self.stream_backup_to_storage(backup_info, runner, storage,
+                                      parent_metadata, extra_opts)
 
     def execute_restore(self, context, backup_info, restore_location):
 
         try:
-            LOG.debug("Getting Restore Runner %(type)s", backup_info)
+            LOG.debug("Getting Restore Runner %(type)s.", backup_info)
             restore_runner = self._get_restore_runner(backup_info['type'])
 
-            LOG.debug("Getting Storage Strategy")
+            LOG.debug("Getting Storage Strategy.")
             storage = get_storage_strategy(
                 CONF.storage_strategy,
                 CONF.storage_namespace)(context)
@@ -166,16 +170,15 @@ class BackupAgent(object):
                                     restore_location=restore_location)
             backup_info['restore_location'] = restore_location
             LOG.debug("Restoring instance from backup %(id)s to "
-                      "%(restore_location)s" % backup_info)
+                      "%(restore_location)s.", backup_info)
             content_size = runner.restore()
-            LOG.info(_("Restore from backup %(id)s completed successfully "
-                       "to %(restore_location)s") % backup_info)
-            LOG.info(_("Restore size: %s") % content_size)
+            LOG.debug("Restore from backup %(id)s completed successfully "
+                      "to %(restore_location)s.", backup_info)
+            LOG.debug("Restore size: %s.", content_size)
 
-        except Exception as e:
-            LOG.error(e)
-            LOG.error(_("Error restoring backup %(id)s") % backup_info)
+        except Exception:
+            LOG.exception(_("Error restoring backup %(id)s.") % backup_info)
             raise
 
         else:
-            LOG.info(_("Restored Backup %(id)s") % backup_info)
+            LOG.debug("Restored backup %(id)s." % backup_info)

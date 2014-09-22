@@ -13,13 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-
-from trove.guestagent.strategy import Strategy
-from trove.openstack.common import log as logging
-from trove.common import cfg, utils
-from eventlet.green import subprocess
 import os
 import signal
+
+from eventlet.green import subprocess
+from trove.common import cfg, utils
+from trove.guestagent.strategy import Strategy
+from trove.openstack.common import log as logging
 
 CONF = cfg.CONF
 
@@ -58,6 +58,7 @@ class BackupRunner(Strategy):
         return type(self).__name__
 
     def run(self):
+        LOG.debug("BackupRunner running cmd: %s", self.command)
         self.process = subprocess.Popen(self.command, shell=True,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE,
@@ -68,7 +69,6 @@ class BackupRunner(Strategy):
         """Start up the process."""
         self._run_pre_backup()
         self.run()
-        self._run_post_backup()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -90,6 +90,8 @@ class BackupRunner(Strategy):
             utils.raise_if_process_errored(self.process, BackupError)
             if not self.check_process():
                 raise BackupError
+
+        self._run_post_backup()
 
         return True
 

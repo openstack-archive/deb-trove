@@ -15,11 +15,14 @@
 #    under the License.
 
 import jinja2
+from oslo.config import cfg as oslo_config
+
 from trove.common import cfg
 from trove.common import configurations
 from trove.common import exception
 from trove.common import utils
 from trove.openstack.common import log as logging
+from trove.openstack.common.gettextutils import _
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -53,10 +56,10 @@ class SingleInstanceConfigTemplate(object):
         """
         self.flavor_dict = flavor_dict
         self.datastore_version = datastore_version
-        #TODO(tim.simpson): The current definition of datastore_version is a
-        #                   bit iffy and I believe will change soon, so I'm
-        #                   creating a dictionary here for jinja to consume
-        #                   rather than pass in the datastore version object.
+        # TODO(tim.simpson): The current definition of datastore_version is a
+        #                    bit iffy and I believe will change soon, so I'm
+        #                    creating a dictionary here for jinja to consume
+        #                    rather than pass in the datastore version object.
         self.datastore_dict = {
             'name': self.datastore_version.datastore_name,
             'manager': self.datastore_version.manager,
@@ -112,12 +115,23 @@ class OverrideConfigTemplate(SingleInstanceConfigTemplate):
     template_name = "override.config.template"
 
 
-def load_heat_template(datastore_manager):
-    template_filename = "%s/heat.template" % datastore_manager
+def _validate_datastore(datastore_manager):
     try:
-        template_obj = ENV.get_template(template_filename)
+        CONF.get(datastore_manager)
+    except oslo_config.NoSuchOptError:
+        raise exception.InvalidDatastoreManager(
+            datastore_manager=datastore_manager)
+
+
+def load_heat_template(datastore_manager):
+    patterns = ["%s/heat.template" % datastore_manager,
+                "default.heat.template"]
+    _validate_datastore(datastore_manager)
+    try:
+        template_obj = ENV.select_template(patterns)
         return template_obj
     except jinja2.TemplateNotFound:
-        msg = "Missing heat template for %s" % datastore_manager
+        msg = _("Missing heat template for %(s_datastore_manager)s.") % (
+            {"s_datastore_manager": datastore_manager})
         LOG.error(msg)
         raise exception.TroveError(msg)

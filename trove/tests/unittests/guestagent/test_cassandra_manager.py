@@ -115,6 +115,8 @@ class GuestAgentCassandraDBManagerTest(testtools.TestCase):
         mock_app.write_config = MagicMock(return_value=None)
         mock_app.make_host_reachable = MagicMock(return_value=None)
         mock_app.restart = MagicMock(return_value=None)
+        mock_app.start_db = MagicMock(return_value=None)
+        mock_app.stop_db = MagicMock(return_value=None)
         os.path.exists = MagicMock(return_value=True)
         volume.VolumeDevice.format = MagicMock(return_value=None)
         volume.VolumeDevice.migrate_data = MagicMock(return_value=None)
@@ -129,11 +131,13 @@ class GuestAgentCassandraDBManagerTest(testtools.TestCase):
                              device_path=device_path,
                              mount_point="/var/lib/cassandra",
                              backup_info=backup_info,
-                             overrides=None)
+                             overrides=None,
+                             cluster_config=None)
 
         # verification/assertion
         mock_status.begin_install.assert_any_call()
         mock_app.install_if_needed.assert_any_call(packages)
         mock_app.init_storage_structure.assert_any_call('/var/lib/cassandra')
         mock_app.make_host_reachable.assert_any_call()
-        mock_app.restart.assert_any_call()
+        mock_app.start_db.assert_any_call()
+        mock_app.stop_db.assert_any_call()

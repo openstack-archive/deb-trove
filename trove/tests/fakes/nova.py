@@ -259,7 +259,7 @@ class FakeServers(object):
 
     def create(self, name, image_id, flavor_ref, files=None, userdata=None,
                block_device_mapping=None, volume=None, security_groups=None,
-               availability_zone=None, nics=None):
+               availability_zone=None, nics=None, config_drive=False):
         id = "FAKE_%s" % uuid.uuid4()
         if volume:
             volume = self.volumes.create(volume['size'], volume['name'],
@@ -289,9 +289,11 @@ class FakeServers(object):
             raise nova_exceptions.ClientException("The requested availability "
                                                   "zone is not available.")
 
-        if nics is not None and nics.port_id == 'UNKNOWN':
-            raise nova_exceptions.ClientException("The requested availability "
-                                                  "zone is not available.")
+        if nics:
+            if 'port-id' in nics[0] and nics[0]['port-id'] == "UNKNOWN":
+                raise nova_exceptions.ClientException("The requested "
+                                                      "port-id is not "
+                                                      "available.")
 
         server.schedule_status("ACTIVE", 1)
         LOG.info(_("FAKE_SERVERS_DB : %s") % str(FAKE_SERVERS_DB))
@@ -402,7 +404,7 @@ class FakeServerVolumes(object):
 class FakeVolume(object):
 
     def __init__(self, parent, owner, id, size, name,
-                 description):
+                 description, volume_type):
         self.attachments = []
         self.parent = parent
         self.owner = owner  # This is a context.
@@ -414,6 +416,7 @@ class FakeVolume(object):
         # For some reason we grab this thing from device then call it mount
         # point.
         self.device = "vdb"
+        self.volume_type = volume_type
 
     def __repr__(self):
         msg = ("FakeVolume(id=%s, size=%s, name=%s, "
@@ -488,10 +491,10 @@ class FakeVolumes(object):
             else:
                 raise nova_exceptions.NotFound(404, "Bad permissions")
 
-    def create(self, size, name=None, description=None):
+    def create(self, size, name=None, description=None, volume_type=None):
         id = "FAKE_VOL_%s" % uuid.uuid4()
         volume = FakeVolume(self, self.context, id, size, name,
-                            description)
+                            description, volume_type)
         self.db[id] = volume
         if size == 9:
             volume.schedule_status("error", 2)

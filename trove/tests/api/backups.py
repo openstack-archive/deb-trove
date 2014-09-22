@@ -45,6 +45,7 @@ backup_info = None
 incremental_info = None
 incremental_db = generate_uuid()
 restore_instance_id = None
+total_num_dbs = 0
 backup_count_prior_to_create = 0
 backup_count_for_instance_prior_to_create = 0
 
@@ -97,7 +98,17 @@ class CreateBackups(object):
         assert_equal(instance_info.id, result.instance_id)
         assert_equal('NEW', result.status)
         instance = instance_info.dbaas.instances.get(instance_info.id)
+
+        datastore_version = instance_info.dbaas.datastore_versions.get(
+            instance_info.dbaas_datastore,
+            instance_info.dbaas_datastore_version)
+
         assert_equal('BACKUP', instance.status)
+        assert_equal(instance_info.dbaas_datastore,
+                     result.datastore['type'])
+        assert_equal(instance_info.dbaas_datastore_version,
+                     result.datastore['version'])
+        assert_equal(datastore_version.id, result.datastore['version_id'])
 
 
 @test(runs_after=[CreateBackups],
@@ -164,6 +175,33 @@ class ListBackups(object):
         assert_equal('COMPLETED', backup.status)
 
     @test
+    def test_backup_list_filter_datastore(self):
+        """test list backups and filter by datastore."""
+        result = instance_info.dbaas.backups.list(
+            datastore=instance_info.dbaas_datastore)
+        assert_equal(backup_count_prior_to_create + 1, len(result))
+        backup = result[0]
+        assert_equal(BACKUP_NAME, backup.name)
+        assert_equal(BACKUP_DESC, backup.description)
+        assert_not_equal(0.0, backup.size)
+        assert_equal(instance_info.id, backup.instance_id)
+        assert_equal('COMPLETED', backup.status)
+
+    @test
+    def test_backup_list_filter_different_datastore(self):
+        """test list backups and filter by datastore."""
+        result = instance_info.dbaas.backups.list(
+            datastore='Test_Datastore_1')
+        # There should not be any backups for this datastore
+        assert_equal(0, len(result))
+
+    @test
+    def test_backup_list_filter_datastore_not_found(self):
+        """test list backups and filter by datastore."""
+        assert_raises(exceptions.BadRequest, instance_info.dbaas.backups.list,
+                      datastore='NOT_FOUND')
+
+    @test
     def test_backup_list_for_instance(self):
         """Test backup list for instance."""
         result = instance_info.dbaas.instances.backups(instance_info.id)
@@ -186,6 +224,15 @@ class ListBackups(object):
         assert_equal(instance_info.id, backup.instance_id)
         assert_not_equal(0.0, backup.size)
         assert_equal('COMPLETED', backup.status)
+        assert_equal(instance_info.dbaas_datastore,
+                     backup.datastore['type'])
+        assert_equal(instance_info.dbaas_datastore_version,
+                     backup.datastore['version'])
+
+        datastore_version = instance_info.dbaas.datastore_versions.get(
+            instance_info.dbaas_datastore,
+            instance_info.dbaas_datastore_version)
+        assert_equal(datastore_version.id, backup.datastore['version_id'])
 
         # Test to make sure that user in other tenant is not able
         # to GET this backup
@@ -205,9 +252,13 @@ class IncrementalBackups(object):
 
     @test
     def test_create_db(self):
+        global total_num_dbs
+        total_num_dbs = len(instance_info.dbaas.databases.list(
+            instance_info.id))
         databases = [{'name': incremental_db}]
         instance_info.dbaas.databases.create(instance_info.id, databases)
         assert_equal(202, instance_info.dbaas.last_http_code)
+        total_num_dbs += 1
 
     @test(runs_after=['test_create_db'])
     def test_create_incremental_backup(self):
@@ -320,6 +371,8 @@ class VerifyRestore(object):
     def test_database_restored_incremental(self):
         try:
             self._poll(incremental_restore_instance_id, incremental_db)
+            assert_equal(total_num_dbs, len(instance_info.dbaas.databases.list(
+                incremental_restore_instance_id)))
         except exception.PollTimeOut:
             fail('Timed out')
 

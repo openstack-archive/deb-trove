@@ -180,6 +180,55 @@ configuration_id = {
     ]
 }
 
+cluster = {
+    "create": {
+        "type": "object",
+        "required": ["cluster"],
+        "additionalProperties": True,
+        "properties": {
+            "cluster": {
+                "type": "object",
+                "required": ["name", "datastore", "instances"],
+                "additionalProperties": True,
+                "properties": {
+                    "name": non_empty_string,
+                    "datastore": {
+                        "type": "object",
+                        "required": ["type", "version"],
+                        "additionalProperties": True,
+                        "properties": {
+                            "type": non_empty_string,
+                            "version": non_empty_string
+                        }
+                    },
+                    "instances": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["flavorRef"],
+                            "additionalProperties": True,
+                            "properties": {
+                                "flavorRef": flavorref,
+                                "volume": volume
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "add_shard": {
+        "type": "object",
+        "required": ["add_shard"],
+        "additionalProperties": True,
+        "properties": {
+            "add_shard": {
+                "type": "object"
+            }
+        }
+    }
+}
+
 instance = {
     "create": {
         "type": "object",
@@ -188,8 +237,7 @@ instance = {
         "properties": {
             "instance": {
                 "type": "object",
-                "required": ["name", "flavorRef",
-                             "volume" if CONF.trove_volume_support else None],
+                "required": ["name", "flavorRef"],
                 "additionalProperties": True,
                 "properties": {
                     "name": non_empty_string,
@@ -216,6 +264,20 @@ instance = {
                         }
                     },
                     "nics": nics
+                }
+            }
+        }
+    },
+    "edit": {
+        "name": "instance:edit",
+        "type": "object",
+        "required": ["instance"],
+        "properties": {
+            "instance": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "slave_of": {},
                 }
             }
         }
@@ -259,6 +321,21 @@ instance = {
             "additionalProperties": True,
             "properties": {
                 "restart": {
+                    "type": "object"
+                }
+            }
+        }
+    }
+}
+
+mgmt_cluster = {
+    "action": {
+        'reset-task': {
+            "type": "object",
+            "required": ["reset-task"],
+            "additionalProperties": True,
+            "properties": {
+                "reset-task": {
                     "type": "object"
                 }
             }
@@ -433,6 +510,26 @@ account = {
         "additionalProperties": True,
         "properties": {
             "users": users_list
+        }
+    }
+}
+
+upgrade = {
+    "create": {
+        "type": "object",
+        "required": ["upgrade"],
+        "additionalProperties": True,
+        "properties": {
+            "upgrade": {
+                "type": "object",
+                "required": [],
+                "additionalProperties": True,
+                "properties": {
+                    "instance_version": non_empty_string,
+                    "location": non_empty_string,
+                    "metadata": {}
+                }
+            }
         }
     }
 }

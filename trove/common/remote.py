@@ -15,8 +15,8 @@
 
 from trove.common import cfg
 from trove.common import exception
+from trove.common import strategy
 from trove.openstack.common.importutils import import_class
-from trove.openstack.common import log as logging
 
 from cinderclient.v2 import client as CinderClient
 from heatclient.v1 import client as HeatClient
@@ -28,8 +28,6 @@ CONF = cfg.CONF
 
 PROXY_AUTH_URL = CONF.trove_auth_url
 USE_SNET = CONF.backup_use_snet
-
-LOG = logging.getLogger(__name__)
 
 
 def normalize_url(url):
@@ -82,9 +80,13 @@ def dns_client(context):
     return DnsManager()
 
 
-def guest_client(context, id):
+def guest_client(context, id, manager=None):
     from trove.guestagent.api import API
-    return API(context, id)
+    if manager:
+        clazz = strategy.load_guestagent_strategy(manager).guest_client_class
+    else:
+        clazz = API
+    return clazz(context, id)
 
 
 def nova_client(context):
@@ -165,9 +167,25 @@ def swift_client(context):
     return client
 
 
+def neutron_client(context):
+    from neutronclient.v2_0 import client as NeutronClient
+    if CONF.neutron_url:
+        # neutron endpoint url / publicURL does not include tenant segment
+        url = CONF.neutron_url
+    else:
+        url = get_endpoint(context.service_catalog,
+                           service_type=CONF.neutron_service_type,
+                           endpoint_region=CONF.os_region_name)
+
+    client = NeutronClient.Client(token=context.auth_token,
+                                  endpoint_url=url)
+    return client
+
+
 create_dns_client = import_class(CONF.remote_dns_client)
 create_guest_client = import_class(CONF.remote_guest_client)
 create_nova_client = import_class(CONF.remote_nova_client)
 create_swift_client = import_class(CONF.remote_swift_client)
 create_cinder_client = import_class(CONF.remote_cinder_client)
 create_heat_client = import_class(CONF.remote_heat_client)
+create_neutron_client = import_class(CONF.remote_neutron_client)

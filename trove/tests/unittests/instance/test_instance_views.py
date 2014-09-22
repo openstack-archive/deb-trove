@@ -53,12 +53,15 @@ class InstanceDetailViewTest(TestCase):
         self.instance.updated = 'Now'
         self.instance.datastore_version = Mock()
         self.instance.datastore_version.name = 'mysql_test_version'
+        self.instance.datastore_version.manager = 'mysql'
         self.instance.hostname = 'test.trove.com'
         self.ip = "1.2.3.4"
         self.instance.addresses = {"private": [{"addr": self.ip}]}
         self.instance.volume_used = '3'
         self.instance.root_password = 'iloveyou'
         self.instance.get_visible_ip_addresses = lambda: ["1.2.3.4"]
+        self.instance.slave_of_id = None
+        self.instance.slaves = []
 
     def tearDown(self):
         super(InstanceDetailViewTest, self).tearDown()

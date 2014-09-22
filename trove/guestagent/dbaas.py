@@ -28,6 +28,7 @@ import os
 from trove.openstack.common import log
 from itertools import chain
 from trove.common import cfg
+from trove.openstack.common.gettextutils import _
 
 
 LOG = log.getLogger(__name__)
@@ -38,6 +39,7 @@ defaults = {
     'cassandra': 'trove.guestagent.datastore.cassandra.manager.Manager',
     'couchbase': 'trove.guestagent.datastore.couchbase.manager.Manager',
     'mongodb': 'trove.guestagent.datastore.mongodb.manager.Manager',
+    'postgresql': 'trove.guestagent.datastore.postgresql.manager.Manager',
 }
 CONF = cfg.CONF
 
@@ -58,11 +60,18 @@ def to_gb(bytes):
     return round(size, 2)
 
 
+def to_mb(bytes):
+    if bytes == 0:
+        return 0.0
+    size = bytes / 1024.0 ** 2
+    return round(size, 2)
+
+
 def get_filesystem_volume_stats(fs_path):
     try:
         stats = os.statvfs(fs_path)
     except OSError:
-        LOG.exception("Error getting volume stats.")
+        LOG.exception(_("Error getting volume stats."))
         raise RuntimeError("Filesystem not found (%s)" % fs_path)
 
     total = stats.f_blocks * stats.f_bsize

@@ -267,7 +267,7 @@ class Resource(openstack_wsgi.Resource):
             LOG.exception(exception_uuid + ": " + str(error))
             return Fault(webob.exc.HTTPInternalServerError(
                 "Internal Server Error. Please keep this ID to help us "
-                "figure out what went wrong: (%s)" % exception_uuid,
+                "figure out what went wrong: (%s)." % exception_uuid,
                 request=request))
 
     def _get_http_error(self, error):
@@ -301,7 +301,7 @@ class Resource(openstack_wsgi.Resource):
             # If action_result is not a Fault then there really was a
             # serialization error which we log. Otherwise return the Fault.
             if not isinstance(action_result, Fault):
-                LOG.exception("unserializable result detected.")
+                LOG.exception(_("Unserializable result detected."))
                 raise
             return action_result
 
@@ -333,7 +333,8 @@ class Controller(object):
             exception.UserNotFound,
             exception.DatabaseNotFound,
             exception.QuotaResourceUnknown,
-            exception.BackupFileNotFound
+            exception.BackupFileNotFound,
+            exception.ClusterNotFound
         ],
         webob.exc.HTTPConflict: [
             exception.BackupNotCompleteError,
@@ -351,7 +352,9 @@ class Controller(object):
         webob.exc.HTTPNotImplemented: [
             exception.VolumeNotSupported,
             exception.LocalStorageNotSupported,
-            exception.DatastoreOperationNotSupported
+            exception.DatastoreOperationNotSupported,
+            exception.ClusterInstanceOperationNotSupported,
+            exception.ClusterDatastoreNotSupported
         ],
     }
 
@@ -467,7 +470,8 @@ class Fault(webob.exc.HTTPException):
         name = exc.__class__.__name__
         if name in named_exceptions:
             return named_exceptions[name]
-            # If the exception isn't in our list, at least strip off the
+
+        # If the exception isn't in our list, at least strip off the
         # HTTP from the name, and then drop the case on the first letter.
         name = name.split("HTTP").pop()
         name = name[:1].lower() + name[1:]
@@ -561,7 +565,7 @@ class FaultWrapper(openstack_wsgi.Middleware):
                 return resp
             return resp
         except Exception as ex:
-            LOG.exception(_("Caught error: %s"), unicode(ex))
+            LOG.exception(_("Caught error: %s."), unicode(ex))
             exc = webob.exc.HTTPInternalServerError()
             return Fault(exc)
 
