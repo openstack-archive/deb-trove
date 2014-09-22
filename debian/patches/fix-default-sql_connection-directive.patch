@@ -1,20 +1,20 @@
-Description: Better default in the config file
+Description: Fix default sql_connection directive
+ Using sqlite by default, and removing examples which are making it impossible
+ to parse.
 Author: Thomas Goirand <zigo@debian.org>
-Forwarded: not-needed
-Last-Update: 2013-10-03
+Forwarded: no
+Last-Update: 2014-09-23
 
-Index: openstack-trove/etc/trove/trove.conf.sample
-===================================================================
---- openstack-trove.orig/etc/trove/trove.conf.sample	2014-07-01 23:28:54.000000000 +0800
-+++ openstack-trove/etc/trove/trove.conf.sample	2014-07-02 15:11:12.000000000 +0800
-@@ -45,9 +45,7 @@
+--- openstack-trove-2014.2~b3.orig/etc/trove/trove.conf.sample
++++ openstack-trove-2014.2~b3/etc/trove/trove.conf.sample
+@@ -46,9 +46,7 @@ rpc_backend = trove.openstack.common.rpc
  # SQLAlchemy connection string for the reference implementation
  # registry server. Any valid SQLAlchemy connection string is fine.
  # See: http://www.sqlalchemy.org/docs/05/reference/sqlalchemy/connections.html#sqlalchemy.create_engine
 -# sql_connection = sqlite:///trove_test.sqlite
 -sql_connection = mysql://root:e1a2c042c828d3566d0a@localhost/trove
 -#sql_connection = postgresql://trove:trove@localhost/trove
-+sql_connection = sqlite:///var/lib/trove/trovedb
++sql_connection=sqlite:///var/lib/trove/trovedb
  
  # Period in seconds after which SQLAlchemy should reestablish its connection
  # to the database.

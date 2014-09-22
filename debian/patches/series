@@ -1,3 +1,2 @@
-patch-default-config-file.patch
-fixes-filter-authtoken-config-file.patch
 do-not-use-network-when-building-docs.patch
+fix-default-sql_connection-directive.patch
