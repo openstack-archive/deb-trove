@@ -142,7 +142,7 @@ Description: Database as a Service for OpenStack - common files
 Package: trove-api
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: trove-common, ${misc:Depends}, ${python:Depends}
+Depends: adduser, trove-common, ${misc:Depends}, ${python:Depends}
 Description: Database as a Service for OpenStack - API server
  Trove is Database as a Service for Openstack. It's designed to run entirely on
  OpenStack, with the goal of allowing users to quickly and easily utilize the
@@ -163,7 +163,7 @@ Description: Database as a Service for OpenStack - API server
 Package: trove-guestagent
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: trove-common, ${misc:Depends}, ${python:Depends}
+Depends: adduser, trove-common, ${misc:Depends}, ${python:Depends}
 Description: Database as a Service for OpenStack - guest agent
  Trove is Database as a Service for Openstack. It's designed to run entirely on
  OpenStack, with the goal of allowing users to quickly and easily utilize the
@@ -185,7 +185,7 @@ Description: Database as a Service for OpenStack - guest agent
 Package: trove-taskmanager
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: trove-common, ${misc:Depends}, ${python:Depends}
+Depends: adduser, trove-common, ${misc:Depends}, ${python:Depends}
 Description: Database as a Service for OpenStack - taskmanager
  Trove is Database as a Service for Openstack. It's designed to run entirely on
  OpenStack, with the goal of allowing users to quickly and easily utilize the
