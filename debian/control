@@ -223,6 +223,7 @@ Description: Database as a Service for OpenStack - conductor
  This package provides the Trove conductor.
 
 Package: trove-doc
+Section: doc
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
