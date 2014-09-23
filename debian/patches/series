@@ -1,2 +1,3 @@
 do-not-use-network-when-building-docs.patch
 fix-default-sql_connection-directive.patch
+Isolate_unit_tests_from_integration_tests_data.patch
