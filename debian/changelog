@@ -2,6 +2,7 @@ openstack-trove (2014.2~b3-2) experimental; urgency=medium
 
   * Adds Isolate_unit_tests_from_integration_tests_data.patch.
   * Section: doc for trove-doc.
+  * Fail the build in case of unit test failures.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 23 Sep 2014 14:37:06 +0000
 

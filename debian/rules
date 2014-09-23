@@ -54,11 +54,9 @@ override_dh_install:
 
 override_dh_auto_test:
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
-	#run_tests.py --test-config=etc/tests/xml.localhost.test.conf
-	#python setup.py testr --slowest --testr-args='--subunit  '
-	set -e && \
-		TEMP_REZ=`mktemp -t` && \
-		python setup.py testr --slowest --testr-args='--subunit  ' | tee $$TEMP_REZ | subunit2pyunit || true ; \
-		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats || true ; \
-		rm -f $$TEMP_REZ || true
+	set -e ; \
+		TEMP_REZ=`mktemp -t` ; \
+		python setup.py testr --slowest --testr-args='--subunit  ' | tee $$TEMP_REZ | subunit2pyunit ; \
+		cat $$TEMP_REZ | subunit-filter -s --no-passthrough | subunit-stats ; \
+		rm -f $$TEMP_REZ
 endif
