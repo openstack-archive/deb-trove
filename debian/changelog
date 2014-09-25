@@ -1,3 +1,9 @@
+openstack-trove (2014.2~b3-3) experimental; urgency=medium
+
+  * New version of Isolate_unit_tests_from_integration_tests_data.patch.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 25 Sep 2014 15:49:57 +0000
+
 openstack-trove (2014.2~b3-2) experimental; urgency=medium
 
   * Adds Isolate_unit_tests_from_integration_tests_data.patch.

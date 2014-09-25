@@ -1,39 +1,24 @@
+Description: Isolate unit tests from integration tests data
+ Reasons:
+  - unit tests are depending on integration tests data, such as:
+  - datastore and its versions;
+  - distro package maintainers are not able to package Trove since icehouse rc1
+ .
+ Gate behaviour:
+  - gate tests are not failing because unit tests are running right after
+   fake-mode tests, so sqlite still exist.
+ .
+ Changes:
+  - fixing those unit tests that are failing while building Trove package
+   (more info see at bug-report).
 From: Denis Makogon <dmakogon@mirantis.com>
 Date: Tue, 23 Sep 2014 14:28:07 +0000 (+0300)
-Subject: Isolate unit tests from integration tests data
 X-Git-Url: https://review.openstack.org/gitweb?p=openstack%2Ftrove.git;a=commitdiff_plain;h=9ff1cd57dfd2f6a7a26d9b6f239f9ed478a77afb
-
-Isolate unit tests from integration tests data
-
-Reasons:
- - unit tests are depending on integration tests data, such as:
-  - datastore and its versions;
- - distro package maintainers are not able to package Trove since ice house rc1.
-
-Gate behaviour:
- - gate tests are not failing because unit tests are running right after
-   fake-mode tests, so sqlite still exist.
-
-Changes:
- - fixing those unit tests that are failing while building Trove package
-   (more info see at bug-report).
-
 Change-Id: Ib9a41d68481d32cdd81fc4d7c015a63c4da33bb3
-Closes-Bug: #1302784
----
+Bug-Ubuntu: https://bugs.launchpad.net/trove/+bug/1302784
+Origin: upstream, https://review.openstack.org/#/c/123450/
+Last-Update: 2014-09-25
 
-diff --git a/trove/extensions/mgmt/instances/models.py b/trove/extensions/mgmt/instances/models.py
-index 9766d97..f99dd71 100644
---- a/trove/extensions/mgmt/instances/models.py
-+++ b/trove/extensions/mgmt/instances/models.py
-@@ -173,6 +173,7 @@ def publish_exist_events(transformer, admin_context):
- 
- class NotificationTransformer(object):
-     def __init__(self, **kwargs):
-+        # [denis_makogon]: What's the purpose of this constructor?
-         pass
- 
-     @staticmethod
 diff --git a/trove/tests/unittests/instance/test_instance_status.py b/trove/tests/unittests/instance/test_instance_status.py
 index bca9299..a563254 100644
 --- a/trove/tests/unittests/instance/test_instance_status.py
@@ -220,7 +205,7 @@ index bca9299..a563254 100644
 +        instance = SimpleInstance('dummy context', self.db_info, self.status)
          self.assertEqual(InstanceStatus.ACTIVE, instance.status)
 diff --git a/trove/tests/unittests/mgmt/test_models.py b/trove/tests/unittests/mgmt/test_models.py
-index 5d92b88..324b496 100644
+index 5d92b88..c2821c5 100644
 --- a/trove/tests/unittests/mgmt/test_models.py
 +++ b/trove/tests/unittests/mgmt/test_models.py
 @@ -13,6 +13,7 @@
@@ -231,7 +216,7 @@ index 5d92b88..324b496 100644
  from mock import MagicMock, patch, ANY
  from testtools import TestCase
  from testtools.matchers import Equals, Is, Not
-@@ -25,21 +26,23 @@ from trove.backup.models import Backup
+@@ -25,21 +26,40 @@ from trove.backup.models import Backup
  from trove.common.context import TroveContext
  from trove.common import instance as rd_instance
  from trove.datastore import models as datastore_models
@@ -250,63 +235,38 @@ index 5d92b88..324b496 100644
  
  class MockMgmtInstanceTest(TestCase):
 +
-     def setUp(self):
--        super(MockMgmtInstanceTest, self).setUp()
-+
++    @classmethod
++    def setUpClass(cls):
 +        util.init_db()
-+
-         self.context = TroveContext()
-         self.context.auth_token = 'some_secret_password'
-         self.client = MagicMock(spec=Client)
-@@ -53,71 +56,79 @@ class MockMgmtInstanceTest(TestCase):
-         CONF.set_override('report_interval', 20)
-         CONF.set_override('notification_service_id', {'mysql': '123'})
- 
-+        self.version_id = str(uuid.uuid4())
-+        self.datastore = datastore_models.DBDatastore.create(
++        cls.version_id = str(uuid.uuid4())
++        cls.datastore = datastore_models.DBDatastore.create(
 +            id=str(uuid.uuid4()),
 +            name='mysql',
-+            default_version_id=self.version_id
++            default_version_id=cls.version_id
 +        )
-+        self.version = datastore_models.DBDatastoreVersion.create(
-+            id=self.version_id,
-+            datastore_id=self.datastore.id,
++        cls.version = datastore_models.DBDatastoreVersion.create(
++            id=cls.version_id,
++            datastore_id=cls.datastore.id,
 +            name='5.5',
 +            manager='mysql',
 +            image_id=str(uuid.uuid4()),
 +            active=1,
 +            packages="mysql-server-5.5"
 +        )
-+        self.instance = DBInstance(InstanceTasks.NONE,
-+                                   name='test_name',
-+                                   id=str(uuid.uuid4()),
-+                                   flavor_id='flavor_1',
-+                                   datastore_version_id=
-+                                   self.version_id,
-+                                   compute_instance_id='compute_id_1',
-+                                   server_id='server_id_1',
-+                                   tenant_id='tenant_id_1',
-+                                   server_status=
-+                                   rd_instance.ServiceStatuses.
-+                                   BUILDING.api_status,
-+                                   deleted=False)
-+        self.instance.save()
-+        self.status = InstanceServiceStatus(
-+            rd_instance.ServiceStatuses.RUNNING,
-+            id=str(uuid.uuid4()),
-+            instance_id=self.instance.id,
-+        )
-+        self.status.save()
-+        self.transformer = mgmtmodels.NovaNotificationTransformer(
-+            context=self.context)
-+        super(MockMgmtInstanceTest, self).setUp()
++        super(MockMgmtInstanceTest, cls).setUpClass()
 +
-     def tearDown(self):
-+        self.datastore.delete()
-+        self.version.delete()
-+        self.instance.delete()
-+        self.status.delete()
-         super(MockMgmtInstanceTest, self).tearDown()
+     def setUp(self):
+-        super(MockMgmtInstanceTest, self).setUp()
+         self.context = TroveContext()
+         self.context.auth_token = 'some_secret_password'
+         self.client = MagicMock(spec=Client)
+@@ -53,63 +73,59 @@ class MockMgmtInstanceTest(TestCase):
+         CONF.set_override('report_interval', 20)
+         CONF.set_override('notification_service_id', {'mysql': '123'})
+ 
+-    def tearDown(self):
+-        super(MockMgmtInstanceTest, self).tearDown()
++        super(MockMgmtInstanceTest, self).setUp()
  
 -    @staticmethod
 -    def build_db_instance(status, task_status=InstanceTasks.DELETING):
@@ -321,19 +281,50 @@ index 5d92b88..324b496 100644
 -                          server_id='server_id_1',
 -                          tenant_id='tenant_id_1',
 -                          server_status=status)
++    def do_cleanup(self, instance, status):
++        instance.delete()
++        status.delete()
++
 +    def build_db_instance(self, status, task_status=InstanceTasks.NONE):
-+        self.instance.set_task_status(task_status)
-+        self.instance.server_status = status
-+        self.instance.save()
++        version = datastore_models.DBDatastoreVersion.get_by(name='5.5')
++        instance = DBInstance(InstanceTasks.NONE,
++                              name='test_name',
++                              id=str(uuid.uuid4()),
++                              flavor_id='flavor_1',
++                              datastore_version_id=
++                              version.id,
++                              compute_instance_id='compute_id_1',
++                              server_id='server_id_1',
++                              tenant_id='tenant_id_1',
++                              server_status=
++                              rd_instance.ServiceStatuses.
++                              BUILDING.api_status,
++                              deleted=False)
++        instance.save()
++        service_status = InstanceServiceStatus(
++            rd_instance.ServiceStatuses.RUNNING,
++            id=str(uuid.uuid4()),
++            instance_id=instance.id,
++        )
++        service_status.save()
++        instance.set_task_status(task_status)
++        instance.server_status = status
++        instance.save()
++        return instance, service_status
  
  
  class TestNotificationTransformer(MockMgmtInstanceTest):
  
++    @classmethod
++    def setUpClass(cls):
++        super(TestNotificationTransformer, cls).setUpClass()
++
      def test_tranformer(self):
 -        transformer = mgmtmodels.NotificationTransformer(context=self.context)
          status = rd_instance.ServiceStatuses.BUILDING.api_status
 -        db_instance = MockMgmtInstanceTest.build_db_instance(
--            status, InstanceTasks.BUILDING)
++        instance, service_status = self.build_db_instance(
+             status, InstanceTasks.BUILDING)
 -
 -        with patch.object(DatabaseModelBase, 'find_all',
 -                          return_value=[db_instance]):
@@ -366,55 +357,43 @@ index 5d92b88..324b496 100644
 -                                Not(Is(None)))
 -                self.assertThat(payload['audit_period_ending'], Not(Is(None)))
 -                self.assertThat(payload['state'], Equals(status.lower()))
-+        self.build_db_instance(status, InstanceTasks.BUILDING)
-+        transformer = mgmtmodels.NotificationTransformer(context=self.context)
-+        payloads = transformer()
++        payloads = mgmtmodels.NotificationTransformer(
++            context=self.context)()
 +        self.assertIsNotNone(payloads)
-+        self.assertThat(len(payloads), Equals(1))
 +        payload = payloads[0]
 +        self.assertThat(payload['audit_period_beginning'],
 +                        Not(Is(None)))
 +        self.assertThat(payload['audit_period_ending'], Not(Is(None)))
-+        self.assertThat(payload['state'], Equals(status.lower()))
++        self.assertTrue(status.lower() in [db['state'] for db in payloads])
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
      def test_get_service_id(self):
          id_map = {
-             'mysql': '123',
-             'percona': 'abc'
-         }
--        transformer = mgmtmodels.NotificationTransformer(context=self.context)
--        self.assertThat(transformer._get_service_id('mysql', id_map),
-+        self.assertThat(self.transformer._get_service_id('mysql', id_map),
-                         Equals('123'))
- 
-     def test_get_service_id_unknown(self):
-@@ -125,12 +136,12 @@ class TestNotificationTransformer(MockMgmtInstanceTest):
-             'mysql': '123',
-             'percona': 'abc'
-         }
--        transformer = mgmtmodels.NotificationTransformer(context=self.context)
--        self.assertThat(transformer._get_service_id('m0ng0', id_map),
-+        self.assertThat(self.transformer._get_service_id('m0ng0', id_map),
-                         Equals('unknown-service-id-error'))
+@@ -131,6 +147,11 @@ class TestNotificationTransformer(MockMgmtInstanceTest):
  
  
  class TestNovaNotificationTransformer(MockMgmtInstanceTest):
 +
++    @classmethod
++    def setUpClass(cls):
++        super(TestNovaNotificationTransformer, cls).setUpClass()
++
      def test_transformer_cache(self):
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'db.small'
-@@ -146,136 +157,101 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+@@ -145,9 +166,9 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+     def test_lookup_flavor(self):
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'flav_1'
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
          with patch.object(self.flavor_mgr, 'get', side_effect=[flavor, None]):
 -            transformer = mgmtmodels.NovaNotificationTransformer(
 -                context=self.context)
--            self.assertThat(transformer._lookup_flavor('1'),
-+            self.assertThat(self.transformer._lookup_flavor('1'),
+             self.assertThat(transformer._lookup_flavor('1'),
                              Equals(flavor.name))
--            self.assertThat(transformer._lookup_flavor('2'),
-+            self.assertThat(self.transformer._lookup_flavor('2'),
-                             Equals('unknown'))
+             self.assertThat(transformer._lookup_flavor('2'),
+@@ -155,188 +176,160 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
  
      def test_tranformer(self):
          status = rd_instance.ServiceStatuses.BUILDING.api_status
@@ -431,23 +410,26 @@ index 5d92b88..324b496 100644
 -        stub_dsv_db_info.manager = "mysql"
 -        stub_datastore_version = datastore_models.DatastoreVersion(
 -            stub_dsv_db_info)
-+        self.build_db_instance(status, InstanceTasks.BUILDING)
++        instance, service_status = self.build_db_instance(
++            status, InstanceTasks.BUILDING)
  
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'db.small'
  
          server = MagicMock(spec=Server)
          server.user_id = 'test_user_id'
-+
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
          mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
 -                                                      db_instance,
-+                                                      self.instance,
++                                                      instance,
                                                        server,
-                                                       None)
- 
+-                                                      None)
+-
 -        with patch.object(DatabaseModelBase, 'find_by',
 -                          return_value=stub_datastore_version):
--
++                                                      service_status)
+ 
 -            with patch.object(mgmtmodels, 'load_mgmt_instances',
 -                              return_value=[mgmt_instance]):
 -
@@ -460,7 +442,7 @@ index 5d92b88..324b496 100644
 -                    transformer = mgmtmodels.NovaNotificationTransformer(
 -                        context=self.context)
 -                    payloads = transformer()
-+                payloads = self.transformer()
++                payloads = transformer()
  
 -                    # assertions
 -                    self.assertIsNotNone(payloads)
@@ -478,27 +460,30 @@ index 5d92b88..324b496 100644
 -                    self.assertThat(payload['user_id'], Equals('test_user_id'))
 -                    self.assertThat(payload['service_id'], Equals('123'))
 +                self.assertIsNotNone(payloads)
-+                self.assertThat(len(payloads), Equals(1))
 +                payload = payloads[0]
 +                self.assertThat(payload['audit_period_beginning'],
 +                                Not(Is(None)))
 +                self.assertThat(payload['audit_period_ending'],
 +                                Not(Is(None)))
-+                self.assertThat(payload['state'], Equals(status.lower()))
++                self.assertThat(payload['state'], Not(Is(None)))
 +                self.assertThat(payload['instance_type'],
 +                                Equals('db.small'))
 +                self.assertThat(payload['instance_type_id'],
 +                                Equals('flavor_1'))
 +                self.assertThat(payload['user_id'], Equals('test_user_id'))
 +                self.assertThat(payload['service_id'], Equals('123'))
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
      def test_tranformer_invalid_datastore_manager(self):
-+        self.version.update(manager='something_invalid')
          status = rd_instance.ServiceStatuses.BUILDING.api_status
 -        db_instance = MockMgmtInstanceTest.build_db_instance(
 -            status, task_status=InstanceTasks.BUILDING)
-+        self.build_db_instance(status, InstanceTasks.BUILDING)
- 
+-
++        instance, service_status = self.build_db_instance(
++            status, InstanceTasks.BUILDING)
++        version = datastore_models.DBDatastoreVersion.get_by(
++            id=instance.datastore_version_id)
++        version.update(manager='something invalid')
          server = MagicMock(spec=Server)
          server.user_id = 'test_user_id'
 -        stub_datastore_version = MagicMock()
@@ -552,25 +537,26 @@ index 5d92b88..324b496 100644
 -                            self.assertThat(payload['service_id'],
 -                                            Equals('unknown-service-id-error'))
 +        mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
-+                                                      self.instance,
++                                                      instance,
 +                                                      server,
-+                                                      None)
++                                                      service_status)
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
 +        with patch.object(mgmtmodels, 'load_mgmt_instances',
 +                          return_value=[mgmt_instance]):
 +            with patch.object(self.flavor_mgr,
 +                              'get', return_value=flavor):
-+
-+                payloads = self.transformer()
++                payloads = transformer()
 +                # assertions
 +                self.assertIsNotNone(payloads)
-+                self.assertThat(len(payloads), Equals(1))
 +                payload = payloads[0]
 +                self.assertThat(payload['audit_period_beginning'],
 +                                Not(Is(None)))
 +                self.assertThat(payload['audit_period_ending'],
 +                                Not(Is(None)))
-+                self.assertThat(payload['state'],
-+                                Equals(status.lower()))
++                self.assertIn(status.lower(),
++                              [db['state']
++                              for db in payloads])
 +                self.assertThat(payload['instance_type'],
 +                                Equals('db.small'))
 +                self.assertThat(payload['instance_type_id'],
@@ -579,120 +565,152 @@ index 5d92b88..324b496 100644
 +                                Equals('test_user_id'))
 +                self.assertThat(payload['service_id'],
 +                                Equals('unknown-service-id-error'))
-+
-+        self.version.update(manager='mysql')
++        version.update(manager='mysql')
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
      def test_tranformer_shutdown_instance(self):
          status = rd_instance.ServiceStatuses.SHUTDOWN.api_status
 -        db_instance = self.build_db_instance(status)
 -
-+        self.build_db_instance(status)
-+        previous_status = self.status.get_status()
-+        self.status.set_status(rd_instance.ServiceStatuses.SHUTDOWN)
++        instance, service_status = self.build_db_instance(status)
++        service_status.set_status(rd_instance.ServiceStatuses.SHUTDOWN)
          server = MagicMock(spec=Server)
          server.user_id = 'test_user_id'
 +
          mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
 -                                                      db_instance,
-+                                                      self.instance,
++                                                      instance,
                                                        server,
 -                                                      None)
-+                                                      self.status)
++                                                      service_status)
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'db.small'
- 
-@@ -284,22 +260,21 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+-
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
+         with patch.object(Backup, 'running', return_value=None):
+             self.assertThat(mgmt_instance.status, Equals('SHUTDOWN'))
              with patch.object(mgmtmodels, 'load_mgmt_instances',
                                return_value=[mgmt_instance]):
                  with patch.object(self.flavor_mgr, 'get', return_value=flavor):
 -                    # invocation
 -                    transformer = mgmtmodels.NovaNotificationTransformer(
 -                        context=self.context)
--                    payloads = transformer()
-+                    payloads = self.transformer()
+                     payloads = transformer()
                      # assertion that SHUTDOWN instances are not reported
                      self.assertIsNotNone(payloads)
-                     self.assertThat(len(payloads), Equals(0))
-+        self.status.set_status(previous_status)
+-                    self.assertThat(len(payloads), Equals(0))
++                    self.assertNotIn(status.lower(),
++                                     [db['status']
++                                      for db in payloads])
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
      def test_tranformer_no_nova_instance(self):
          status = rd_instance.ServiceStatuses.SHUTDOWN.api_status
 -        db_instance = MockMgmtInstanceTest.build_db_instance(status)
 -
-+        self.build_db_instance(status)
-+        previous_status = self.status.get_status()
-+        self.status.set_status(rd_instance.ServiceStatuses.SHUTDOWN)
++        instance, service_status = self.build_db_instance(status)
++        service_status.set_status(rd_instance.ServiceStatuses.SHUTDOWN)
          mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
 -                                                      db_instance,
-+                                                      self.instance,
++                                                      instance,
                                                        None,
 -                                                      None)
-+                                                      self.status)
++                                                      service_status)
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'db.small'
- 
-@@ -308,23 +283,20 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+-
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
+         with patch.object(Backup, 'running', return_value=None):
+             self.assertThat(mgmt_instance.status, Equals('SHUTDOWN'))
              with patch.object(mgmtmodels, 'load_mgmt_instances',
                                return_value=[mgmt_instance]):
                  with patch.object(self.flavor_mgr, 'get', return_value=flavor):
 -                    # invocation
 -                    transformer = mgmtmodels.NovaNotificationTransformer(
 -                        context=self.context)
--                    payloads = transformer()
-+                    payloads = self.transformer()
+                     payloads = transformer()
                      # assertion that SHUTDOWN instances are not reported
                      self.assertIsNotNone(payloads)
-                     self.assertThat(len(payloads), Equals(0))
-+        self.status.set_status(previous_status)
+-                    self.assertThat(len(payloads), Equals(0))
++                    self.assertNotIn(status.lower(),
++                                     [db['status']
++                                      for db in payloads])
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
      def test_tranformer_flavor_cache(self):
          status = rd_instance.ServiceStatuses.BUILDING.api_status
 -        db_instance = MockMgmtInstanceTest.build_db_instance(
--            status, InstanceTasks.BUILDING)
-+        self.build_db_instance(status, InstanceTasks.BUILDING)
++        instance, service_status = self.build_db_instance(
+             status, InstanceTasks.BUILDING)
  
          server = MagicMock(spec=Server)
          server.user_id = 'test_user_id'
          mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
 -                                                      db_instance,
-+                                                      self.instance,
++                                                      instance,
                                                        server,
-                                                       None)
+-                                                      None)
++                                                      service_status)
          flavor = MagicMock(spec=Flavor)
-@@ -333,11 +305,9 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+         flavor.name = 'db.small'
+-
++        transformer = mgmtmodels.NovaNotificationTransformer(
++            context=self.context)
          with patch.object(mgmtmodels, 'load_mgmt_instances',
                            return_value=[mgmt_instance]):
              with patch.object(self.flavor_mgr, 'get', return_value=flavor):
 -                transformer = mgmtmodels.NovaNotificationTransformer(
 -                    context=self.context)
--                transformer()
--                # call twice ensure client.flavor invoked once
--                payloads = transformer()
 +
-+                self.transformer()
-+                payloads = self.transformer()
+                 transformer()
+-                # call twice ensure client.flavor invoked once
+                 payloads = transformer()
                  self.assertIsNotNone(payloads)
                  self.assertThat(len(payloads), Equals(1))
-                 payload = payloads[0]
-@@ -354,17 +324,17 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+@@ -344,27 +337,34 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
+                 self.assertThat(payload['audit_period_beginning'],
+                                 Not(Is(None)))
+                 self.assertThat(payload['audit_period_ending'], Not(Is(None)))
+-                self.assertThat(payload['state'], Equals(status.lower()))
++                self.assertIn(status.lower(),
++                              [db['state']
++                              for db in payloads])
+                 self.assertThat(payload['instance_type'], Equals('db.small'))
+                 self.assertThat(payload['instance_type_id'],
+                                 Equals('flavor_1'))
+                 self.assertThat(payload['user_id'], Equals('test_user_id'))
+                 # ensure cache was used to get flavor second time
+                 self.flavor_mgr.get.assert_any_call('flavor_1')
++        self.addCleanup(self.do_cleanup, instance, service_status)
  
  
  class TestMgmtInstanceTasks(MockMgmtInstanceTest):
 +
++    @classmethod
++    def setUpClass(cls):
++        super(TestMgmtInstanceTasks, cls).setUpClass()
++
      def test_public_exists_events(self):
          status = rd_instance.ServiceStatuses.BUILDING.api_status
 -        db_instance = MockMgmtInstanceTest.build_db_instance(
--            status, task_status=InstanceTasks.BUILDING)
-+        self.build_db_instance(status, task_status=InstanceTasks.BUILDING)
- 
++        instance, service_status = self.build_db_instance(
+             status, task_status=InstanceTasks.BUILDING)
+-
          server = MagicMock(spec=Server)
          server.user_id = 'test_user_id'
          mgmt_instance = mgmtmodels.SimpleMgmtInstance(self.context,
 -                                                      db_instance,
-+                                                      self.instance,
++                                                      instance,
                                                        server,
 -                                                      None)
-+                                                      self.status)
++                                                      service_status)
  
          flavor = MagicMock(spec=Flavor)
          flavor.name = 'db.small'
+@@ -387,3 +387,4 @@ class TestMgmtInstanceTasks(MockMgmtInstanceTest):
+                                                     'INFO',
+                                                     ANY)
+                     self.assertThat(self.context.auth_token, Is(None))
++        self.addCleanup(self.do_cleanup, instance, service_status)
