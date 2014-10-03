@@ -33,7 +33,6 @@ from trove.tests.api.instances import TIMEOUT_INSTANCE_DELETE
 from trove.tests.api.instances import WaitForGuestInstallationToFinish
 from trove.tests.config import CONFIG
 from trove.tests.util import create_dbaas_client
-from trove.tests.util import test_config
 from trove.tests.util.check import AttrCheck
 from trove.tests.util.check import CollectionCheck
 from trove.tests.util.check import TypeCheck
@@ -196,8 +195,10 @@ class CreateConfigurations(ConfigurationsTestBase):
     def test_expected_get_configuration_parameter(self):
         # tests get on a single parameter to verify it has expected attributes
         param = 'key_buffer_size'
-        expected_config_params = ['name', 'restart_required', 'max',
-                                  'min', 'type']
+        expected_config_params = ['name', 'restart_required',
+                                  'max_size', 'min_size', 'type',
+                                  'deleted', 'deleted_at',
+                                  'datastore_version_id']
         instance_info.dbaas.configuration_parameters.get_parameter(
             instance_info.dbaas_datastore,
             instance_info.dbaas_datastore_version,
@@ -216,8 +217,14 @@ class CreateConfigurations(ConfigurationsTestBase):
     def test_configurations_create_invalid_values(self):
         """Test create configurations with invalid values."""
         values = '{"this_is_invalid": 123}'
-        assert_unprocessable(instance_info.dbaas.configurations.create,
-                             CONFIG_NAME, values, CONFIG_DESC)
+        try:
+            instance_info.dbaas.configurations.create(
+                CONFIG_NAME,
+                values,
+                CONFIG_DESC)
+        except exceptions.NotFound:
+            resp, body = instance_info.dbaas.client.last_response
+            assert_equal(resp.status, 404)
 
     @test
     def test_configurations_create_invalid_value_type(self):
@@ -271,7 +278,8 @@ class CreateConfigurations(ConfigurationsTestBase):
         expected_configs = self.expected_default_datastore_configs()
         values = json.dumps(expected_configs.get('appending_values'))
         # ensure updated timestamp is different than created
-        sleep(1)
+        if not CONFIG.fake_mode:
+            sleep(1)
         instance_info.dbaas.configurations.edit(configuration_info.id,
                                                 values)
         resp, body = instance_info.dbaas.client.last_response
@@ -350,7 +358,8 @@ class AfterConfigurationsCreation(ConfigurationsTestBase):
         # check that created and updated timestamps differ, since
         # test_appending_to_existing_configuration should have changed the
         # updated timestamp
-        assert_not_equal(result.created, result.updated)
+        if not CONFIG.fake_mode:
+            assert_not_equal(result.created, result.updated)
 
         assert_equal(result.instance_count, 1)
 
@@ -512,9 +521,6 @@ class StartInstanceWithConfiguration(ConfigurationsTestBase):
     @test
     def test_start_instance_with_configuration(self):
         # test that a new instance will apply the configuration on create
-        if test_config.auth_strategy == "fake":
-            raise SkipTest("Skipping instance start with configuration "
-                           "test for fake mode.")
         global configuration_instance
         databases = []
         databases.append({"name": "firstdbconfig", "character_set": "latin2",
@@ -550,9 +556,6 @@ class WaitForConfigurationInstanceToFinish(ConfigurationsTestBase):
     @time_out(TIMEOUT_INSTANCE_CREATE)
     def test_instance_with_configuration_active(self):
         # wait for the instance to become active
-        if test_config.auth_strategy == "fake":
-            raise SkipTest("Skipping instance start with configuration "
-                           "test for fake mode.")
 
         def result_is_active():
             instance = instance_info.dbaas.instances.get(
@@ -587,7 +590,25 @@ class DeleteConfigurations(ConfigurationsTestBase):
                       instance_info.dbaas.configurations.delete,
                       invalid_configuration_id)
 
-    @test
+    @test(depends_on=[test_delete_invalid_configuration_not_found])
+    def test_delete_configuration_parameter_with_mgmt_api(self):
+        # delete a parameter that is used by a test
+        # connect_timeout
+        ds = instance_info.dbaas_datastore
+        ds_v = instance_info.dbaas_datastore_version
+        version = instance_info.dbaas.datastore_versions.get(
+            ds, ds_v)
+        client = instance_info.dbaas_admin.mgmt_configs
+        config_param_name = sql_variables[1]
+        client.delete(version.id, config_param_name)
+        assert_raises(
+            exceptions.NotFound,
+            instance_info.dbaas.configuration_parameters.get_parameter,
+            ds,
+            ds_v,
+            config_param_name)
+
+    @test(depends_on=[test_delete_configuration_parameter_with_mgmt_api])
     def test_unable_delete_instance_configurations(self):
         # test deleting a configuration that is assigned to
         # an instance is not allowed.

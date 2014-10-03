@@ -22,6 +22,7 @@ from eventlet import greenthread
 from novaclient import exceptions as nova_exceptions
 
 from trove.backup import models as bkup_models
+from trove.backup.models import Backup
 from trove.backup.models import BackupState
 from trove.backup.models import DBBackup
 from trove.cluster.models import Cluster
@@ -31,7 +32,6 @@ from trove.common import cfg
 from trove.common import template
 from trove.common import utils
 from trove.common.utils import try_recover
-from trove.common.configurations import do_configs_require_restart
 from trove.common.exception import BackupCreationError
 from trove.common.exception import GuestError
 from trove.common.exception import GuestTimeout
@@ -161,6 +161,18 @@ class ConfigurationMixin(object):
         config = template.OverrideConfigTemplate(
             self.datastore_version, flavor, self.id)
         config.render(overrides=overrides)
+        return config
+
+    def _render_replica_source_config(self, flavor):
+        config = template.ReplicaSourceConfigTemplate(
+            self.datastore_version, flavor, self.id)
+        config.render()
+        return config
+
+    def _render_replica_config(self, flavor):
+        config = template.ReplicaConfigTemplate(
+            self.datastore_version, flavor, self.id)
+        config.render()
         return config
 
     def _render_config_dict(self, flavor):
@@ -297,10 +309,11 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
         # record to avoid over billing a customer for an instance that
         # fails to build properly.
         try:
-            usage_timeout = CONF.usage_timeout
+            timeout = (CONF.restore_usage_timeout if backup_info
+                       else CONF.usage_timeout)
             utils.poll_until(self._service_is_active,
                              sleep_time=USAGE_SLEEP_TIME,
-                             time_out=usage_timeout)
+                             time_out=timeout)
             LOG.info(_("Created instance %s successfully.") % self.id)
             self.send_usage_event('create', instance_size=flavor['ram'])
         except PollTimeOut:
@@ -312,10 +325,12 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
             LOG.exception(_("Failed to send usage create-event for "
                             "instance %s.") % self.id)
 
-    def attach_replication_slave(self, snapshot, slave_config=None):
+    def attach_replication_slave(self, snapshot, flavor):
         LOG.debug("Calling attach_replication_slave for %s.", self.id)
         try:
-            self.guest.attach_replication_slave(snapshot, slave_config)
+            replica_config = self._render_replica_config(flavor)
+            self.guest.attach_replication_slave(snapshot,
+                                                replica_config.config_contents)
         except GuestError as e:
             msg = (_("Error attaching instance %s "
                      "as replica.") % self.id)
@@ -350,15 +365,20 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                 'datastore': master.datastore.name,
                 'datastore_version': master.datastore_version.name,
             })
-            snapshot = master.get_replication_snapshot(snapshot_info)
+            snapshot = master.get_replication_snapshot(
+                snapshot_info, flavor=master.flavor_id)
             return snapshot
         except TroveError as e:
             msg = (_("Error creating replication snapshot "
                      "from instance %(source)s "
                      "for new replica %(replica)s.") % {'source': slave_of_id,
                                                         'replica': self.id})
-            err = inst_models.InstanceTasks.BUILDING_ERROR_SLAVE
+            err = inst_models.InstanceTasks.BUILDING_ERROR_REPLICA
+            Backup.delete(context, snapshot_info['id'])
             self._log_and_raise(e, msg, err)
+        except Exception:
+            Backup.delete(context, snapshot_info['id'])
+            raise
 
     def report_root_enabled(self):
         mysql_models.RootHistory.create(self.context, self.id, 'root')
@@ -907,12 +927,14 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
         LOG.info(_("Initiating backup for instance %s.") % self.id)
         self.guest.create_backup(backup_info)
 
-    def get_replication_snapshot(self, snapshot_info):
+    def get_replication_snapshot(self, snapshot_info, flavor):
 
         def _get_replication_snapshot():
             LOG.debug("Calling get_replication_snapshot on %s.", self.id)
             try:
-                result = self.guest.get_replication_snapshot(snapshot_info)
+                rep_source_config = self._render_replica_source_config(flavor)
+                result = self.guest.get_replication_snapshot(
+                    snapshot_info, rep_source_config.config_contents)
                 LOG.debug("Got replication snapshot from guest successfully.")
                 return result
             except (GuestError, GuestTimeout):
@@ -923,13 +945,18 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
         return run_with_quotas(self.context.tenant, {'backups': 1},
                                _get_replication_snapshot)
 
-    def detach_replica(self):
+    def detach_replica(self, master):
         LOG.debug("Calling detach_replica on %s" % self.id)
         try:
-            self.guest.detach_replica()
+            replica_info = self.guest.detach_replica()
+            master.cleanup_source_on_replica_detach(replica_info)
             self.update_db(slave_of_id=None)
         except (GuestError, GuestTimeout):
             LOG.exception(_("Failed to detach replica %s.") % self.id)
+
+    def cleanup_source_on_replica_detach(self, replica_info):
+        LOG.debug("Calling cleanup_source_on_replica_detach on %s" % self.id)
+        self.guest.cleanup_source_on_replica_detach(replica_info)
 
     def reboot(self):
         try:
@@ -976,9 +1003,10 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
                    "%s.") % self.id)
         LOG.debug("overrides: %s" % overrides)
         LOG.debug("self.ds_version: %s" % self.ds_version.__dict__)
-        # todo(cp16net) How do we know what datastore type we have?
-        need_restart = do_configs_require_restart(
-            overrides, datastore_manager=self.ds_version.manager)
+        LOG.debug("self.configuration.id: %s" % self.configuration.id)
+        # check if the configuration requires a restart of the instance
+        config = Configuration(self.context, self.configuration.id)
+        need_restart = config.does_configuration_need_restart()
         LOG.debug("do we need a restart?: %s" % need_restart)
         if need_restart:
             status = inst_models.InstanceTasks.RESTART_REQUIRED

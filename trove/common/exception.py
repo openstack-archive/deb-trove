@@ -421,7 +421,12 @@ class ConfigurationDatastoreNotMatchInstance(TroveError):
 
 class ConfigurationParameterDeleted(TroveError):
     message = _("%(parameter_name)s parameter can no longer be "
-                " set as of %(parameter_deleted_at)s.")
+                "set as of %(parameter_deleted_at)s.")
+
+
+class ConfigurationParameterAlreadyExists(TroveError):
+    message = _("%(parameter_name)s parameter already exists "
+                "for datastore version %(datastore_version)s.")
 
 
 class ConfigurationAlreadyAttached(TroveError):
@@ -463,6 +468,11 @@ class InsufficientSpaceForReplica(TroveError):
     message = _("The target instance has only %(slave_volume_size)sG free, "
                 "but the replication snapshot contains %(dataset_size)sG "
                 "of data.")
+
+
+class ReplicaSourceDeleteForbidden(Forbidden):
+    message = _("The replica source cannot be deleted without detaching the "
+                "replicas.")
 
 
 class ClusterNotFound(NotFound):

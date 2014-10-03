@@ -33,6 +33,7 @@ CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 AGENT_LOW_TIMEOUT = CONF.agent_call_low_timeout
 AGENT_HIGH_TIMEOUT = CONF.agent_call_high_timeout
+AGENT_SNAPSHOT_TIMEOUT = CONF.agent_replication_snapshot_timeout
 RPC_API_VERSION = "1.0"
 
 
@@ -324,20 +325,27 @@ class API(proxy.RpcProxy):
         LOG.debug("Applying overrides values %s." % overrides)
         self._cast("apply_overrides", overrides=overrides)
 
-    def get_replication_snapshot(self, snapshot_info=None):
+    def get_replication_snapshot(self, snapshot_info=None,
+                                 replica_source_config=None):
         LOG.debug("Retrieving replication snapshot from instance %s.", self.id)
-        return self._call("get_replication_snapshot", AGENT_HIGH_TIMEOUT,
-                          snapshot_info=snapshot_info)
+        return self._call("get_replication_snapshot", AGENT_SNAPSHOT_TIMEOUT,
+                          snapshot_info=snapshot_info,
+                          replica_source_config=replica_source_config)
 
-    def attach_replication_slave(self, snapshot, slave_config=None):
+    def attach_replication_slave(self, snapshot, replica_config=None):
         LOG.debug("Configuring instance %s to replicate from %s.",
                   self.id, snapshot.get('master').get('id'))
         self._cast("attach_replication_slave", snapshot=snapshot,
-                   slave_config=slave_config)
+                   slave_config=replica_config)
 
     def detach_replica(self):
         LOG.debug("Detaching replica %s from its replication source.", self.id)
-        self._call("detach_replica", AGENT_HIGH_TIMEOUT)
+        return self._call("detach_replica", AGENT_HIGH_TIMEOUT)
+
+    def cleanup_source_on_replica_detach(self, replica_info):
+        LOG.debug("Cleaning up master %s on detach of replica.", self.id)
+        self._call("cleanup_source_on_replica_detach", AGENT_HIGH_TIMEOUT,
+                   replica_info=replica_info)
 
     def demote_replication_master(self):
         LOG.debug("Demoting instance %s to non-master.", self.id)

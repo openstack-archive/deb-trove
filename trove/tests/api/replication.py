@@ -42,6 +42,14 @@ slave_instance = SlaveInstanceTestInfo()
 existing_db_on_master = generate_uuid()
 
 
+def _get_user_count(server_info):
+    cmd = ('mysql -BNq -e \\\'select count\\(*\\) from mysql.user'
+           ' where user like \\\"slave_%\\\"\\\'')
+    server = create_server_connection(server_info.id)
+    stdout, stderr = server.execute(cmd)
+    return int(stdout.rstrip())
+
+
 def slave_is_running(running=True):
 
     def check_slave_is_running():
@@ -90,8 +98,6 @@ class WaitForCreateSlaveToFinish(object):
                 return True
             else:
                 assert_true(instance.status in ['BUILD', 'BACKUP'])
-                # if instance_info.volume is not None:
-                #     assert_equal(instance.volume.get('used', None), None)
                 return False
         poll_until(result_is_active)
 
@@ -115,7 +121,19 @@ class VerifySlave(object):
     def test_correctly_started_replication(self):
         poll_until(slave_is_running())
 
+    @test(runs_after=[test_correctly_started_replication])
+    def test_backup_deleted(self):
+        backup = instance_info.dbaas.instances.backups(instance_info.id)
+        assert_equal(len(backup), 0)
+
     @test(depends_on=[test_correctly_started_replication])
+    def test_slave_is_read_only(self):
+        cmd = "mysql -BNq -e \\\'select @@read_only\\\'"
+        server = create_server_connection(slave_instance.id)
+        stdout, stderr = server.execute(cmd)
+        assert_equal(stdout, "1\n")
+
+    @test(depends_on=[test_slave_is_read_only])
     def test_create_db_on_master(self):
         databases = [{'name': slave_instance.replicated_db}]
         instance_info.dbaas.databases.create(instance_info.id, databases)
@@ -130,6 +148,11 @@ class VerifySlave(object):
     @time_out(5 * 60)
     def test_existing_db_exists_on_slave(self):
         poll_until(self.db_is_found(existing_db_on_master))
+
+    @test(depends_on=[test_existing_db_exists_on_slave])
+    def test_slave_user_exists(self):
+        assert_equal(_get_user_count(slave_instance), 1)
+        assert_equal(_get_user_count(instance_info), 1)
 
 
 @test(groups=[GROUP],
@@ -163,6 +186,12 @@ class TestInstanceListing(object):
 class DetachReplica(object):
 
     @test
+    def delete_before_detach_replica(self):
+        assert_raises(exceptions.Forbidden,
+                      instance_info.dbaas.instances.delete,
+                      instance_info.id)
+
+    @test
     @time_out(5 * 60)
     def test_detach_replica(self):
         if CONFIG.fake_mode:
@@ -173,6 +202,26 @@ class DetachReplica(object):
         assert_equal(202, instance_info.dbaas.last_http_code)
 
         poll_until(slave_is_running(False))
+
+    @test(depends_on=[test_detach_replica])
+    def test_slave_is_not_read_only(self):
+        if CONFIG.fake_mode:
+            raise SkipTest("Test not_read_only not supported in fake mode")
+
+        cmd = "mysql -BNq -e \\\'select @@read_only\\\'"
+        server = create_server_connection(slave_instance.id)
+        stdout, stderr = server.execute(cmd)
+        assert_equal(stdout, "0\n")
+
+    @test(depends_on=[test_detach_replica])
+    def test_slave_user_removed(self):
+        if CONFIG.fake_mode:
+            raise SkipTest("Test not_read_only not supported in fake mode")
+
+        def _slave_user_deleted():
+            return _get_user_count(instance_info) == 0
+
+        poll_until(_slave_user_deleted)
 
 
 @test(groups=[GROUP],

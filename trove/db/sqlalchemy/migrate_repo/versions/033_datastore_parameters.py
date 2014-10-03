@@ -1,4 +1,5 @@
-#    Copyright (c) 2014 Rackspace Hosting
+# Copyright 2014 Rackspace
+# All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -19,43 +20,41 @@ from sqlalchemy.schema import UniqueConstraint
 
 from trove.db.sqlalchemy.migrate_repo.schema import create_tables
 from trove.db.sqlalchemy.migrate_repo.schema import drop_tables
+from trove.db.sqlalchemy.migrate_repo.schema import DateTime
+from trove.db.sqlalchemy.migrate_repo.schema import Boolean
 from trove.db.sqlalchemy.migrate_repo.schema import String
 from trove.db.sqlalchemy.migrate_repo.schema import Table
-from trove.db.sqlalchemy.migrate_repo.schema import Boolean
 
 
 meta = MetaData()
 
-capabilities = Table(
-    'capabilities',
+
+datastore_configuration_parameters = Table(
+    'datastore_configuration_parameters',
     meta,
     Column('id', String(36), primary_key=True, nullable=False),
-    Column('name', String(255), unique=True),
-    Column('description', String(255), nullable=False),
-    Column('enabled', Boolean())
-)
-
-
-capability_overrides = Table(
-    'capability_overrides',
-    meta,
-    Column('id', String(36), primary_key=True, nullable=False),
+    Column('name', String(128), primary_key=True, nullable=False),
     Column('datastore_version_id', String(36),
-           ForeignKey('datastore_versions.id')),
-    Column('capability_id', String(36), ForeignKey('capabilities.id')),
-    Column('enabled', Boolean()),
-    UniqueConstraint('datastore_version_id', 'capability_id',
-                     name='idx_datastore_capabilities_enabled')
+           ForeignKey("datastore_versions.id"),
+           primary_key=True, nullable=False),
+    Column('restart_required', Boolean(), nullable=False, default=False),
+    Column('max_size', String(40)),
+    Column('min_size', String(40)),
+    Column('data_type', String(128), nullable=False),
+    Column('deleted', Boolean()),
+    Column('deleted_at', DateTime()),
+    UniqueConstraint(
+        'datastore_version_id', 'name',
+        name='UQ_datastore_configuration_parameters_datastore_version_id_name')
 )
 
 
 def upgrade(migrate_engine):
     meta.bind = migrate_engine
-    Table('datastores', meta, autoload=True)
     Table('datastore_versions', meta, autoload=True)
-    create_tables([capabilities, capability_overrides])
+    create_tables([datastore_configuration_parameters])
 
 
 def downgrade(migrate_engine):
     meta.bind = migrate_engine
-    drop_tables([capability_overrides, capabilities])
+    drop_tables([datastore_configuration_parameters])

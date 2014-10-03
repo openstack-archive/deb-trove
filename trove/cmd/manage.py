@@ -24,6 +24,7 @@ gettext.install('trove', unicode=1)
 from trove.common import cfg
 from trove.common import exception
 from trove.common import utils
+from trove.configuration import models as config_models
 from trove.db import get_db_api
 from trove.openstack.common import log as logging
 from trove.datastore import models as datastore_models
@@ -79,6 +80,15 @@ class Commands(object):
         """Drops the database and recreates it."""
         self.db_api.drop_db(CONF)
         self.db_sync(repo_path)
+
+    def db_load_datastore_config_parameters(self,
+                                            datastore,
+                                            datastore_version,
+                                            config_file_location):
+        print("Loading config parameters for datastore (%s) version (%s)"
+              % (datastore, datastore_version))
+        config_models.load_datastore_configuration_parameters(
+            datastore, datastore_version, config_file_location)
 
     def params_of(self, command_name):
         if Commands.has(command_name):
@@ -141,7 +151,23 @@ def main():
 
         parser = subparser.add_parser(
             'db_recreate', description='Drop the database and recreate it.')
-        parser.add_argument('repo_path', help=repo_path_help)
+        parser.add_argument('--repo_path', help=repo_path_help)
+
+        parser = subparser.add_parser(
+            'db_load_datastore_config_parameters',
+            description='Loads configuration group parameter validation rules '
+            'for a datastore version into the database.')
+        parser.add_argument(
+            'datastore',
+            help='Name of the datastore.')
+        parser.add_argument(
+            'datastore_version',
+            help='Name of the datastore version.')
+        parser.add_argument(
+            'config_file_location',
+            help='Fully qualified file path to the configuration group '
+            'parameter validation rules.')
+
     cfg.custom_parser('action', actions)
     cfg.parse_args(sys.argv)
 
