@@ -4,6 +4,8 @@ openstack-trove (2014.2~rc1-1) experimental; urgency=medium
   * Updated (build-)depends for this release.
   * Now using templated init script for sysv-rc, generated systemd unit and
     upstart jobs, using openstack-pkg-tools >= 13.
+  * Removes Isolate_unit_tests_from_integration_tests_data.patch applied
+    upstream.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 23:50:11 +0800
 
