@@ -1,4 +1,4 @@
-/var/log/trove/taskmanager.log {
+/var/log/trove/trove-taskmanager.log {
     daily
     missingok
     compress

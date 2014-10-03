@@ -1,4 +1,4 @@
-/var/log/trove/api.log {
+/var/log/trove/trove-api.log {
     daily
     missingok
     compress

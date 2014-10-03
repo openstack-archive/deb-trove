@@ -1,4 +1,4 @@
-/var/log/trove/conductor.log {
+/var/log/trove/trove-conductor.log {
     daily
     missingok
     compress

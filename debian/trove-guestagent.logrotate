@@ -1,4 +1,4 @@
-/var/log/trove/guestagent.log {
+/var/log/trove/trove-guestagent.log {
     daily
     missingok
     compress
