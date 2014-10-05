@@ -6,6 +6,7 @@ openstack-trove (2014.2~rc1-1) experimental; urgency=medium
     upstart jobs, using openstack-pkg-tools >= 13.
   * Removes Isolate_unit_tests_from_integration_tests_data.patch applied
     upstream.
+  * Mangling upstream rc and beta versions in watch file.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 23:50:11 +0800
 
