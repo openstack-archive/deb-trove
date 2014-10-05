@@ -8,6 +8,7 @@ openstack-trove (2014.2~rc1-1) experimental; urgency=medium
     upstream.
   * Mangling upstream rc and beta versions in watch file.
   * Temporarilly disable some failed assert in unit tests.
+  * Added a trove-doc.doc-base.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 23:50:11 +0800
 
