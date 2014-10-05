@@ -59,7 +59,7 @@ Build-Depends-Indep: python-babel (>= 1.3),
                      python-wsgi-intercept,
                      subunit (>= 0.0.18),
                      testrepository (>=0.0.18)
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/openstack-trove.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/openstack-trove.git
 Homepage: http://github.com/openstack/trove

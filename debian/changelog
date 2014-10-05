@@ -11,6 +11,7 @@ openstack-trove (2014.2~rc1-1) experimental; urgency=medium
   * Added a trove-doc.doc-base.
   * Files: doc/source/_static/nature.css is gone, so removing it from
     debian/copyright, together with its BSD license.
+  * Standards-Version is now 3.9.6.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 23:50:11 +0800
 
