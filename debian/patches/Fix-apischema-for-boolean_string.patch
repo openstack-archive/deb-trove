@@ -1,0 +1,85 @@
+Description: Fix apischema for boolean_string
+ Fix apischema for boolean_string
+ Reasons:
+  - apischema for boolean_string should relay on existing
+   `boolean` type instead of `integer`
+ .
+ Changes:
+  - updating apischema;
+  - fixing unit tests for configuration API controller
+Author: Denis Makogon <dmakogon@mirantis.com>
+Date: Thu, 9 Oct 2014 14:24:40 +0000 (+0300)
+X-Git-Url: https://review.openstack.org/gitweb?p=openstack%2Ftrove.git;a=commitdiff_plain;h=d9e42e0633ba4e5f6d1a5a3d0ad1d5e9ba1795f0
+Change-Id: Ifb12dc5190de3f173cba34780db5b3547faa2219
+Bug-Ubuntu: https://bugs.launchpad.net/trove/+bug/1377231
+Origin: upstream, https://review.openstack.org/#/c/127258/
+Last-Update: 2014-10-09
+
+diff --git a/trove/common/apischema.py b/trove/common/apischema.py
+index 01258b1..3e6ce71 100644
+--- a/trove/common/apischema.py
++++ b/trove/common/apischema.py
+@@ -25,7 +25,7 @@ url_ref = {
+ }
+ 
+ boolean_string = {
+-    "type": "integer",
++    "type": "boolean",
+     "minimum": 0,
+     "maximum": 1
+ }
+diff --git a/trove/tests/unittests/configuration/test_configuration_controller.py b/trove/tests/unittests/configuration/test_configuration_controller.py
+index a3ec79f..624ed36 100644
+--- a/trove/tests/unittests/configuration/test_configuration_controller.py
++++ b/trove/tests/unittests/configuration/test_configuration_controller.py
+@@ -136,7 +136,7 @@ class TestConfigurationsParameterController(TestCase):
+         body = {
+             'configuration-parameter': {
+                 'name': 'test',
+-                'restart_required': 1,
++                'restart_required': True,
+                 'data_type': 'string',
+                 'min_size': '0',
+                 'max_size': '255'
+@@ -151,7 +151,7 @@ class TestConfigurationsParameterController(TestCase):
+         body = {
+             'configuration-parameter': {
+                 'name': 'test',
+-                'restart_required': 5,
++                'restart_required': 5.0,
+                 'data_type': 'string',
+                 'min_size': 0,
+                 'max_size': 255
+@@ -163,7 +163,7 @@ class TestConfigurationsParameterController(TestCase):
+         self.assertFalse(validator.is_valid(body))
+         errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+         error_messages = [error.message for error in errors]
+-        self.assertIn("5 is greater than the maximum of 1", error_messages)
++        self.assertIn("5.0 is greater than the maximum of 1", error_messages)
+         self.assertIn("0 is not of type 'string'", error_messages)
+         self.assertIn("255 is not of type 'string'", error_messages)
+ 
+@@ -171,7 +171,7 @@ class TestConfigurationsParameterController(TestCase):
+         body = {
+             'configuration-parameter': {
+                 'name': 'test',
+-                'restart_required': -1,
++                'restart_required': -1.0,
+                 'data_type': 'string',
+                 'min_size': '0',
+                 'max_size': '255'
+@@ -183,7 +183,7 @@ class TestConfigurationsParameterController(TestCase):
+         self.assertFalse(validator.is_valid(body))
+         errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+         error_messages = [error.message for error in errors]
+-        self.assertIn("-1 is less than the minimum of 0", error_messages)
++        self.assertIn('-1.0 is less than the minimum of 0', error_messages)
+ 
+     def test_validate_create_invalid_restart_required_3(self):
+         body = {
+@@ -201,4 +201,4 @@ class TestConfigurationsParameterController(TestCase):
+         self.assertFalse(validator.is_valid(body))
+         errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+         error_messages = [error.message for error in errors]
+-        self.assertIn("'yes' is not of type 'integer'", error_messages)
++        self.assertIn("'yes' is not of type 'boolean'", error_messages)
