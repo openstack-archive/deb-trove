@@ -36,7 +36,7 @@ ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
 endif
 
 override_dh_install:
-	dh_install
+	dh_install -O--buildsystem=python_distutils --fail-missing
 	set -e && for pyvers in $(PYTHONS); do \
 		python$$pyvers setup.py install --install-layout=deb \
 			--root $(CURDIR)/debian/python-trove; \
