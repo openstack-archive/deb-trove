@@ -1,5 +1,6 @@
-openstack-trove (2014.2~rc1-2) experimental; urgency=medium
+openstack-trove (2014.2~rc2-1) experimental; urgency=medium
 
+  * New upstream release.
   * Replaced temporarilly-disable-failling-aserts-in-unit-tests.patch by a
     working patch from upstream.
 
