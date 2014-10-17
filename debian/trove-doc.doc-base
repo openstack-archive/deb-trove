@@ -1,0 +1,9 @@
+Document: trove-doc
+Title: Trove Documentation
+Author: OpenStack
+Abstract: Sphinx documentation for Trove
+Section: Programming/Python
+
+Format: HTML
+Index: /usr/share/doc/trove-doc/html/index.html
+Files: /usr/share/doc/trove-doc/html/*
