@@ -14,7 +14,7 @@ if [ "${1}" = "purge" ] ; then
 				rm -f /etc/dbconfig-common/trove-common.conf
 				if which ucf >/dev/null 2>&1; then
 					ucf --purge /etc/dbconfig-common/trove-common.conf
-					ucfr --purge nova-common /etc/dbconfig-common/trove-common.conf
+					ucfr --purge trove-common /etc/dbconfig-common/trove-common.conf
 				fi
 			fi
 		fi
