@@ -1,0 +1,17 @@
+Description: Do not use PROTOCOL_SSLv3
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2014-12-03
+
+--- openstack-trove-2014.2.orig/trove/openstack/common/sslutils.py
++++ openstack-trove-2014.2/trove/openstack/common/sslutils.py
+@@ -82,8 +82,7 @@ def wrap(sock):
+ 
+ _SSL_PROTOCOLS = {
+     "tlsv1": ssl.PROTOCOL_TLSv1,
+-    "sslv23": ssl.PROTOCOL_SSLv23,
+-    "sslv3": ssl.PROTOCOL_SSLv3
++    "sslv23": ssl.PROTOCOL_SSLv23
+ }
+ 
+ try:

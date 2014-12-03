@@ -4,6 +4,12 @@ openstack-trove (2014.2.2-1) experimental; urgency=medium
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 10 Feb 2015 15:17:22 +0100
 
+openstack-trove (2014.2-3) experimental; urgency=medium
+
+  * Do not use PROTOCOL_SSLv3.patch
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 03 Dec 2014 12:56:15 +0000
+
 openstack-trove (2014.2-2) experimental; urgency=medium
 
   * Added nl.po debconf translation (Closes: #767422).
