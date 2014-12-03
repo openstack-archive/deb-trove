@@ -1,6 +1,7 @@
 openstack-trove (2014.1.3-4) unstable; urgency=medium
 
   * Fixed ucfr call to use trove-common and not nova-common (Closes: #771873).
+  * Removed PROTOCOL_SSLv3 which was removed upstream.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 03 Dec 2014 19:04:32 +0800
 
