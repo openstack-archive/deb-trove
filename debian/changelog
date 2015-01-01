@@ -2,6 +2,7 @@ openstack-trove (2015.1~b1-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * Reviewed (build-)depends for this release.
+  * Dropped do-not-use-network-when-building-docs.patch now useless.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 01 Jan 2015 22:43:50 +0100
 

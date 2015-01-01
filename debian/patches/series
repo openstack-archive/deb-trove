@@ -1,3 +1,2 @@
-do-not-use-network-when-building-docs.patch
 fix-default-sql_connection-directive.patch
 Fix-apischema-for-boolean_string.patch
