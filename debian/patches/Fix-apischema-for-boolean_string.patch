@@ -15,11 +15,11 @@ Bug-Ubuntu: https://bugs.launchpad.net/trove/+bug/1377231
 Origin: upstream, https://review.openstack.org/#/c/127258/
 Last-Update: 2014-10-09
 
-diff --git a/trove/common/apischema.py b/trove/common/apischema.py
-index 01258b1..3e6ce71 100644
---- a/trove/common/apischema.py
-+++ b/trove/common/apischema.py
-@@ -25,7 +25,7 @@ url_ref = {
+Index: openstack-trove/trove/common/apischema.py
+===================================================================
+--- openstack-trove.orig/trove/common/apischema.py	2015-01-01 22:44:37.000000000 +0100
++++ openstack-trove/trove/common/apischema.py	2015-01-01 22:56:27.000000000 +0100
+@@ -25,7 +25,7 @@
  }
  
  boolean_string = {
@@ -28,29 +28,29 @@ index 01258b1..3e6ce71 100644
      "minimum": 0,
      "maximum": 1
  }
-diff --git a/trove/tests/unittests/configuration/test_configuration_controller.py b/trove/tests/unittests/configuration/test_configuration_controller.py
-index a3ec79f..624ed36 100644
---- a/trove/tests/unittests/configuration/test_configuration_controller.py
-+++ b/trove/tests/unittests/configuration/test_configuration_controller.py
-@@ -136,7 +136,7 @@ class TestConfigurationsParameterController(TestCase):
+Index: openstack-trove/trove/tests/unittests/configuration/test_configuration_controller.py
+===================================================================
+--- openstack-trove.orig/trove/tests/unittests/configuration/test_configuration_controller.py	2015-01-01 22:44:37.000000000 +0100
++++ openstack-trove/trove/tests/unittests/configuration/test_configuration_controller.py	2015-01-01 22:56:27.000000000 +0100
+@@ -187,7 +187,7 @@
          body = {
              'configuration-parameter': {
                  'name': 'test',
 -                'restart_required': 1,
 +                'restart_required': True,
                  'data_type': 'string',
-                 'min_size': '0',
-                 'max_size': '255'
-@@ -151,7 +151,7 @@ class TestConfigurationsParameterController(TestCase):
+                 'min': '0',
+                 'max': '255'
+@@ -202,7 +202,7 @@
          body = {
              'configuration-parameter': {
                  'name': 'test',
 -                'restart_required': 5,
 +                'restart_required': 5.0,
                  'data_type': 'string',
-                 'min_size': 0,
-                 'max_size': 255
-@@ -163,7 +163,7 @@ class TestConfigurationsParameterController(TestCase):
+                 'min': 0,
+                 'max': 255
+@@ -214,7 +214,7 @@
          self.assertFalse(validator.is_valid(body))
          errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
          error_messages = [error.message for error in errors]
@@ -59,16 +59,16 @@ index a3ec79f..624ed36 100644
          self.assertIn("0 is not of type 'string'", error_messages)
          self.assertIn("255 is not of type 'string'", error_messages)
  
-@@ -171,7 +171,7 @@ class TestConfigurationsParameterController(TestCase):
+@@ -222,7 +222,7 @@
          body = {
              'configuration-parameter': {
                  'name': 'test',
 -                'restart_required': -1,
 +                'restart_required': -1.0,
                  'data_type': 'string',
-                 'min_size': '0',
-                 'max_size': '255'
-@@ -183,7 +183,7 @@ class TestConfigurationsParameterController(TestCase):
+                 'min': '0',
+                 'max': '255'
+@@ -234,7 +234,7 @@
          self.assertFalse(validator.is_valid(body))
          errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
          error_messages = [error.message for error in errors]
@@ -77,7 +77,7 @@ index a3ec79f..624ed36 100644
  
      def test_validate_create_invalid_restart_required_3(self):
          body = {
-@@ -201,4 +201,4 @@ class TestConfigurationsParameterController(TestCase):
+@@ -252,4 +252,4 @@
          self.assertFalse(validator.is_valid(body))
          errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
          error_messages = [error.message for error in errors]
