@@ -24,6 +24,7 @@ from trove.tests.util import unquote_user_host
 
 DB = {}
 LOG = logging.getLogger(__name__)
+BACKUP_SIZE = 0.14
 
 
 class FakeGuest(object):
@@ -297,7 +298,8 @@ class FakeGuest(object):
         return dbs
 
     def create_backup(self, backup_info):
-        from trove.backup.models import Backup, BackupState
+        from trove.backup.models import Backup
+        from trove.backup.state import BackupState
         backup = Backup.get_by_id(context=None,
                                   backup_id=backup_info['id'])
 
@@ -305,6 +307,7 @@ class FakeGuest(object):
             backup.state = BackupState.COMPLETED
             backup.location = 'http://localhost/path/to/backup'
             backup.checksum = 'fake-md5-sum'
+            backup.size = BACKUP_SIZE
             backup.save()
         eventlet.spawn_after(1.0, finish_create_backup)
 

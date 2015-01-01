@@ -22,6 +22,11 @@ from trove.tests.fakes.common import authorize
 import eventlet
 import uuid
 
+try:
+    from collections import OrderedDict
+except ImportError:
+    from ordereddict import OrderedDict
+
 LOG = logging.getLogger(__name__)
 FAKE_HOSTS = ["fake_host_1", "fake_host_2"]
 
@@ -297,7 +302,7 @@ class FakeServers(object):
                                                       "available.")
 
         server.schedule_status("ACTIVE", 1)
-        LOG.info(_("FAKE_SERVERS_DB : %s") % str(FAKE_SERVERS_DB))
+        LOG.info("FAKE_SERVERS_DB : %s" % str(FAKE_SERVERS_DB))
         return server
 
     def _get_volumes_from_bdm(self, block_device_mapping):
@@ -638,7 +643,9 @@ class FakeHost(object):
 class FakeHosts(object):
 
     def __init__(self, servers):
-        self.hosts = {}
+        # Use an ordered dict to make the results of the fake api call
+        # return in the same order for the example generator.
+        self.hosts = OrderedDict()
         for host in FAKE_HOSTS:
             self.add_host(FakeHost(host, servers))
 
@@ -733,6 +740,9 @@ class FakeSecurityGroups(object):
         secGrp = FakeSecurityGroup(name, description)
         self.securityGroups[secGrp.get_id()] = secGrp
         return secGrp
+
+    def delete(self, group_id):
+        pass
 
     def list(self):
         pass

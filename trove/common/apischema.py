@@ -303,6 +303,8 @@ instance = {
                 "required": [],
                 "properties": {
                     "slave_of": {},
+                    "name": non_empty_string,
+                    "configuration_id": configuration_id,
                 }
             }
         }
@@ -540,8 +542,8 @@ mgmt_configuration = {
                     "name": configuration_non_empty_string,
                     "data_type": configuration_data_types,
                     "restart_required": boolean_string,
-                    "max_size": configuration_integer_size,
-                    "min_size": configuration_integer_size,
+                    "max": configuration_integer_size,
+                    "min": configuration_integer_size,
                 }
             }
         }
@@ -558,8 +560,8 @@ mgmt_configuration = {
                     "name": configuration_non_empty_string,
                     "data_type": configuration_data_types,
                     "restart_required": boolean_string,
-                    "max_size": configuration_integer_size,
-                    "min_size": configuration_integer_size,
+                    "max": configuration_integer_size,
+                    "min": configuration_integer_size,
                 }
             }
         }

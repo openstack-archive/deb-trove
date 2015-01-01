@@ -480,12 +480,16 @@ class ClusterNotFound(NotFound):
 
 
 class ClusterFlavorsNotEqual(TroveError):
-    message = _("The flavor for each instance in a cluster must be equal.")
+    message = _("The flavor for each instance in a cluster must be the same.")
+
+
+class ClusterVolumeSizeRequired(TroveError):
+    message = _("A volume size is required for each instance in the cluster.")
 
 
 class ClusterVolumeSizesNotEqual(TroveError):
     message = _("The volume size for each instance in a cluster must be "
-                "equal.")
+                "the same.")
 
 
 class ClusterNumInstancesNotSupported(TroveError):
@@ -505,3 +509,9 @@ class TroveOperationAuthError(TroveError):
 class ClusterDatastoreNotSupported(TroveError):
     message = _("Clusters not supported for "
                 "%(datastore)s-%(datastore_version)s.")
+
+
+class BackupTooLarge(TroveError):
+    message = _("Backup is too large for given flavor or volume. "
+                "Backup size: %(backup_size)s GBs. "
+                "Available size: %(disk_size)s GBs.")

@@ -72,8 +72,7 @@ class TestConfig(object):
             'nova_url': "http://localhost:8774/v1.1",
             'dbaas_datastore': "mysql",
             'dbaas_datastore_id': "a00000a0-00a0-0a00-00a0-000a000000aa",
-            'dbaas_datastore_id_no_versions': "10000000-0000-0000-0000-"
-                                              "000000000001",
+            'dbaas_datastore_name_no_versions': "Test_Datastore_1",
             'dbaas_datastore_version': "5.5",
             'dbaas_datastore_version_id': "b00000b0-00b0-0b00-00b0-"
                                           "000b000000bb",
@@ -95,12 +94,12 @@ class TestConfig(object):
                 "configurations": {
                     "valid_values": {
                         "connect_timeout": 120,
-                        "local_infile": True,
+                        "local_infile": 0,
                         "collation_server": "latin1_swedish_ci"
                     },
                     "appending_values": {
                         "join_buffer_size": 1048576,
-                        "connect_timeout": 60
+                        "connect_timeout": 15
                     },
                     "nondynamic_parameter": {
                         "join_buffer_size": 1048576,

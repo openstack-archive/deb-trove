@@ -23,12 +23,13 @@ from novaclient import exceptions as nova_exceptions
 
 from trove.backup import models as bkup_models
 from trove.backup.models import Backup
-from trove.backup.models import BackupState
 from trove.backup.models import DBBackup
+from trove.backup.state import BackupState
 from trove.cluster.models import Cluster
 from trove.cluster.models import DBCluster
 from trove.cluster import tasks
 from trove.common import cfg
+from trove.common import exception
 from trove.common import template
 from trove.common import utils
 from trove.common.utils import try_recover
@@ -183,7 +184,6 @@ class ConfigurationMixin(object):
         return ret
 
 
-# TODO(amcreynolds): add NotifyMixin + ConfigurationMixin-like functionality
 class ClusterTasks(Cluster):
 
     def delete_cluster(self, context, cluster_id):
@@ -265,8 +265,6 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                 availability_zone,
                 nics)
 
-        # TODO(amcreynolds): need to find a way to merge cluster_config
-        # TODO(amcreynolds): into config_contents
         config = self._render_config(flavor)
         config_overrides = self._render_override_config(flavor,
                                                         overrides=overrides)
@@ -352,7 +350,7 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
 
         try:
             db_info = DBBackup.create(**snapshot_info)
-        except InvalidModelError as e:
+        except InvalidModelError:
             msg = (_("Unable to create replication snapshot record for "
                      "instance: %s") % self.id)
             LOG.exception(msg)
@@ -368,17 +366,31 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
             snapshot = master.get_replication_snapshot(
                 snapshot_info, flavor=master.flavor_id)
             return snapshot
-        except TroveError as e:
-            msg = (_("Error creating replication snapshot "
-                     "from instance %(source)s "
-                     "for new replica %(replica)s.") % {'source': slave_of_id,
-                                                        'replica': self.id})
+        except Exception as e_create:
+            msg_create = (
+                _("Error creating replication snapshot from "
+                  "instance %(source)s for new replica %(replica)s.") %
+                {'source': slave_of_id, 'replica': self.id})
             err = inst_models.InstanceTasks.BUILDING_ERROR_REPLICA
-            Backup.delete(context, snapshot_info['id'])
-            self._log_and_raise(e, msg, err)
-        except Exception:
-            Backup.delete(context, snapshot_info['id'])
-            raise
+            # if the delete of the 'bad' backup fails, it'll mask the
+            # create exception, so we trap it here
+            try:
+                Backup.delete(context, snapshot_info['id'])
+            except Exception as e_delete:
+                LOG.error(msg_create)
+                # Make sure we log any unexpected errors from the create
+                if not isinstance(e_create, TroveError):
+                    LOG.error(e_create)
+                msg_delete = (
+                    _("An error occurred while deleting a bad "
+                      "replication snapshot from instance %(source)s.") %
+                    {'source': slave_of_id})
+                # we've already logged the create exception, so we'll raise
+                # the delete (otherwise the create will be logged twice)
+                self._log_and_raise(e_delete, msg_delete, err)
+
+            # the delete worked, so just log the original problem with create
+            self._log_and_raise(e_create, msg_create, err)
 
     def report_root_enabled(self):
         mysql_models.RootHistory.create(self.context, self.id, 'root')
@@ -441,23 +453,21 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                               availability_zone, nics):
         LOG.debug("Begin _create_server_volume for id: %s" % self.id)
         try:
-            files = {"/etc/guest_info": ("[DEFAULT]\n--guest_id="
-                                         "%s\n--datastore_manager=%s\n"
-                                         "--tenant_id=%s\n" %
-                                         (self.id, datastore_manager,
-                                          self.tenant_id))}
-
+            files, userdata = self._prepare_file_and_userdata(
+                datastore_manager)
             name = self.hostname or self.name
             volume_desc = ("datastore volume for %s" % self.id)
             volume_name = ("datastore-%s" % self.id)
             volume_ref = {'size': volume_size, 'name': volume_name,
                           'description': volume_desc}
-
+            config_drive = CONF.use_nova_server_config_drive
             server = self.nova_client.servers.create(
                 name, image_id, flavor_id,
                 files=files, volume=volume_ref,
                 security_groups=security_groups,
-                availability_zone=availability_zone, nics=nics)
+                availability_zone=availability_zone,
+                nics=nics, config_drive=config_drive,
+                userdata=userdata)
             LOG.debug("Created new compute instance %(server_id)s "
                       "for id: %(id)s" %
                       {'server_id': server.id, 'id': self.id})
@@ -693,15 +703,12 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                        'volumes': created_volumes}
         return volume_info
 
-    def _create_server(self, flavor_id, image_id, security_groups,
-                       datastore_manager, block_device_mapping,
-                       availability_zone, nics):
+    def _prepare_file_and_userdata(self, datastore_manager):
         files = {"/etc/guest_info": ("[DEFAULT]\nguest_id=%s\n"
                                      "datastore_manager=%s\n"
                                      "tenant_id=%s\n" %
                                      (self.id, datastore_manager,
                                       self.tenant_id))}
-
         if os.path.isfile(CONF.get('guest_config')):
             with open(CONF.get('guest_config'), "r") as f:
                 files["/etc/trove-guestagent.conf"] = f.read()
@@ -711,6 +718,13 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
         if os.path.isfile(cloudinit):
             with open(cloudinit, "r") as f:
                 userdata = f.read()
+        return files, userdata
+
+    def _create_server(self, flavor_id, image_id, security_groups,
+                       datastore_manager, block_device_mapping,
+                       availability_zone, nics):
+        files, userdata = self._prepare_file_and_userdata(
+            datastore_manager)
         name = self.hostname or self.name
         bdmap = block_device_mapping
         config_drive = CONF.use_nova_server_config_drive
@@ -729,7 +743,7 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                        packages, databases, users, backup_info=None,
                        config_contents=None, root_password=None,
                        overrides=None, cluster_config=None):
-        LOG.info(_("Entering guest_prepare"))
+        LOG.debug("Entering guest_prepare")
         # Now wait for the response from the create to do additional work
         self.guest.prepare(flavor_ram, packages, databases, users,
                            device_path=volume_info['device_path'],
@@ -847,6 +861,13 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
         LOG.debug("Begin _delete_resources for instance %s" % self.id)
         server_id = self.db_info.compute_instance_id
         old_server = self.nova_client.servers.get(server_id)
+        LOG.debug("Stopping datastore on instance %s before deleting any "
+                  "resources." % self.id)
+        try:
+            self.guest.stop_db()
+        except Exception:
+            LOG.exception(_("Error stopping the datastore before attempting "
+                            "to delete instance id %s.") % self.id)
         try:
             if use_heat:
                 # Delete the server via heat
@@ -937,9 +958,9 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
                     snapshot_info, rep_source_config.config_contents)
                 LOG.debug("Got replication snapshot from guest successfully.")
                 return result
-            except (GuestError, GuestTimeout):
-                LOG.exception(_("Failed to get replication snapshot from %s") %
-                              self.id)
+            except Exception:
+                LOG.exception(_("Failed to get replication snapshot from %s.")
+                              % self.id)
                 raise
 
         return run_with_quotas(self.context.tenant, {'backups': 1},
@@ -960,11 +981,29 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
 
     def reboot(self):
         try:
+            # Issue a guest stop db call to shutdown the db if running
             LOG.debug("Stopping datastore on instance %s." % self.id)
-            self.guest.stop_db()
+            try:
+                self.guest.stop_db()
+            except (exception.GuestError, exception.GuestTimeout) as e:
+                # Acceptable to be here if db was already in crashed state
+                # Also we check guest state before issuing reboot
+                LOG.debug(str(e))
+
+            self._refresh_datastore_status()
+            if not (self.datastore_status_matches(
+                    rd_instance.ServiceStatuses.SHUTDOWN) or
+                    self.datastore_status_matches(
+                    rd_instance.ServiceStatuses.CRASHED)):
+                # We will bail if db did not get stopped or is blocked
+                LOG.error(_("Cannot reboot instance. DB status is %s.")
+                          % self.datastore_status.status)
+                return
+            LOG.debug("The guest service status is %s."
+                      % self.datastore_status.status)
+
             LOG.info(_("Rebooting instance %s.") % self.id)
             self.server.reboot()
-
             # Poll nova until instance is active
             reboot_time_out = CONF.reboot_time_out
 
@@ -1075,7 +1114,6 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
                 overrides[item.configuration_key] = _convert_value(val)
         LOG.debug("setting the default variables in dict: %s" % overrides)
         self.update_overrides(overrides, remove=True)
-        self.update_db(configuration_id=None)
 
     def refresh_compute_server_info(self):
         """Refreshes the compute server field."""
