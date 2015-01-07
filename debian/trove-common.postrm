@@ -23,6 +23,7 @@ if [ "${1}" = "purge" ] ; then
 	rm -f /etc/trove/api-paste.ini
 	rm -f /etc/trove/trove.conf
 	[ -d /etc/trove ] && rmdir --ignore-fail-on-non-empty /etc/trove
+	rm -rf /var/lib/trove
 fi
 
 #DEBHELPER#
