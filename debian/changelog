@@ -1,6 +1,7 @@
 openstack-trove (2014.1.3-5) unstable; urgency=medium
 
   * Also purges /var/lib/trove when package is purged (Closes: #769771).
+  * Rebuilt using openstack-pkg-tools (>= 21~) to ensure init scripts fixes.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 07 Jan 2015 00:02:07 +0000
 
