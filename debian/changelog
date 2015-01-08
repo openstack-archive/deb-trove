@@ -1,6 +1,8 @@
 openstack-trove (2014.1.3-6) unstable; urgency=medium
 
   * trove/configure_db is now false by default.
+  * Only runs pkgos_dbc_postinst and trove-manage db_sync if trove/configure_db
+    is true.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 08 Jan 2015 16:48:04 +0000
 
