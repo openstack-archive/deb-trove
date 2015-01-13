@@ -13,6 +13,7 @@
 
 # Author: Thomas Goirand <zigo@debian.org>
 
-DESC="Trove Conductor"
+DESC="OpenStack Trove Conductor"
 PROJECT_NAME=trove
 NAME=${PROJECT_NAME}-conductor
+CONFIG_FILE=/etc/trove/trove-conductor.conf

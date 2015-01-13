@@ -12,7 +12,7 @@
 ### END INIT INFO
 
 # Author: Thomas Goirand <zigo@debian.org>
-
-DESC="Trove DBaaS Task Manager"
+DESC="OpenStack Trove DBaaS Task Manager"
 PROJECT_NAME=trove
 NAME=${PROJECT_NAME}-taskmanager
+CONFIG_FILE=/etc/trove/trove-taskmanager.conf
