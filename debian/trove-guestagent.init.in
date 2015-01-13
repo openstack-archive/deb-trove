@@ -16,3 +16,4 @@
 DESC="OpenStack Trove DBaaS Guest agent"
 PROJECT_NAME=trove
 NAME=${PROJECT_NAME}-guestagent
+CONFIG_FILE=/etc/trove/trove-guestagent.conf

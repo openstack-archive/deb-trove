@@ -16,3 +16,4 @@
 DESC="Trove DBaaS Task Manager"
 PROJECT_NAME=trove
 NAME=${PROJECT_NAME}-taskmanager
+CONFIG_FILE=/etc/trove/trove-taskmanager.conf

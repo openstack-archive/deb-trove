@@ -16,3 +16,4 @@
 DESC="Trove Conductor"
 PROJECT_NAME=trove
 NAME=${PROJECT_NAME}-conductor
+CONFIG_FILE=/etc/trove/trove-conductor.conf
