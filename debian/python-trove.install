@@ -1,8 +1,8 @@
-usr/lib/python*/dist-packages/*
 usr/bin/trove-api
-usr/bin/trove-manage
-usr/bin/trove-fake-mode
 usr/bin/trove-conductor
+usr/bin/trove-fake-mode
 usr/bin/trove-guestagent
-usr/bin/trove-taskmanager
+usr/bin/trove-manage
 usr/bin/trove-mgmt-taskmanager
+usr/bin/trove-taskmanager
+usr/lib/python*/dist-packages/*
