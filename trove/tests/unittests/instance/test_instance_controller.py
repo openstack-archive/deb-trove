@@ -134,6 +134,17 @@ class TestInstanceController(TestCase):
         self.assertThat(errors[0].message,
                         Equals("'     ' does not match '^.*[0-9a-zA-Z]+.*$'"))
 
+    def test_validate_create_invalid_name(self):
+        body = self.instance
+        body['instance']['name'] = "$#$%^^"
+        schema = self.controller.get_schema('create', body)
+        validator = jsonschema.Draft4Validator(schema)
+        self.assertFalse(validator.is_valid(body))
+        errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("'$#$%^^' does not match '^.*[0-9a-zA-Z]+.*$'",
+                      errors[0].message)
+
     def test_validate_restart(self):
         body = {"restart": {}}
         schema = self.controller.get_schema('action', body)
@@ -183,6 +194,12 @@ class TestInstanceController(TestCase):
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))
 
+    def test_validate_resize_instance_string(self):
+        body = {"resize": {"flavorRef": 'foo'}}
+        schema = self.controller.get_schema('action', body)
+        validator = jsonschema.Draft4Validator(schema)
+        self.assertTrue(validator.is_valid(body))
+
     def test_validate_resize_instance_empty_url(self):
         body = {"resize": {"flavorRef": ""}}
         schema = self.controller.get_schema('action', body)
@@ -191,10 +208,7 @@ class TestInstanceController(TestCase):
         errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
         self.verify_errors(errors[0].context,
                            ["'' is too short",
-                            "'' does not match 'http[s]?://(?:[a-zA-Z]"
-                            "|[0-9]|[$-_@.&+]|[!*\\\\(\\\\),]"
-                            "|(?:%[0-9a-fA-F][0-9a-fA-F]))+'",
-                            "'' does not match '[0-9]+'",
+                            "'' does not match '^.*[0-9a-zA-Z]+.*$'",
                             "'' is not of type 'integer'"],
                            ["flavorRef", "flavorRef", "flavorRef",
                             "flavorRef"],

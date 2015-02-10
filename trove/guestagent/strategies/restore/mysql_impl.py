@@ -24,7 +24,7 @@ from trove.openstack.common import log as logging
 from trove.common import exception
 from trove.common import utils
 import trove.guestagent.datastore.mysql.service as dbaas
-from trove.openstack.common.gettextutils import _  # noqa
+from trove.common.i18n import _  # noqa
 
 LOG = logging.getLogger(__name__)
 
@@ -82,12 +82,22 @@ class MySQLRestoreMixin(object):
             LOG.debug("Cleaning up the temp mysqld process.")
             utils.execute_with_timeout("mysqladmin", "-uroot",
                                        "--protocol=tcp", "shutdown")
-            utils.execute_with_timeout("killall", "mysqld_safe",
-                                       root_helper="sudo", run_as_root=True)
-            self.poll_until_then_raise(
-                self.mysql_is_not_running,
-                base.RestoreError("Reset root password failed: "
-                                  "mysqld did not stop!"))
+            LOG.debug("Polling for shutdown to complete.")
+            try:
+                utils.poll_until(self.mysql_is_not_running,
+                                 sleep_time=self.RESET_ROOT_SLEEP_INTERVAL,
+                                 time_out=self.RESET_ROOT_RETRY_TIMEOUT)
+                LOG.debug("Database successfully shutdown")
+            except exception.PollTimeOut:
+                LOG.debug("Timeout shutting down database "
+                          "- performing killall on mysqld_safe.")
+                utils.execute_with_timeout("killall", "mysqld_safe",
+                                           root_helper="sudo",
+                                           run_as_root=True)
+                self.poll_until_then_raise(
+                    self.mysql_is_not_running,
+                    base.RestoreError("Reset root password failed: "
+                                      "mysqld did not stop!"))
 
     def reset_root_password(self):
         #Create temp file with reset root password
@@ -213,7 +223,7 @@ class InnoBackupExIncremental(InnoBackupEx):
             self._incremental_restore(parent_location, parent_checksum)
             # for *this* backup set the incremental_dir
             # just use the checksum for the incremental path as it is
-            # sufficently unique /var/lib/mysql/<checksum>
+            # sufficiently unique /var/lib/mysql/<checksum>
             incremental_dir = os.path.join(self.restore_location, checksum)
             utils.execute("mkdir", "-p", incremental_dir,
                           root_helper="sudo",

@@ -39,10 +39,9 @@ from trove.instance.tasks import InstanceTask
 from trove.instance.tasks import InstanceTasks
 from trove.taskmanager import api as task_api
 from trove.openstack.common import log as logging
-from trove.openstack.common import gettextutils
+from trove.common import i18n as i18n
 
-(_, _LE, _LI, _LW) = (gettextutils._, gettextutils._LE, gettextutils._LI,
-                      gettextutils._LW)
+(_, _LE, _LI, _LW) = (i18n._, i18n._LE, i18n._LI, i18n._LW)
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -578,12 +577,6 @@ class BaseInstance(SimpleInstance):
         deleted_at = datetime.utcnow()
         self._delete_resources(deleted_at)
         LOG.debug("Setting instance %s to be deleted.", self.id)
-        # Delete guest queue.
-        try:
-            guest = self.get_guest()
-            guest.delete_queue()
-        except Exception as ex:
-            LOG.warn(ex)
         self.update_db(deleted=True, deleted_at=deleted_at,
                        task_status=InstanceTasks.NONE)
         self.set_servicestatus_deleted()

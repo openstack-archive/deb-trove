@@ -21,6 +21,8 @@ from cinderclient import exceptions as cinder_exceptions
 from eventlet import greenthread
 from novaclient import exceptions as nova_exceptions
 
+from oslo.utils import timeutils
+
 from trove.backup import models as bkup_models
 from trove.backup.models import Backup
 from trove.backup.models import DBBackup
@@ -43,7 +45,7 @@ from trove.common.exception import TroveError
 from trove.common.exception import VolumeCreationFailure
 from trove.common.instance import ServiceStatuses
 from trove.common import instance as rd_instance
-from trove.common import strategy
+from trove.common.strategies.cluster import strategy
 from trove.common.remote import create_dns_client
 from trove.common.remote import create_heat_client
 from trove.common.remote import create_cinder_client
@@ -62,11 +64,10 @@ from trove.instance.tasks import InstanceTasks
 from trove.instance.models import InstanceStatus
 from trove.instance.models import InstanceServiceStatus
 from trove.openstack.common import log as logging
-from trove.openstack.common.gettextutils import _
-from trove.openstack.common.notifier import api as notifier
-from trove.openstack.common import timeutils
+from trove.common.i18n import _
 from trove.quota.quota import run_with_quotas
 import trove.common.remote as remote
+from trove import rpc
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -142,8 +143,11 @@ class NotifyMixin(object):
         payload.update(kwargs)
         LOG.debug('Sending event: %(event_type)s, %(payload)s' %
                   {'event_type': event_type, 'payload': payload})
-        notifier.notify(self.context, publisher_id, event_type, 'INFO',
-                        payload)
+
+        notifier = rpc.get_notifier(
+            service="taskmanager", publisher_id=publisher_id)
+
+        notifier.info(self.context, event_type, payload)
 
 
 class ConfigurationMixin(object):

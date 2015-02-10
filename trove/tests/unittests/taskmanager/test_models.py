@@ -21,6 +21,7 @@ from novaclient import exceptions as nova_exceptions
 import novaclient.v1_1.servers
 import novaclient.v1_1.flavors
 import cinderclient.v2.client as cinderclient
+from oslo.utils import timeutils
 import trove.backup.models
 import trove.common.context
 from trove.datastore import models as datastore_models
@@ -40,10 +41,9 @@ from trove.instance.models import InstanceServiceStatus
 from trove.instance.models import InstanceStatus
 from trove.instance.models import DBInstance
 from trove.instance.tasks import InstanceTasks
-
 from trove.tests.unittests.util import util
 from trove.common import utils
-from trove.openstack.common import timeutils
+from trove import rpc
 from swiftclient.client import ClientException
 from tempfile import NamedTemporaryFile
 import os
@@ -468,6 +468,8 @@ class BuiltInstanceTasksTest(testtools.TestCase):
         super(BuiltInstanceTasksTest, self).setUp()
         self.new_flavor = {'id': 8, 'ram': 768, 'name': 'bigger_flavor'}
         stub_nova_server = MagicMock()
+        rpc.get_notifier = MagicMock()
+        rpc.get_client = MagicMock()
         db_instance = DBInstance(InstanceTasks.NONE,
                                  id=INST_ID,
                                  name='resize-inst-name',

@@ -17,10 +17,11 @@
 
 import re
 
+from oslo_concurrency import processutils
+
 from trove.openstack.common import log as logging
-from trove.openstack.common import exception as openstack_exception
-from trove.openstack.common import processutils
-from trove.openstack.common.gettextutils import _
+from trove.common import base_exception as openstack_exception
+from trove.common.i18n import _
 
 
 ClientConnectionError = openstack_exception.ClientConnectionError
@@ -437,13 +438,6 @@ class ConfigurationAlreadyAttached(TroveError):
 class InvalidInstanceState(TroveError):
     message = _("The operation you have requested cannot be executed because "
                 "the instance status is currently: %(status)s.")
-
-
-class RegionAmbiguity(TroveError):
-    """Found more than one matching endpoint in Service Catalog."""
-    message = _("Multiple matches for service_type=%(service_type)s and "
-                "endpoint_region=%(endpoint_region)s. This generally means "
-                "that a region is required and you have not supplied one.")
 
 
 class NoServiceEndpoint(TroveError):
