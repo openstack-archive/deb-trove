@@ -131,7 +131,8 @@ class DatastoreVersionInactive(TroveError):
 
 class DatastoreDefaultDatastoreNotFound(TroveError):
 
-    message = _("Please specify datastore.")
+    message = _("Please specify datastore. Default datastore "
+                "cannot be found.")
 
 
 class DatastoreDefaultVersionNotFound(TroveError):
@@ -363,7 +364,7 @@ class MalformedSecurityGroupRuleError(TroveError):
 class BackupNotCompleteError(TroveError):
 
     message = _("Unable to create instance because backup %(backup_id)s is "
-                "not completed.")
+                "not completed. Actual state: %(state)s.")
 
 
 class BackupFileNotFound(NotFound):
@@ -379,6 +380,10 @@ class BackupDatastoreMismatchError(TroveError):
 
 class SwiftAuthError(TroveError):
     message = _("Swift account not accessible for tenant %(tenant_id)s.")
+
+
+class SwiftNotFound(TroveError):
+    message = _("Swift is disabled for tenant %(tenant_id)s.")
 
 
 class DatabaseForUserNotInDatabaseListError(TroveError):

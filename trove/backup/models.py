@@ -251,6 +251,8 @@ class Backup(object):
             client.get_account()
         except ClientException:
             raise exception.SwiftAuthError(tenant_id=context.tenant)
+        except exception.NoServiceEndpoint:
+            raise exception.SwiftNotFound(tenant_id=context.tenant)
 
 
 def persisted_models():
@@ -273,6 +275,10 @@ class DBBackup(DatabaseModelBase):
     @property
     def is_done(self):
         return self.state in BackupState.END_STATES
+
+    @property
+    def is_done_successfuly(self):
+        return self.state == BackupState.COMPLETED
 
     @property
     def filename(self):

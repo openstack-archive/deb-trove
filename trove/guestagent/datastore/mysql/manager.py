@@ -3,7 +3,7 @@
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 # All Rights Reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
 #
@@ -42,11 +42,14 @@ REPLICATION_STRATEGY_CLASS = get_replication_strategy(REPLICATION_STRATEGY,
 
 
 class Manager(periodic_task.PeriodicTasks):
-
     @periodic_task.periodic_task(ticks_between_runs=3)
     def update_status(self, context):
         """Update the status of the MySQL service."""
         MySqlAppStatus.get().update()
+
+    def rpc_ping(self, context):
+        LOG.debug("Responding to RPC ping.")
+        return True
 
     def change_passwords(self, context, users):
         return MySqlAdmin().change_passwords(users)
@@ -205,9 +208,10 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Resized the filesystem %s." % mount_point)
 
     def update_overrides(self, context, overrides, remove=False):
-        LOG.debug("Updating overrides (%s)." % overrides)
         app = MySqlApp(MySqlAppStatus.get())
-        app.update_overrides(overrides, remove=remove)
+        if remove:
+            app.remove_overrides()
+        app.update_overrides(overrides)
 
     def apply_overrides(self, context, overrides):
         LOG.debug("Applying overrides (%s)." % overrides)

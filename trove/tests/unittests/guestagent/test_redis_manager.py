@@ -15,8 +15,10 @@
 import testtools
 from mock import MagicMock
 from trove.common.context import TroveContext
-from trove.guestagent.datastore.redis.manager import Manager as RedisManager
-import trove.guestagent.datastore.redis.service as redis_service
+from trove.guestagent.datastore.experimental.redis.manager import (
+    Manager as RedisManager)
+from trove.guestagent.datastore.experimental.redis import (
+    service as redis_service)
 from trove.guestagent import backup
 from trove.guestagent.common import operating_system
 from trove.guestagent.volume import VolumeDevice
@@ -96,7 +98,7 @@ class RedisGuestAgentManagerTest(testtools.TestCase):
                              overrides=None,
                              cluster_config=None)
 
-        self.assertEqual(redis_service.RedisAppStatus.get.call_count, 2)
+        self.assertEqual(2, redis_service.RedisAppStatus.get.call_count)
         mock_status.begin_install.assert_any_call()
         VolumeDevice.format.assert_any_call()
         redis_service.RedisApp.install_if_needed.assert_any_call(self.packages)

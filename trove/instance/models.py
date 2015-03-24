@@ -408,7 +408,7 @@ class DetailInstance(SimpleInstance):
         self._volume_total = value
 
 
-def get_db_info(context, id, cluster_id=None):
+def get_db_info(context, id, cluster_id=None, include_deleted=False):
     """
     Retrieves an instance of the managed datastore from the persisted
     storage based on the ID and Context
@@ -425,12 +425,14 @@ def get_db_info(context, id, cluster_id=None):
         raise TypeError("Argument context not defined.")
     elif id is None:
         raise TypeError("Argument id not defined.")
+
+    args = {'id': id}
+    if cluster_id is not None:
+        args['cluster_id'] = cluster_id
+    if not include_deleted:
+        args['deleted'] = False
     try:
-        if cluster_id is not None:
-            db_info = DBInstance.find_by(context=context, id=id,
-                                         cluster_id=cluster_id, deleted=False)
-        else:
-            db_info = DBInstance.find_by(context=context, id=id, deleted=False)
+        db_info = DBInstance.find_by(context=context, **args)
     except exception.NotFound:
         raise exception.NotFound(uuid=id)
     return db_info
@@ -447,8 +449,9 @@ def load_any_instance(context, id, load_server=True):
         return load_instance(FreshInstance, context, id, needs_server=False)
 
 
-def load_instance(cls, context, id, needs_server=False):
-    db_info = get_db_info(context, id)
+def load_instance(cls, context, id, needs_server=False,
+                  include_deleted=False):
+    db_info = get_db_info(context, id, include_deleted=include_deleted)
     if not needs_server:
         # TODO(tim.simpson): When we have notifications this won't be
         # necessary and instead we'll just use the server_status field from
@@ -681,10 +684,11 @@ class Instance(BuiltInstance):
                     raise exception.LocalStorageNotSpecified(flavor=flavor_id)
                 target_size = flavor.ephemeral  # ephemeral_Storage
 
-        if backup_id is not None:
+        if backup_id:
             backup_info = Backup.get_by_id(context, backup_id)
-            if backup_info.is_running:
-                raise exception.BackupNotCompleteError(backup_id=backup_id)
+            if not backup_info.is_done_successfuly:
+                raise exception.BackupNotCompleteError(
+                    backup_id=backup_id, state=backup_info.state)
 
             if backup_info.size > target_size:
                 raise exception.BackupTooLarge(
