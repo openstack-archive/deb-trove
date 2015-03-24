@@ -5,9 +5,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
 Last-Update: 2014-09-23
 
---- openstack-trove-2014.2~b3.orig/etc/trove/trove.conf.sample
-+++ openstack-trove-2014.2~b3/etc/trove/trove.conf.sample
-@@ -46,9 +46,7 @@ rpc_backend = trove.openstack.common.rpc
+Index: openstack-trove/etc/trove/trove.conf.sample
+===================================================================
+--- openstack-trove.orig/etc/trove/trove.conf.sample
++++ openstack-trove/etc/trove/trove.conf.sample
+@@ -58,9 +58,7 @@ rabbit_password=f7999d1955c5014aa32c
  # SQLAlchemy connection string for the reference implementation
  # registry server. Any valid SQLAlchemy connection string is fine.
  # See: http://www.sqlalchemy.org/docs/05/reference/sqlalchemy/connections.html#sqlalchemy.create_engine
