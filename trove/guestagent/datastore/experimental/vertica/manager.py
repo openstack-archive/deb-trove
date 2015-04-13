@@ -40,10 +40,15 @@ class Manager(periodic_task.PeriodicTasks):
         """Update the status of the Vertica service."""
         self.appStatus.update()
 
+    def rpc_ping(self, context):
+        LOG.debug("Responding to RPC ping.")
+        return True
+
     def prepare(self, context, packages, databases, memory_mb, users,
                 device_path=None, mount_point=None, backup_info=None,
                 config_contents=None, root_password=None, overrides=None,
-                cluster_config=None, path_exists_function=os.path.exists):
+                cluster_config=None,
+                snapshot=None, path_exists_function=os.path.exists):
         """Makes ready DBAAS on a Guest container."""
         try:
             LOG.info(_("Setting instance status to BUILDING."))
@@ -61,14 +66,20 @@ class Manager(periodic_task.PeriodicTasks):
                     LOG.debug("Mounted the volume.")
             self.app.install_if_needed(packages)
             self.app.prepare_for_install_vertica()
-            self.app.install_vertica()
-            self.app.create_db()
-            self.app.complete_install_or_restart()
+            if cluster_config is None:
+                self.app.install_vertica()
+                self.app.create_db()
+                self.app.complete_install_or_restart()
+            elif cluster_config['instance_type'] == "member":
+                self.appStatus.set_status(rd_ins.ServiceStatuses.BUILD_PENDING)
+            else:
+                LOG.error(_("Bad cluster configuration; instance type "
+                            "given as %s.") % cluster_config['instance_type'])
+                raise RuntimeError("Bad cluster configuration.")
             LOG.info(_('Completed setup of Vertica database instance.'))
         except Exception:
             LOG.exception(_('Cannot prepare Vertica database instance.'))
             self.appStatus.set_status(rd_ins.ServiceStatuses.FAILED)
-            raise
 
     def restart(self, context):
         LOG.debug("Restarting the database.")
@@ -188,5 +199,27 @@ class Manager(periodic_task.PeriodicTasks):
 
     def start_db_with_conf_changes(self, context, config_contents):
         LOG.debug("Starting with configuration changes.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='start_db_with_conf_changes', datastore=MANAGER)
+        self.app.start_db_with_conf_changes(config_contents)
+
+    def get_public_keys(self, context, user):
+        LOG.debug("Retrieving public keys for %s." % user)
+        return self.app.get_public_keys(user)
+
+    def authorize_public_keys(self, context, user, public_keys):
+        LOG.debug("Authorizing public keys for %s." % user)
+        return self.app.authorize_public_keys(user, public_keys)
+
+    def install_cluster(self, context, members):
+        try:
+            LOG.debug("Installing cluster on members: %s." % members)
+            self.app.install_cluster(members)
+            LOG.debug("install_cluster call has finished.")
+        except Exception:
+            LOG.exception(_('Cluster installation failed.'))
+            self.appStatus.set_status(rd_ins.ServiceStatuses.FAILED)
+            raise
+
+    def cluster_complete(self, context):
+        LOG.debug("Cluster creation complete, starting status checks.")
+        status = self.appStatus._get_actual_db_status()
+        self.appStatus.set_status(status)

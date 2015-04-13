@@ -22,7 +22,7 @@ from trove.common.strategies.cluster import strategy
 from cinderclient.v2 import client as CinderClient
 from heatclient.v1 import client as HeatClient
 from keystoneclient.service_catalog import ServiceCatalog
-from novaclient.v1_1.client import Client
+from novaclient.v2.client import Client
 from swiftclient.client import Connection
 
 CONF = cfg.CONF
@@ -98,7 +98,8 @@ def nova_client(context):
                            endpoint_type=CONF.nova_compute_endpoint_type)
 
     client = Client(context.user, context.auth_token,
-                    project_id=context.tenant, auth_url=PROXY_AUTH_URL)
+                    bypass_url=url, project_id=context.tenant,
+                    auth_url=PROXY_AUTH_URL)
     client.client.auth_token = context.auth_token
     client.client.management_url = url
     return client

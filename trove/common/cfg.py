@@ -31,19 +31,6 @@ path_opts = [
 ]
 
 common_opts = [
-    cfg.StrOpt('sql_connection',
-               default='sqlite:///trove_test.sqlite',
-               help='SQL Connection.',
-               secret=True),
-    cfg.IntOpt('sql_idle_timeout', default=3600,
-               help="Idle time (in seconds) after which the connection to the "
-                    "database is reestablished. Some databases will drop "
-                    "connections after a specific amount of idle time. "
-                    "Setting sql_idle_timeout to a lower value than this will "
-                    "ensure that a reconnect occurs before the database can "
-                    "drop the connection."),
-    cfg.BoolOpt('sql_query_log', default=False,
-                help='Write all SQL queries to a log.'),
     cfg.StrOpt('bind_host', default='0.0.0.0',
                help='IP address the API server will listen on.'),
     cfg.IntOpt('bind_port', default=8779,
@@ -141,7 +128,8 @@ common_opts = [
     cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
                 help='Users to exclude when listing users.'),
     cfg.ListOpt('ignore_dbs',
-                default=['lost+found', 'mysql', 'information_schema'],
+                default=['lost+found', '#mysql50#lost+found', 'mysql',
+                         'information_schema'],
                 help='Databases to exclude when listing databases.'),
     cfg.IntOpt('agent_call_low_timeout', default=5,
                help="Maximum time (in seconds) to wait for Guest Agent 'quick'"
@@ -160,6 +148,9 @@ common_opts = [
     cfg.IntOpt('agent_heartbeat_time', default=10,
                help='Maximum time (in seconds) for the Guest Agent to reply '
                     'to a heartbeat request.'),
+    cfg.IntOpt('agent_heartbeat_expiry', default=60,
+               help='Time (in seconds) after which a guest is considered '
+                    'unreachable'),
     cfg.IntOpt('num_tries', default=3,
                help='Number of times to check if a volume exists.'),
     cfg.StrOpt('volume_fstype', default='ext3',
@@ -327,7 +318,8 @@ common_opts = [
                          'mongodb': 'c8c907af-7375-456f-b929-b637ff9209ee',
                          'postgresql': 'ac277e0d-4f21-40aa-b347-1ea31e571720',
                          'couchdb': 'f0a9ab7b-66f7-4352-93d7-071521d44c7c',
-                         'vertica': 'a8d805ae-a3b2-c4fd-gb23-b62cee5201ae'},
+                         'vertica': 'a8d805ae-a3b2-c4fd-gb23-b62cee5201ae',
+                         'db2': 'e040cd37-263d-4869-aaa6-c62aa97523b5'},
                 help='Unique ID to tag notification events.'),
     cfg.StrOpt('nova_proxy_admin_user', default='',
                help="Admin username used to connect to Nova.", secret=True),
@@ -406,6 +398,25 @@ profiler_opts = [
                 help="If False doesn't trace SQL requests.")
 ]
 
+
+database_opts = [
+    cfg.StrOpt('connection',
+               default='sqlite:///trove_test.sqlite',
+               help='SQL Connection.',
+               secret=True,
+               deprecated_name='sql_connection',
+               deprecated_group='DEFAULT'),
+    cfg.IntOpt('idle_timeout',
+               default=3600,
+               deprecated_name='sql_idle_timeout',
+               deprecated_group='DEFAULT'),
+    cfg.BoolOpt('query_log',
+                default=False,
+                deprecated_name='sql_query_log',
+                deprecated_group='DEFAULT'),
+]
+
+
 # Datastore specific option groups
 
 # Mysql
@@ -425,10 +436,10 @@ mysql_opts = [
                help='Default strategy to perform backups.',
                deprecated_name='backup_strategy',
                deprecated_group='DEFAULT'),
-    cfg.StrOpt('replication_strategy', default='MysqlBinlogReplication',
+    cfg.StrOpt('replication_strategy', default='MysqlGTIDReplication',
                help='Default strategy for replication.'),
     cfg.StrOpt('replication_namespace',
-               default='trove.guestagent.strategies.replication.mysql_binlog',
+               default='trove.guestagent.strategies.replication.mysql_gtid',
                help='Namespace to load replication strategies from.'),
     cfg.StrOpt('mount_point', default='/var/lib/mysql',
                help="Filesystem path for mounting "
@@ -482,10 +493,10 @@ percona_opts = [
                help='Default strategy to perform backups.',
                deprecated_name='backup_strategy',
                deprecated_group='DEFAULT'),
-    cfg.StrOpt('replication_strategy', default='MysqlBinlogReplication',
+    cfg.StrOpt('replication_strategy', default='MysqlGTIDReplication',
                help='Default strategy for replication.'),
     cfg.StrOpt('replication_namespace',
-               default='trove.guestagent.strategies.replication.mysql_binlog',
+               default='trove.guestagent.strategies.replication.mysql_gtid',
                help='Namespace to load replication strategies from.'),
     cfg.StrOpt('replication_user', default='slave_user',
                help='Userid for replication slave.'),
@@ -813,11 +824,13 @@ vertica_group = cfg.OptGroup(
     'vertica', title='Vertica options',
     help="Oslo option group designed for Vertica datastore")
 vertica_opts = [
-    cfg.ListOpt('tcp_ports', default=["5433"],
+    cfg.ListOpt('tcp_ports',
+                default=["5433", "5434", "22", "5444", "5450", "4803"],
                 help='List of TCP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
-    cfg.ListOpt('udp_ports', default=["5433"],
+    cfg.ListOpt('udp_ports',
+                default=["5433", "4803", "4804", "6453"],
                 help='List of UDP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
@@ -842,6 +855,65 @@ vertica_opts = [
                help='Namespace to load restore strategies from.'),
     cfg.IntOpt('readahead_size', default=2048,
                help='Size(MB) to be set as readahead_size for data volume'),
+    cfg.BoolOpt('cluster_support', default=True,
+                help='Enable clusters to be created and managed.'),
+    cfg.IntOpt('cluster_member_count', default=3,
+               help='Number of members in Vertica cluster.'),
+    cfg.StrOpt('api_strategy',
+               default='trove.common.strategies.cluster.experimental.vertica.'
+                       'api.VerticaAPIStrategy',
+               help='Class that implements datastore-specific API logic.'),
+    cfg.StrOpt('taskmanager_strategy',
+               default='trove.common.strategies.cluster.experimental.vertica.'
+                       'taskmanager.VerticaTaskManagerStrategy',
+               help='Class that implements datastore-specific task manager '
+                    'logic.'),
+    cfg.StrOpt('guestagent_strategy',
+               default='trove.common.strategies.cluster.experimental.vertica.'
+                       'guestagent.VerticaGuestAgentStrategy',
+               help='Class that implements datastore-specific Guest Agent API '
+                    'logic.'),
+]
+
+# DB2
+db2_group = cfg.OptGroup(
+    'db2', title='DB2 options',
+    help="Oslo option group designed for DB2 datastore")
+db2_opts = [
+    cfg.ListOpt('tcp_ports',
+                default=["50000"],
+                help='List of TCP ports and/or port ranges to open '
+                'in the security group (only applicable '
+                'if trove_security_groups_support is True).'),
+    cfg.ListOpt('udp_ports', default=[],
+                help='List of UDP ports and/or port ranges to open '
+                'in the security group (only applicable '
+                'if trove_security_groups_support is True).'),
+    cfg.StrOpt('mount_point', default="/home/db2inst1/db2inst1",
+               help="Filesystem path for mounting "
+               "volumes if volume support is enabled."),
+    cfg.BoolOpt('volume_support', default=True,
+                help='Whether to provision a Cinder volume for datadir.'),
+    cfg.StrOpt('device_path', default='/dev/vdb',
+               help='Device path for volume if volume support is enabled.'),
+    cfg.StrOpt('backup_strategy', default=None,
+               help='Default strategy to perform backups.'),
+    cfg.StrOpt('replication_strategy', default=None,
+               help='Default strategy for replication.'),
+    cfg.BoolOpt('root_on_create', default=False,
+                help='Enable the automatic creation of the root user for the '
+                'service during instance-create. The generated password for '
+                'the root user is immediately returned in the response of '
+                "instance-create as the 'password' field."),
+    cfg.StrOpt('backup_namespace', default=None,
+               help='Namespace to load backup strategies from.'),
+    cfg.StrOpt('restore_namespace', default=None,
+               help='Namespace to load restore strategies from.'),
+    cfg.DictOpt('backup_incremental_strategy', default={},
+                help='Incremental Backup Runner based on the default '
+                'strategy. For strategies that do not implement an '
+                'incremental, the runner will use the default full backup.'),
+    cfg.ListOpt('ignore_users', default=['PUBLIC', 'DB2INST1']),
 ]
 
 # RPC version groups
@@ -870,6 +942,8 @@ CONF.register_opts(common_opts)
 CONF.register_group(profiler_group)
 CONF.register_opts(profiler_opts, profiler_group)
 
+CONF.register_opts(database_opts, 'database')
+
 CONF.register_group(mysql_group)
 CONF.register_group(percona_group)
 CONF.register_group(redis_group)
@@ -879,6 +953,7 @@ CONF.register_group(mongodb_group)
 CONF.register_group(postgresql_group)
 CONF.register_group(couchdb_group)
 CONF.register_group(vertica_group)
+CONF.register_group(db2_group)
 
 CONF.register_opts(mysql_opts, mysql_group)
 CONF.register_opts(percona_opts, percona_group)
@@ -889,6 +964,7 @@ CONF.register_opts(mongodb_opts, mongodb_group)
 CONF.register_opts(postgresql_opts, postgresql_group)
 CONF.register_opts(couchdb_opts, couchdb_group)
 CONF.register_opts(vertica_opts, vertica_group)
+CONF.register_opts(db2_opts, db2_group)
 
 CONF.register_opts(rpcapi_cap_opts, upgrade_levels)
 

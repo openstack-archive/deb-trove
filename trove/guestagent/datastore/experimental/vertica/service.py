@@ -13,13 +13,14 @@
 
 import ConfigParser
 import os
+import subprocess
 import tempfile
 
+from oslo_utils import netutils
 from trove.common import cfg
 from trove.common import exception
 from trove.common import utils as utils
 from trove.common import instance as rd_instance
-from trove.guestagent.common import operating_system
 from trove.guestagent.datastore import service
 from trove.guestagent import pkg
 from trove.guestagent import volume
@@ -45,16 +46,9 @@ class VerticaAppStatus(service.BaseDbStatus):
                 #UP status is confirmed
                 LOG.info(_("Service Status is RUNNING."))
                 return rd_instance.ServiceStatuses.RUNNING
-            elif out.strip() == "":
-                #nothing returned, means no db running lets verify
-                out, err = system.shell_execute(system.STATUS_DB_DOWN,
-                                                "dbadmin")
-                if out.strip() == DB_NAME:
-                    #DOWN status is confirmed
-                    LOG.info(_("Service Status is SHUTDOWN."))
-                    return rd_instance.ServiceStatuses.SHUTDOWN
-                else:
-                    return rd_instance.ServiceStatuses.UNKNOWN
+            else:
+                LOG.info(_("Service Status is SHUTDOWN."))
+                return rd_instance.ServiceStatuses.SHUTDOWN
         except exception.ProcessExecutionError:
             LOG.exception(_("Failed to get database status."))
             return rd_instance.ServiceStatuses.CRASHED
@@ -68,51 +62,84 @@ class VerticaApp(object):
         self.status = status
 
     def _enable_db_on_boot(self):
-        command = (system.SET_RESTART_POLICY % (DB_NAME, "always"))
         try:
-            system.shell_execute(command, "dbadmin")
-        except exception.ProcessExecutionError:
+            command = ["sudo", "su", "-", "dbadmin", "-c",
+                       (system.SET_RESTART_POLICY % (DB_NAME, "always"))]
+            subprocess.Popen(command)
+            command = ["sudo", "su", "-", "root", "-c",
+                       (system.VERTICA_AGENT_SERVICE_COMMAND % "enable")]
+            subprocess.Popen(command)
+        except Exception:
             LOG.exception(_("Failed to enable db on boot."))
-            raise
+            raise RuntimeError("Could not enable db on boot.")
 
     def _disable_db_on_boot(self):
-        command = (system.SET_RESTART_POLICY % (DB_NAME, "never"))
         try:
+            command = (system.SET_RESTART_POLICY % (DB_NAME, "never"))
             system.shell_execute(command, "dbadmin")
+            command = (system.VERTICA_AGENT_SERVICE_COMMAND % "disable")
+            system.shell_execute(command)
         except exception.ProcessExecutionError:
             LOG.exception(_("Failed to disable db on boot."))
-            raise
+            raise RuntimeError("Could not disable db on boot.")
 
     def stop_db(self, update_db=False, do_not_start_on_reboot=False):
         """Stop the database."""
         LOG.info(_("Stopping Vertica."))
         if do_not_start_on_reboot:
             self._disable_db_on_boot()
-        # Using Vertica adminTools to stop db.
-        db_password = self._get_database_password()
-        stop_db_command = (system.STOP_DB % (DB_NAME, db_password))
-        system.shell_execute(stop_db_command, "dbadmin")
-        if not self.status.wait_for_real_status_to_change_to(
-                rd_instance.ServiceStatuses.SHUTDOWN,
-                self.state_change_wait_time, update_db):
-            LOG.error(_("Could not stop Vertica."))
-            self.status.end_install_or_restart()
-            raise RuntimeError("Could not stop Vertica!")
+
+        try:
+            # Stop vertica-agent service
+            command = (system.VERTICA_AGENT_SERVICE_COMMAND % "stop")
+            system.shell_execute(command)
+            # Using Vertica adminTools to stop db.
+            db_password = self._get_database_password()
+            stop_db_command = (system.STOP_DB % (DB_NAME, db_password))
+            out, err = system.shell_execute(system.STATUS_ACTIVE_DB, "dbadmin")
+            if out.strip() == DB_NAME:
+                system.shell_execute(stop_db_command, "dbadmin")
+                if not self.status._is_restarting:
+                    if not self.status.wait_for_real_status_to_change_to(
+                            rd_instance.ServiceStatuses.SHUTDOWN,
+                            self.state_change_wait_time, update_db):
+                        LOG.error(_("Could not stop Vertica."))
+                        self.status.end_install_or_restart()
+                        raise RuntimeError("Could not stop Vertica!")
+                LOG.debug("Database stopped.")
+            else:
+                LOG.debug("Database is not running.")
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Failed to stop database."))
+            raise RuntimeError("Could not stop database.")
 
     def start_db(self, update_db=False):
         """Start the database."""
         LOG.info(_("Starting Vertica."))
-        self._enable_db_on_boot()
-        # Using Vertica adminTools to start db.
-        db_password = self._get_database_password()
-        start_db_command = (system.START_DB % (DB_NAME, db_password))
-        system.shell_execute(start_db_command, "dbadmin")
-        if not self.status.wait_for_real_status_to_change_to(
-                rd_instance.ServiceStatuses.RUNNING,
-                self.state_change_wait_time, update_db):
-            LOG.error(_("Start up of Vertica failed."))
-            self.status.end_install_or_restart()
+        try:
+            self._enable_db_on_boot()
+            # Start vertica-agent service
+            command = ["sudo", "su", "-", "root", "-c",
+                       (system.VERTICA_AGENT_SERVICE_COMMAND % "start")]
+            subprocess.Popen(command)
+            # Using Vertica adminTools to start db.
+            db_password = self._get_database_password()
+            start_db_command = ["sudo", "su", "-", "dbadmin", "-c",
+                                (system.START_DB % (DB_NAME, db_password))]
+            subprocess.Popen(start_db_command)
+            if not self.status._is_restarting:
+                self.status.end_install_or_restart()
+            LOG.debug("Database started.")
+        except Exception:
             raise RuntimeError("Could not start Vertica!")
+
+    def start_db_with_conf_changes(self, config_contents):
+        """
+         Currently all that this method does is to start Vertica. This method
+         needs to be implemented to enable volume resize on guestagent side.
+        """
+        LOG.info(_("Starting Vertica with configuration changes."))
+        self.start_db(True)
 
     def restart(self):
         """Restart the database."""
@@ -123,7 +150,7 @@ class VerticaApp(object):
         finally:
             self.status.end_install_or_restart()
 
-    def create_db(self, members=operating_system.get_ip_address()):
+    def create_db(self, members=netutils.get_my_ipv4()):
         """Prepare the guest machine with a Vertica db creation."""
         LOG.info(_("Creating database on Vertica host."))
         try:
@@ -137,7 +164,7 @@ class VerticaApp(object):
             LOG.exception(_("Vertica database create failed."))
         LOG.info(_("Vertica database create completed."))
 
-    def install_vertica(self, members=operating_system.get_ip_address()):
+    def install_vertica(self, members=netutils.get_my_ipv4()):
         """Prepare the guest machine with a Vertica db creation."""
         LOG.info(_("Installing Vertica Server."))
         try:
@@ -219,3 +246,72 @@ class VerticaApp(object):
         except exception.ProcessExecutionError:
             LOG.exception(_("Failed to prepare for install_vertica."))
             raise
+
+    def get_public_keys(self, user):
+        """Generates key (if not found), and sends public key for user."""
+        LOG.debug("Public keys requested for user: %s." % user)
+        user_home_directory = os.path.expanduser('~' + user)
+        public_key_file_name = user_home_directory + '/.ssh/id_rsa.pub'
+
+        try:
+            key_generate_command = (system.SSH_KEY_GEN % user_home_directory)
+            system.shell_execute(key_generate_command, user)
+        except exception.ProcessExecutionError:
+            LOG.debug("Cannot generate key.")
+
+        try:
+            read_key_cmd = ("cat %(file)s" % {'file': public_key_file_name})
+            out, err = system.shell_execute(read_key_cmd)
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Cannot read public key."))
+            raise
+        return out.strip()
+
+    def authorize_public_keys(self, user, public_keys):
+        """Adds public key to authorized_keys for user."""
+        LOG.debug("public keys to be added for user: %s." % (user))
+        user_home_directory = os.path.expanduser('~' + user)
+        authorized_file_name = user_home_directory + '/.ssh/authorized_keys'
+
+        try:
+            read_key_cmd = ("cat %(file)s" % {'file': authorized_file_name})
+            out, err = system.shell_execute(read_key_cmd)
+            public_keys.append(out.strip())
+        except exception.ProcessExecutionError:
+            LOG.debug("Cannot read authorized_keys.")
+        all_keys = '\n'.join(public_keys) + "\n"
+
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tempkeyfile:
+                tempkeyfile.write(all_keys)
+            copy_key_cmd = (("install -o %(user)s -m 600 %(source)s %(target)s"
+                             ) % {'user': user, 'source': tempkeyfile.name,
+                                  'target': authorized_file_name})
+            system.shell_execute(copy_key_cmd)
+            os.remove(tempkeyfile.name)
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Cannot install public keys."))
+            os.remove(tempkeyfile.name)
+            raise
+
+    def _export_conf_to_members(self, members):
+        """This method exports conf files to other members."""
+        try:
+            for member in members:
+                COPY_CMD = (system.SEND_CONF_TO_SERVER % (system.VERTICA_CONF,
+                                                          member,
+                                                          system.VERTICA_CONF))
+                system.shell_execute(COPY_CMD)
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Cannot export configuration."))
+            raise
+
+    def install_cluster(self, members):
+        """Installs & configures cluster."""
+        cluster_members = ','.join(members)
+        LOG.debug("Installing cluster with members: %s." % cluster_members)
+        self.install_vertica(cluster_members)
+        self._export_conf_to_members(members)
+        LOG.debug("Creating database with members: %s." % cluster_members)
+        self.create_db(cluster_members)
+        LOG.debug("Cluster configured on members: %s." % cluster_members)

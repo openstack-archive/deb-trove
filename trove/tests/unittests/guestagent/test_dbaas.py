@@ -14,19 +14,24 @@
 
 import ConfigParser
 import os
+import subprocess
 import tempfile
 from uuid import uuid4
 import time
 from mock import Mock
 from mock import MagicMock
+from mock import PropertyMock
 from mock import patch
 from mock import ANY
+from oslo_utils import netutils
 import sqlalchemy
 import testtools
 from testtools.matchers import Is
 from testtools.matchers import Equals
 from testtools.matchers import Not
+from trove.common import cfg
 from trove.common.exception import ProcessExecutionError
+from trove.common.exception import GuestError
 from trove.common import utils
 from trove.common import instance as rd_instance
 from trove.conductor import api as conductor_api
@@ -62,10 +67,14 @@ from trove.guestagent.datastore.experimental.vertica.service import (
     VerticaAppStatus)
 from trove.guestagent.datastore.experimental.vertica import (
     system as vertica_system)
+from trove.guestagent.datastore.experimental.db2 import (
+    service as db2service)
 from trove.guestagent.db import models
 from trove.guestagent.volume import VolumeDevice
 from trove.instance.models import InstanceServiceStatus
 from trove.tests.unittests.util import util
+
+CONF = cfg.CONF
 
 
 """
@@ -78,7 +87,6 @@ FAKE_DB_2 = {"_name": "testDB2", "_character_set": "latin2",
              "_collate": "latin2_general_ci"}
 FAKE_USER = [{"_name": "random", "_password": "guesswhat",
               "_databases": [FAKE_DB]}]
-
 
 conductor_api.API.get_client = Mock()
 conductor_api.API.heartbeat = Mock()
@@ -345,10 +353,8 @@ class MySqlAdminTest(testtools.TestCase):
                     "default_character_set_name as charset,",
                     "default_collation_name as collation",
                     "FROM information_schema.schemata",
-                    ("schema_name NOT IN ("
-                     "'mysql', 'information_schema', "
-                     "'lost+found', '#mysql50#lost+found'"
-                     ")"),
+                    ("schema_name NOT IN ('" + "', '".join(CONF.ignore_dbs) +
+                     "')"),
                     "ORDER BY schema_name ASC",
                     ]
         for text in expected:
@@ -363,10 +369,8 @@ class MySqlAdminTest(testtools.TestCase):
                     "default_character_set_name as charset,",
                     "default_collation_name as collation",
                     "FROM information_schema.schemata",
-                    ("schema_name NOT IN ("
-                     "'mysql', 'information_schema', "
-                     "'lost+found', '#mysql50#lost+found'"
-                     ")"),
+                    ("schema_name NOT IN ('" + "', '".join(CONF.ignore_dbs) +
+                     "')"),
                     "ORDER BY schema_name ASC",
                     ]
         for text in expected:
@@ -382,10 +386,8 @@ class MySqlAdminTest(testtools.TestCase):
                     "default_character_set_name as charset,",
                     "default_collation_name as collation",
                     "FROM information_schema.schemata",
-                    ("schema_name NOT IN ("
-                     "'mysql', 'information_schema', "
-                     "'lost+found', '#mysql50#lost+found'"
-                     ")"),
+                    ("schema_name NOT IN ('" + "', '".join(CONF.ignore_dbs) +
+                     "')"),
                     "ORDER BY schema_name ASC",
                     ]
 
@@ -404,10 +406,8 @@ class MySqlAdminTest(testtools.TestCase):
                     "default_character_set_name as charset,",
                     "default_collation_name as collation",
                     "FROM information_schema.schemata",
-                    ("schema_name NOT IN ("
-                     "'mysql', 'information_schema', "
-                     "'lost+found', '#mysql50#lost+found'"
-                     ")"),
+                    ("schema_name NOT IN ('" + "', '".join(CONF.ignore_dbs) +
+                     "')"),
                     "ORDER BY schema_name ASC",
                     ]
         for text in expected:
@@ -1005,6 +1005,9 @@ class ServiceRegistryTest(testtools.TestCase):
         self.assertEqual(test_dict.get('couchdb'),
                          'trove.guestagent.datastore.experimental.couchdb.'
                          'manager.Manager')
+        self.assertEqual('trove.guestagent.datastore.experimental.db2.'
+                         'manager.Manager',
+                         test_dict.get('db2'))
 
     def test_datastore_registry_with_existing_manager(self):
         datastore_registry_ext_test = {
@@ -1038,6 +1041,9 @@ class ServiceRegistryTest(testtools.TestCase):
         self.assertEqual('trove.guestagent.datastore.experimental.vertica.'
                          'manager.Manager',
                          test_dict.get('vertica'))
+        self.assertEqual('trove.guestagent.datastore.experimental.db2.'
+                         'manager.Manager',
+                         test_dict.get('db2'))
 
     def test_datastore_registry_with_blank_dict(self):
         datastore_registry_ext_test = dict()
@@ -1068,6 +1074,9 @@ class ServiceRegistryTest(testtools.TestCase):
         self.assertEqual('trove.guestagent.datastore.experimental.vertica.'
                          'manager.Manager',
                          test_dict.get('vertica'))
+        self.assertEqual('trove.guestagent.datastore.experimental.db2.'
+                         'manager.Manager',
+                         test_dict.get('db2'))
 
 
 class KeepAliveConnectionTest(testtools.TestCase):
@@ -1691,9 +1700,10 @@ class CouchbaseAppTest(testtools.TestCase):
         self.orig_time_sleep = time.sleep
         time.sleep = Mock()
         self.orig_service_discovery = operating_system.service_discovery
+        self.orig_get_ip = netutils.get_my_ipv4
         operating_system.service_discovery = (
             self.fake_couchbase_service_discovery)
-        operating_system.get_ip_address = Mock()
+        netutils.get_my_ipv4 = Mock()
         self.FAKE_ID = str(uuid4())
         InstanceServiceStatus.create(instance_id=self.FAKE_ID,
                                      status=rd_instance.ServiceStatuses.NEW)
@@ -1706,6 +1716,7 @@ class CouchbaseAppTest(testtools.TestCase):
         super(CouchbaseAppTest, self).tearDown()
         couchservice.utils.execute_with_timeout = (
             self.orig_utils_execute_with_timeout)
+        netutils.get_my_ipv4 = self.orig_get_ip
         operating_system.service_discovery = self.orig_service_discovery
         time.sleep = self.orig_time_sleep
         InstanceServiceStatus.find_by(instance_id=self.FAKE_ID).delete()
@@ -1792,9 +1803,10 @@ class CouchDBAppTest(testtools.TestCase):
         self.orig_time_sleep = time.sleep
         time.sleep = Mock()
         self.orig_service_discovery = operating_system.service_discovery
+        self.orig_get_ip = netutils.get_my_ipv4
         operating_system.service_discovery = (
             self.fake_couchdb_service_discovery)
-        operating_system.get_ip_address = Mock()
+        netutils.get_my_ipv4 = Mock()
         util.init_db()
         self.FAKE_ID = str(uuid4())
         InstanceServiceStatus.create(instance_id=self.FAKE_ID,
@@ -1808,6 +1820,7 @@ class CouchDBAppTest(testtools.TestCase):
         super(CouchDBAppTest, self).tearDown()
         couchdb_service.utils.execute_with_timeout = (
             self.orig_utils_execute_with_timeout)
+        netutils.get_my_ipv4 = self.orig_get_ip
         operating_system.service_discovery = self.orig_service_discovery
         time.sleep = self.orig_time_sleep
         InstanceServiceStatus.find_by(instance_id=self.FAKE_ID).delete()
@@ -2083,13 +2096,6 @@ class VerticaAppStatusTest(testtools.TestCase):
             status = self.verticaAppStatus._get_actual_db_status()
         self.assertEqual(rd_instance.ServiceStatuses.CRASHED, status)
 
-    def test_get_actual_db_status_error_unknown(self):
-        self.verticaAppStatus = VerticaAppStatus()
-        with patch.object(vertica_system, 'shell_execute',
-                          MagicMock(return_value=['', None])):
-            status = self.verticaAppStatus._get_actual_db_status()
-        self.assertEqual(rd_instance.ServiceStatuses.UNKNOWN, status)
-
 
 class VerticaAppTest(testtools.TestCase):
 
@@ -2100,9 +2106,11 @@ class VerticaAppTest(testtools.TestCase):
                                        rd_instance.ServiceStatuses.NEW)
         self.app = VerticaApp(self.appStatus)
         self.setread = VolumeDevice.set_readahead_size
+        self.Popen = subprocess.Popen
         vertica_system.shell_execute = MagicMock(return_value=('', ''))
 
         VolumeDevice.set_readahead_size = Mock()
+        subprocess.Popen = Mock()
         self.test_config = ConfigParser.ConfigParser()
         self.test_config.add_section('credentials')
         self.test_config.set('credentials',
@@ -2112,6 +2120,7 @@ class VerticaAppTest(testtools.TestCase):
         super(VerticaAppTest, self).tearDown()
         self.app = None
         VolumeDevice.set_readahead_size = self.setread
+        subprocess.Popen = self.Popen
 
     def test_install_if_needed_installed(self):
         with patch.object(pkg.Package, 'pkg_is_installed', return_value=True):
@@ -2212,68 +2221,300 @@ class VerticaAppTest(testtools.TestCase):
                 mock_status.begin_restart.assert_any_call()
                 VerticaApp.stop_db.assert_any_call()
                 VerticaApp.start_db.assert_any_call()
-                mock_status.end_install_or_restart.assert_any_call()
 
     def test_start_db(self):
         mock_status = MagicMock()
+        type(mock_status)._is_restarting = PropertyMock(return_value=False)
         app = VerticaApp(mock_status)
         with patch.object(app, '_enable_db_on_boot', return_value=None):
             with patch.object(app, 'read_config',
                               return_value=self.test_config):
-                mock_status.wait_for_real_status_to_change_to = MagicMock(
-                    return_value=True)
                 mock_status.end_install_or_restart = MagicMock(
                     return_value=None)
-
                 app.start_db()
-
-                arguments = vertica_system.shell_execute.call_args_list[0]
-                expected_cmd = (vertica_system.START_DB % ('db_srvr',
-                                                           'some_password'))
-                self.assertTrue(
-                    mock_status.wait_for_real_status_to_change_to.called)
-                arguments.assert_called_with(expected_cmd, 'dbadmin')
+                agent_start, db_start = subprocess.Popen.call_args_list
+                agent_expected_command = [
+                    'sudo', 'su', '-', 'root', '-c',
+                    (vertica_system.VERTICA_AGENT_SERVICE_COMMAND % 'start')]
+                db_expected_cmd = [
+                    'sudo', 'su', '-', 'dbadmin', '-c',
+                    (vertica_system.START_DB % ('db_srvr', 'some_password'))]
+                self.assertTrue(mock_status.end_install_or_restart.called)
+                agent_start.assert_called_with(agent_expected_command)
+                db_start.assert_called_with(db_expected_cmd)
 
     def test_start_db_failure(self):
         mock_status = MagicMock()
         app = VerticaApp(mock_status)
-        with patch.object(app, '_enable_db_on_boot', return_value=None):
+        with patch.object(app, '_enable_db_on_boot',
+                          side_effect=RuntimeError()):
             with patch.object(app, 'read_config',
                               return_value=self.test_config):
-                mock_status.wait_for_real_status_to_change_to = MagicMock(
-                    return_value=None)
-                mock_status.end_install_or_restart = MagicMock(
-                    return_value=None)
                 self.assertRaises(RuntimeError, app.start_db)
 
     def test_stop_db(self):
         mock_status = MagicMock()
+        type(mock_status)._is_restarting = PropertyMock(return_value=False)
         app = VerticaApp(mock_status)
         with patch.object(app, '_disable_db_on_boot', return_value=None):
             with patch.object(app, 'read_config',
                               return_value=self.test_config):
-                mock_status.wait_for_real_status_to_change_to = MagicMock(
-                    return_value=True)
-                mock_status.end_install_or_restart = MagicMock(
-                    return_value=None)
+                with patch.object(vertica_system, 'shell_execute',
+                                  MagicMock(side_effect=[['', ''],
+                                                         ['db_srvr', None],
+                                                         ['', '']])):
+                    mock_status.wait_for_real_status_to_change_to = MagicMock(
+                        return_value=True)
+                    mock_status.end_install_or_restart = MagicMock(
+                        return_value=None)
+                    app.stop_db()
 
-                app.stop_db()
-
-                arguments = vertica_system.shell_execute.call_args_list[0]
-                expected_command = (vertica_system.STOP_DB % ('db_srvr',
+                    self.assertEqual(vertica_system.shell_execute.call_count,
+                                     3)
+                    # There are 3 shell-executions:
+                    # a) stop vertica-agent service
+                    # b) check daatabase status
+                    # c) stop_db
+                    # We are matcing that 3rd command called was stop_db
+                    arguments = vertica_system.shell_execute.call_args_list[2]
+                    expected_cmd = (vertica_system.STOP_DB % ('db_srvr',
                                                               'some_password'))
-                self.assertTrue(
-                    mock_status.wait_for_real_status_to_change_to.called)
-                arguments.assert_called_with(expected_command, 'dbadmin')
+                    self.assertTrue(
+                        mock_status.wait_for_real_status_to_change_to.called)
+                    arguments.assert_called_with(expected_cmd, 'dbadmin')
 
     def test_stop_db_failure(self):
         mock_status = MagicMock()
+        type(mock_status)._is_restarting = PropertyMock(return_value=False)
         app = VerticaApp(mock_status)
         with patch.object(app, '_disable_db_on_boot', return_value=None):
             with patch.object(app, 'read_config',
                               return_value=self.test_config):
-                mock_status.wait_for_real_status_to_change_to = MagicMock(
-                    return_value=None)
-                mock_status.end_install_or_restart = MagicMock(
-                    return_value=None)
-                self.assertRaises(RuntimeError, app.stop_db)
+                with patch.object(vertica_system, 'shell_execute',
+                                  MagicMock(side_effect=[['', ''],
+                                                         ['db_srvr', None],
+                                                         ['', '']])):
+                    mock_status.wait_for_real_status_to_change_to = MagicMock(
+                        return_value=None)
+                    mock_status.end_install_or_restart = MagicMock(
+                        return_value=None)
+                    self.assertRaises(RuntimeError, app.stop_db)
+
+    def test_export_conf_to_members(self):
+        self.app._export_conf_to_members(members=['member1', 'member2'])
+        self.assertEqual(vertica_system.shell_execute.call_count, 2)
+
+    def test_authorize_public_keys(self):
+        user = 'test_user'
+        keys = ['test_key@machine1', 'test_key@machine2']
+        with patch.object(os.path, 'expanduser',
+                          return_value=('/home/' + user)):
+                self.app.authorize_public_keys(user=user, public_keys=keys)
+        self.assertEqual(vertica_system.shell_execute.call_count, 2)
+        vertica_system.shell_execute.assert_any_call(
+            'cat ' + '/home/' + user + '/.ssh/authorized_keys')
+
+    def test_get_public_keys(self):
+        user = 'test_user'
+        with patch.object(os.path, 'expanduser',
+                          return_value=('/home/' + user)):
+            self.app.get_public_keys(user=user)
+        self.assertEqual(vertica_system.shell_execute.call_count, 2)
+        vertica_system.shell_execute.assert_any_call(
+            (vertica_system.SSH_KEY_GEN % ('/home/' + user)), user)
+        vertica_system.shell_execute.assert_any_call(
+            'cat ' + '/home/' + user + '/.ssh/id_rsa.pub')
+
+    def test_install_cluster(self):
+        with patch.object(self.app, 'read_config',
+                          return_value=self.test_config):
+            self.app.install_cluster(members=['member1', 'member2'])
+        # Verifying nu,ber of shell calls,
+        # as command has already been tested in preceeding tests
+        self.assertEqual(vertica_system.shell_execute.call_count, 5)
+
+
+class DB2AppTest(testtools.TestCase):
+    def setUp(self):
+        super(DB2AppTest, self).setUp()
+        self.orig_utils_execute_with_timeout = (
+            db2service.utils.execute_with_timeout)
+        util.init_db()
+        self.FAKE_ID = str(uuid4())
+        InstanceServiceStatus.create(instance_id=self.FAKE_ID,
+                                     status=rd_instance.ServiceStatuses.NEW)
+        self.appStatus = FakeAppStatus(self.FAKE_ID,
+                                       rd_instance.ServiceStatuses.NEW)
+        self.db2App = db2service.DB2App(self.appStatus)
+        dbaas.CONF.guest_id = self.FAKE_ID
+
+    def tearDown(self):
+        super(DB2AppTest, self).tearDown()
+        db2service.utils.execute_with_timeout = (
+            self.orig_utils_execute_with_timeout)
+        InstanceServiceStatus.find_by(instance_id=self.FAKE_ID).delete()
+        dbaas.CONF.guest_id = None
+        self.db2App = None
+
+    def assert_reported_status(self, expected_status):
+        service_status = InstanceServiceStatus.find_by(
+            instance_id=self.FAKE_ID)
+        self.assertEqual(expected_status, service_status.status)
+
+    def test_stop_db(self):
+        db2service.utils.execute_with_timeout = MagicMock(return_value=None)
+        self.appStatus.set_next_status(rd_instance.ServiceStatuses.SHUTDOWN)
+        self.db2App.stop_db()
+        self.assert_reported_status(rd_instance.ServiceStatuses.NEW)
+
+    def test_restart_server(self):
+        self.appStatus.set_next_status(rd_instance.ServiceStatuses.RUNNING)
+        mock_status = MagicMock(return_value=None)
+        app = db2service.DB2App(mock_status)
+        mock_status.begin_restart = MagicMock(return_value=None)
+        app.stop_db = MagicMock(return_value=None)
+        app.start_db = MagicMock(return_value=None)
+        app.restart()
+
+        self.assertTrue(mock_status.begin_restart.called)
+        self.assertTrue(app.stop_db.called)
+        self.assertTrue(app.start_db.called)
+
+    def test_start_db(self):
+        db2service.utils.execute_with_timeout = MagicMock(return_value=None)
+        self.appStatus.set_next_status(rd_instance.ServiceStatuses.RUNNING)
+        with patch.object(self.db2App, '_enable_db_on_boot',
+                          return_value=None):
+            self.db2App.start_db()
+            self.assert_reported_status(rd_instance.ServiceStatuses.NEW)
+
+
+class DB2AdminTest(testtools.TestCase):
+    def setUp(self):
+        super(DB2AdminTest, self).setUp()
+        self.db2Admin = db2service.DB2Admin()
+        self.orig_utils_execute_with_timeout = (
+            db2service.utils.execute_with_timeout)
+
+    def tearDown(self):
+        super(DB2AdminTest, self).tearDown()
+        db2service.utils.execute_with_timeout = (
+            self.orig_utils_execute_with_timeout)
+
+    def test_delete_database(self):
+        with patch.object(
+            db2service, 'run_command',
+            MagicMock(
+                return_value=None,
+                side_effect=ProcessExecutionError('Error'))):
+            self.assertRaises(GuestError,
+                              self.db2Admin.delete_database,
+                              FAKE_DB)
+            self.assertTrue(db2service.run_command.called)
+            args, _ = db2service.run_command.call_args_list[0]
+            expected = "db2 drop database testDB"
+            self.assertEqual(args[0], expected,
+                             "Delete database queries are not the same")
+
+    def test_list_databases(self):
+        with patch.object(db2service, 'run_command', MagicMock(
+                          side_effect=ProcessExecutionError('Error'))):
+            self.db2Admin.list_databases()
+            self.assertTrue(db2service.run_command.called)
+            args, _ = db2service.run_command.call_args_list[0]
+            expected = "db2 list database directory " \
+                "| grep -B6 -i indirect | grep 'Database name' | " \
+                "sed 's/.*= //'"
+            self.assertEqual(args[0], expected,
+                             "Delete database queries are not the same")
+
+    def test_create_users(self):
+        with patch.object(db2service, 'run_command', MagicMock(
+                          return_value=None)):
+            db2service.utils.execute_with_timeout = MagicMock(
+                return_value=None)
+            self.db2Admin.create_user(FAKE_USER)
+            self.assertTrue(db2service.utils.execute_with_timeout.called)
+            self.assertTrue(db2service.run_command.called)
+            args, _ = db2service.run_command.call_args_list[0]
+            expected = "db2 connect to testDB; " \
+                "db2 GRANT DBADM,CREATETAB,BINDADD,CONNECT,DATAACCESS " \
+                "ON DATABASE TO USER random; db2 connect reset"
+            self.assertEqual(
+                args[0], expected,
+                "Granting database access queries are not the same")
+            self.assertEqual(db2service.run_command.call_count, 1)
+
+    def test_delete_users_with_db(self):
+        with patch.object(db2service, 'run_command',
+                          MagicMock(return_value=None)):
+            with patch.object(db2service.DB2Admin, 'list_access',
+                              MagicMock(return_value=None)):
+                utils.execute_with_timeout = MagicMock(return_value=None)
+                self.db2Admin.delete_user(FAKE_USER[0])
+                self.assertTrue(db2service.run_command.called)
+                self.assertTrue(db2service.utils.execute_with_timeout.called)
+                self.assertFalse(db2service.DB2Admin.list_access.called)
+                args, _ = db2service.run_command.call_args_list[0]
+                expected = "db2 connect to testDB; " \
+                    "db2 REVOKE DBADM,CREATETAB,BINDADD,CONNECT,DATAACCESS " \
+                    "ON DATABASE FROM USER random; db2 connect reset"
+                self.assertEqual(
+                    args[0], expected,
+                    "Revoke database access queries are not the same")
+                self.assertEqual(db2service.run_command.call_count, 1)
+
+    def test_delete_users_without_db(self):
+        FAKE_USER.append(
+            {"_name": "random2", "_password": "guesswhat", "_databases": []})
+        with patch.object(db2service, 'run_command',
+                          MagicMock(return_value=None)):
+                with patch.object(db2service.DB2Admin, 'list_access',
+                                  MagicMock(return_value=[FAKE_DB])):
+                    utils.execute_with_timeout = MagicMock(return_value=None)
+                    self.db2Admin.delete_user(FAKE_USER[1])
+                    self.assertTrue(db2service.run_command.called)
+                    self.assertTrue(db2service.DB2Admin.list_access.called)
+                    self.assertTrue(
+                        db2service.utils.execute_with_timeout.called)
+                    args, _ = db2service.run_command.call_args_list[0]
+                    expected = "db2 connect to testDB; " \
+                        "db2 REVOKE DBADM,CREATETAB,BINDADD,CONNECT," \
+                        "DATAACCESS ON DATABASE FROM USER random2; " \
+                        "db2 connect reset"
+                    self.assertEqual(
+                        args[0], expected,
+                        "Revoke database access queries are not the same")
+                    self.assertEqual(db2service.run_command.call_count, 1)
+
+    def test_list_users(self):
+        databases = []
+        databases.append(FAKE_DB)
+        with patch.object(db2service, 'run_command', MagicMock(
+                          side_effect=ProcessExecutionError('Error'))):
+            with patch.object(self.db2Admin, "list_databases",
+                              MagicMock(return_value=(databases, None))):
+                self.db2Admin.list_users()
+                self.assertTrue(db2service.run_command.called)
+                args, _ = db2service.run_command.call_args_list[0]
+                expected = "db2 +o  connect to testDB; " \
+                    "db2 -x  select grantee, dataaccessauth " \
+                    "from sysibm.sysdbauth; db2 connect reset"
+            self.assertEqual(args[0], expected,
+                             "List database queries are not the same")
+
+    def test_get_user(self):
+        databases = []
+        databases.append(FAKE_DB)
+        with patch.object(db2service, 'run_command', MagicMock(
+                          side_effect=ProcessExecutionError('Error'))):
+            with patch.object(self.db2Admin, "list_databases",
+                              MagicMock(return_value=(databases, None))):
+                self.db2Admin._get_user('random', None)
+                self.assertTrue(db2service.run_command.called)
+                args, _ = db2service.run_command.call_args_list[0]
+                expected = "db2 +o  connect to testDB; " \
+                    "db2 -x  select grantee, dataaccessauth " \
+                    "from sysibm.sysdbauth; db2 connect reset"
+                self.assertEqual(args[0], expected,
+                                 "Delete database queries are not the same")
