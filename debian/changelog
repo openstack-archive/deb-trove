@@ -4,6 +4,7 @@ openstack-trove (2015.1~rc1-1) UNRELEASED; urgency=medium
   * Reviewed (build-)depends for this release.
   * Dropped do-not-use-network-when-building-docs.patch now useless.
   * Allow unit tests to fail.
+  * Rebased default sql connection patch, and fixed directive names.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 01 Jan 2015 22:43:50 +0100
 

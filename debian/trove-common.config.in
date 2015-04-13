@@ -9,7 +9,7 @@ CONF=/etc/trove/trove.conf
 #PKGOS-INCLUDE#
 
 pkgos_var_user_group trove
-pkgos_dbc_read_conf -pkg trove-common ${CONF} DEFAULT sql_connection trove $@
+pkgos_dbc_read_conf -pkg trove-common ${CONF} database connection trove $@
 pkgos_read_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
 
 exit 0
