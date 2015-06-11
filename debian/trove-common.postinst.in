@@ -8,6 +8,10 @@ if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	. /usr/share/debconf/confmodule
 	. /usr/share/dbconfig-common/dpkg/postinst
 	pkgos_var_user_group trove
+
+	mkdir -p /var/cache/trove
+	chown trove:trove /var/cache/trove
+
 	pkgos_write_new_conf trove trove.conf
 	pkgos_write_new_conf trove api-paste.ini
 	db_get trove/configure_db

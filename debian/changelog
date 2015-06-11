@@ -1,3 +1,9 @@
+openstack-trove (2015.1.0-2) unstable; urgency=medium
+
+  * Added creation of /var/cache/trove (owned by trove:trove).
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 12 Jun 2015 01:12:42 +0200
+
 openstack-trove (2015.1.0-1) unstable; urgency=medium
 
   * New upstream release.
