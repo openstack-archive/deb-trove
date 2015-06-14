@@ -113,7 +113,6 @@ Depends: python-babel,
          python-webob,
          ${misc:Depends},
          ${python:Depends},
-Suggests: python-suds (>= 0.4.0)
 Conflicts: python-cjson
 Description: Database as a Service for OpenStack - Python lib
  Trove is "Database as a Service" for Openstack. It's designed to allow users

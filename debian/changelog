@@ -1,3 +1,9 @@
+openstack-trove (2015.1.0-3) unstable; urgency=medium
+
+  * Removes the suggests: python-suds (Closes: #788083).
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 14 Jun 2015 15:28:24 +0200
+
 openstack-trove (2015.1.0-2) unstable; urgency=medium
 
   * Added creation of /var/cache/trove (owned by trove:trove).
