@@ -15,14 +15,15 @@
 
 import os
 
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
-from trove.openstack.common import log as logging
-from trove.openstack.common import periodic_task
+from trove.common.i18n import _
+from trove.guestagent.datastore.experimental.couchdb import service
 from trove.guestagent import dbaas
 from trove.guestagent import volume
-from trove.guestagent.datastore.experimental.couchdb import service
-from trove.common.i18n import _
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -38,6 +39,7 @@ class Manager(periodic_task.PeriodicTasks):
     def __init__(self):
         self.appStatus = service.CouchDBAppStatus()
         self.app = service.CouchDBApp(self.appStatus)
+        super(Manager, self).__init__(CONF)
 
     def rpc_ping(self, context):
         LOG.debug("Responding to RPC ping.")
@@ -70,7 +72,7 @@ class Manager(periodic_task.PeriodicTasks):
         self.app.complete_install_or_restart()
         LOG.info(_('Completed setup of CouchDB database instance.'))
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """Update the status of the CouchDB service."""
         self.appStatus.update()
@@ -101,9 +103,12 @@ class Manager(periodic_task.PeriodicTasks):
         self.app.restart()
 
     def reset_configuration(self, context, configuration):
+        """
+         Currently this method does nothing. This method needs to be
+         implemented to enable rollback of flavor-resize on guestagent side.
+        """
         LOG.debug("Resetting CouchDB configuration.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='change_passwords', datastore=MANAGER)
+        pass
 
     def change_passwords(self, context, users):
         LOG.debug("Changing password.")
@@ -171,6 +176,11 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Enabling root.")
         raise exception.DatastoreOperationNotSupported(
             operation='enable_root', datastore=MANAGER)
+
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='enable_root_with_password', datastore=MANAGER)
 
     def is_root_enabled(self, context):
         LOG.debug("Checking if root is enabled.")

@@ -12,8 +12,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from oslo.config import cfg as openstack_cfg
 from oslo_concurrency import processutils
+from oslo_config import cfg as openstack_cfg
+
 from trove.cmd.common import with_initialize
 
 
@@ -48,10 +49,10 @@ def main(conf):
 def start_fake_taskmanager(conf):
     topic = conf.taskmanager_queue
     from trove.common.rpc import service as rpc_service
-    from trove.taskmanager import manager
-    manager_impl = manager.Manager()
-    taskman_service = rpc_service.Service(None, topic=topic,
-                                          manager=manager_impl)
+    from trove.common.rpc import version as rpc_version
+    taskman_service = rpc_service.RpcService(
+        topic=topic, rpc_api_version=rpc_version.RPC_API_VERSION,
+        manager='trove.taskmanager.manager.Manager')
     taskman_service.start()
 
 

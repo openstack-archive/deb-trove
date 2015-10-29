@@ -1,21 +1,21 @@
-#Copyright [2015] Hewlett-Packard Development Company, L.P.
-#Licensed under the Apache License, Version 2.0 (the "License");
-#you may not use this file except in compliance with the License.
-#You may obtain a copy of the License at
+# Copyright [2015] Hewlett-Packard Development Company, L.P.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#Unless required by applicable law or agreed to in writing, software
-#distributed under the License is distributed on an "AS IS" BASIS,
-#WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#See the License for the specific language governing permissions and
-#limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import uuid
 
 from mock import Mock
 from mock import patch
-from testtools import TestCase
+from novaclient import exceptions as nova_exceptions
 from trove.cluster.models import Cluster
 from trove.cluster.models import ClusterTasks
 from trove.cluster.models import DBCluster
@@ -27,14 +27,25 @@ from trove.common.strategies.cluster.experimental.vertica import (
 from trove.instance import models as inst_models
 from trove.quota.quota import QUOTAS
 from trove.taskmanager import api as task_api
+from trove.tests.unittests import trove_testtools
 
 CONF = cfg.CONF
 
 
-class ClusterTest(TestCase):
+class FakeOptGroup(object):
+    def __init__(self, cluster_member_count=3,
+                 volume_support=True, device_path='/dev/vdb'):
+        self.cluster_member_count = cluster_member_count
+        self.volume_support = volume_support
+        self.device_path = device_path
+
+
+class ClusterTest(trove_testtools.TestCase):
     def setUp(self):
         super(ClusterTest, self).setUp()
-        task_api.API.get_client = Mock()
+        self.get_client_patch = patch.object(task_api.API, 'get_client')
+        self.get_client_mock = self.get_client_patch.start()
+        self.addCleanup(self.get_client_patch.stop)
         self.cluster_id = str(uuid.uuid4())
         self.cluster_name = "Cluster" + self.cluster_id
         self.tenant_id = "23423432"
@@ -56,13 +67,9 @@ class ClusterTest(TestCase):
         self.instances = [{'volume_size': 1, 'flavor_id': '1234'},
                           {'volume_size': 1, 'flavor_id': '1234'},
                           {'volume_size': 1, 'flavor_id': '1234'}]
-        self.volume_support = CONF.get(self.dv.manager).volume_support
-        self.remote_nova = remote.create_nova_client
 
     def tearDown(self):
         super(ClusterTest, self).tearDown()
-        CONF.get(self.dv.manager).volume_support = self.volume_support
-        remote.create_nova_client = self.remote_nova
 
     def test_create_empty_instances(self):
         self.assertRaises(exception.ClusterNumInstancesNotSupported,
@@ -71,8 +78,7 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          []
-                          )
+                          [], None)
 
     def test_create_flavor_not_specified(self):
         instances = self.instances
@@ -83,7 +89,29 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
+                          )
+
+    @patch.object(remote, 'create_nova_client')
+    def test_create_invalid_flavor_specified(self,
+                                             mock_client):
+        instances = [{'flavor_id': '1234'},
+                     {'flavor_id': '1234'},
+                     {'flavor_id': '1234'}]
+
+        (mock_client.return_value.flavors.get) = Mock(
+            side_effect=nova_exceptions.NotFound(
+                404, "Flavor id not found %s" % id))
+
+        self.assertRaises(exception.FlavorNotFound,
+                          Cluster.create,
+                          Mock(),
+                          self.cluster_name,
+                          self.datastore,
+                          self.datastore_version,
+                          instances,
+                          None
                           )
 
     @patch.object(remote, 'create_nova_client')
@@ -99,13 +127,17 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
                           )
 
     @patch.object(remote, 'create_nova_client')
+    @patch.object(vertica_api, 'CONF')
     def test_create_storage_specified_with_no_volume_support(self,
+                                                             mock_conf,
                                                              mock_client):
-        CONF.get(self.dv.manager).volume_support = False
+        mock_conf.get = Mock(
+            return_value=FakeOptGroup(volume_support=False))
         instances = self.instances
         instances[0]['volume_size'] = None
         flavors = Mock()
@@ -116,11 +148,14 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
                           )
 
     @patch.object(remote, 'create_nova_client')
+    @patch.object(vertica_api, 'CONF')
     def test_create_storage_not_specified_and_no_ephemeral_flavor(self,
+                                                                  mock_conf,
                                                                   mock_client):
         class FakeFlavor:
             def __init__(self, flavor_id):
@@ -136,7 +171,8 @@ class ClusterTest(TestCase):
         instances = [{'flavor_id': '1234'},
                      {'flavor_id': '1234'},
                      {'flavor_id': '1234'}]
-        CONF.get(self.dv.manager).volume_support = False
+        mock_conf.get = Mock(
+            return_value=FakeOptGroup(volume_support=False))
         (mock_client.return_value.
          flavors.get.return_value) = FakeFlavor('1234')
         self.assertRaises(exception.LocalStorageNotSpecified,
@@ -145,7 +181,24 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
+                          )
+
+    @patch.object(remote, 'create_nova_client')
+    def test_create_volume_not_equal(self, mock_client):
+        instances = self.instances
+        instances[0]['volume_size'] = 2
+        flavors = Mock()
+        mock_client.return_value.flavors = flavors
+        self.assertRaises(exception.ClusterVolumeSizesNotEqual,
+                          Cluster.create,
+                          Mock(),
+                          self.cluster_name,
+                          self.datastore,
+                          self.datastore_version,
+                          instances,
+                          None
                           )
 
     @patch.object(inst_models.Instance, 'create')
@@ -162,8 +215,47 @@ class ClusterTest(TestCase):
                             self.cluster_name,
                             self.datastore,
                             self.datastore_version,
-                            instances)
-        mock_task_api.create_cluster.assert_called
+                            instances,
+                            None)
+        mock_task_api.return_value.create_cluster.assert_called_with(
+            mock_db_create.return_value.id)
+        self.assertEqual(3, mock_ins_create.call_count)
+
+    @patch.object(vertica_api, 'CONF')
+    @patch.object(inst_models.Instance, 'create')
+    @patch.object(DBCluster, 'create')
+    @patch.object(task_api, 'load')
+    @patch.object(QUOTAS, 'check_quotas')
+    @patch.object(remote, 'create_nova_client')
+    def test_create_with_ephemeral_flavor(self, mock_client, mock_check_quotas,
+                                          mock_task_api, mock_db_create,
+                                          mock_ins_create, mock_conf):
+        class FakeFlavor:
+            def __init__(self, flavor_id):
+                self.flavor_id = flavor_id
+
+            @property
+            def id(self):
+                return self.flavor.id
+
+            @property
+            def ephemeral(self):
+                return 1
+        instances = [{'flavor_id': '1234'},
+                     {'flavor_id': '1234'},
+                     {'flavor_id': '1234'}]
+        mock_conf.get = Mock(
+            return_value=FakeOptGroup(volume_support=False))
+        (mock_client.return_value.
+         flavors.get.return_value) = FakeFlavor('1234')
+        self.cluster.create(Mock(),
+                            self.cluster_name,
+                            self.datastore,
+                            self.datastore_version,
+                            instances,
+                            None)
+        mock_task_api.return_value.create_cluster.assert_called_with(
+            mock_db_create.return_value.id)
         self.assertEqual(3, mock_ins_create.call_count)
 
     def test_delete_bad_task_status(self):

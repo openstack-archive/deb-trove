@@ -16,26 +16,24 @@
 """
 Determines operating system version and OS dependent commands.
 """
+
 from trove.guestagent.common.operating_system import get_os
 
-OS = get_os()
+
+REDIS_OWNER = 'redis'
 REDIS_CONFIG = '/etc/redis/redis.conf'
+REDIS_PID_FILE = '/var/run/redis/redis-server.pid'
+REDIS_LOG_FILE = '/var/log/redis/server.log'
 REDIS_CONF_DIR = '/etc/redis'
+REDIS_DATA_DIR = '/var/lib/redis'
+REDIS_PORT = '6379'
 REDIS_INIT = '/etc/init/redis-server.conf'
 REDIS_CLI = '/usr/bin/redis-cli'
 REDIS_BIN = '/usr/bin/redis-server'
-REDIS_CMD_ENABLE = 'update-rc.d redis-server enable'
-REDIS_CMD_DISABLE = 'update-rc.d redis-server disable'
-REDIS_CMD_START = 'service redis-server start || /bin/true'
-REDIS_CMD_STOP = 'service redis-server stop || /bin/true'
 REDIS_PACKAGE = 'redis-server'
 SERVICE_CANDIDATES = ['redis-server']
 
+OS = get_os()
 if OS is 'redhat':
     REDIS_CONFIG = '/etc/redis.conf'
-    REDIS_CMD_ENABLE = 'systemctl enable redis'
-    REDIS_CMD_DISABLE = 'systemctl disable redis'
-    REDIS_CMD_START = 'systemctl start redis'
-    REDIS_CMD_STOP = 'systemctl stop redis'
     REDIS_PACKAGE = 'redis'
-    SERVICE_CANDIDATES = ['redis']

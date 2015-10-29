@@ -22,6 +22,13 @@
             "type": "integer"
         },
         {
+            "name": "lower_case_table_names",
+            "restart_required": true,
+            "max": 2,
+            "min": 0,
+            "type": "integer"
+        },
+        {
             "name": "key_buffer_size",
             "restart_required": false,
             "max": 4294967295,
@@ -219,6 +226,11 @@
             "name": "collation_server",
             "restart_required": false,
             "type": "string"
+        },
+        {
+            "name": "performance_schema",
+            "restart_required": true,
+            "type": "boolean"
         }
     ]
 }

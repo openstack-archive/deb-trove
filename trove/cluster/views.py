@@ -13,11 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common.strategies.cluster import strategy
 from trove.common.views import create_links
 from trove.instance.views import InstanceDetailView
-from trove.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -47,6 +48,11 @@ class ClusterView(object):
         }
         if ip_list:
             cluster_dict["ip"] = ip_list
+
+        extended_properties = self.get_extended_properties()
+        if extended_properties:
+            cluster_dict["extended_properties"] = extended_properties
+
         LOG.debug(cluster_dict)
         return {"cluster": cluster_dict}
 
@@ -88,6 +94,9 @@ class ClusterView(object):
 
     def build_instances(self):
         raise NotImplementedError()
+
+    def get_extended_properties(self):
+        return None
 
     def _build_flavor_info(self, flavor_id):
         return {

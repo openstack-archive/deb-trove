@@ -28,9 +28,11 @@ def initialize(extra_opts=None, pre_logging=None):
     # Import only the modules necessary to initialize logging and determine if
     # debug_utils are enabled.
     import sys
+
+    from oslo_log import log as logging
+
     from trove.common import cfg
     from trove.common import debug_utils
-    from trove.openstack.common import log as logging
 
     conf = cfg.CONF
     if extra_opts:
@@ -40,7 +42,7 @@ def initialize(extra_opts=None, pre_logging=None):
     if pre_logging:
         pre_logging(conf)
 
-    logging.setup(None)
+    logging.setup(conf, None)
     debug_utils.setup()
 
     # Patch 'thread' module if debug is disabled.
@@ -49,7 +51,7 @@ def initialize(extra_opts=None, pre_logging=None):
 
     # rpc module must be loaded after decision about thread monkeypatching
     # because if thread module is not monkeypatched we can't use eventlet
-    # executor from oslo.messaging library.
+    # executor from oslo_messaging library.
     from trove import rpc
     rpc.init(conf)
 

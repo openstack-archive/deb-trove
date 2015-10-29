@@ -13,12 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-from trove.guestagent.strategy import Strategy
+
+from eventlet.green import subprocess
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import utils
-from trove.openstack.common import log as logging
-from trove.common.i18n import _  # noqa
-from eventlet.green import subprocess
+from trove.guestagent.strategy import Strategy
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -54,8 +55,7 @@ class RestoreRunner(Strategy):
         self.storage = storage
         self.location = kwargs.pop('location')
         self.checksum = kwargs.pop('checksum')
-        self.restore_location = kwargs.get('restore_location',
-                                           '/var/lib/mysql')
+        self.restore_location = kwargs.get('restore_location')
         self.restore_cmd = (self.decrypt_cmd +
                             self.unzip_cmd +
                             (self.base_restore_cmd % kwargs))

@@ -15,21 +15,21 @@
 
 
 from novaclient import exceptions as nova_exceptions
+from oslo_log import log as logging
 
 from trove.backup.models import Backup
-from trove.common import exception
-from trove.common import wsgi
+import trove.common.apischema as apischema
 from trove.common.auth import admin_context
-from trove.instance import models as instance_models
+from trove.common import exception
+from trove.common.i18n import _
+from trove.common import wsgi
 from trove.extensions.mgmt.instances import models
 from trove.extensions.mgmt.instances import views
 from trove.extensions.mgmt.instances.views import DiagnosticsView
 from trove.extensions.mgmt.instances.views import HwInfoView
 from trove.extensions.mysql import models as mysql_models
+from trove.instance import models as instance_models
 from trove.instance.service import InstanceController
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
-import trove.common.apischema as apischema
 
 
 LOG = logging.getLogger(__name__)
@@ -181,9 +181,9 @@ class MgmtInstanceController(InstanceController):
 
     @admin_context
     def diagnostics(self, req, tenant_id, id):
-        """Return a single instance diagnostics."""
+        """Return instance diagnostics for a single instance."""
         LOG.info(_("req : '%s'\n\n") % req)
-        LOG.info(_("Showing a instance diagnostics for instance '%s'") % id)
+        LOG.info(_("Showing instance diagnostics for the instance '%s'") % id)
         LOG.info(_("id : '%s'\n\n") % id)
 
         context = req.environ[wsgi.CONTEXT_KEY]

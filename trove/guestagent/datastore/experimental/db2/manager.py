@@ -13,14 +13,15 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
-from trove.openstack.common import log as logging
-from trove.openstack.common import periodic_task
+from trove.common.i18n import _
+from trove.guestagent.datastore.experimental.db2 import service
 from trove.guestagent import dbaas
 from trove.guestagent import volume
-from trove.guestagent.datastore.experimental.db2 import service
-from trove.openstack.common.gettextutils import _
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -36,8 +37,9 @@ class Manager(periodic_task.PeriodicTasks):
         self.appStatus = service.DB2AppStatus()
         self.app = service.DB2App(self.appStatus)
         self.admin = service.DB2Admin()
+        super(Manager, self).__init__(CONF)
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """
         Updates the status of DB2 Trove instance. It is decorated
@@ -170,9 +172,12 @@ class Manager(periodic_task.PeriodicTasks):
             operation='revoke_access', datastore=MANAGER)
 
     def reset_configuration(self, context, configuration):
+        """
+         Currently this method does nothing. This method needs to be
+         implemented to enable rollback of flavor-resize on guestagent side.
+        """
         LOG.debug("Resetting DB2 configuration.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='change_passwords', datastore=MANAGER)
+        pass
 
     def change_passwords(self, context, users):
         LOG.debug("Changing password.")
@@ -188,6 +193,11 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Enabling root.")
         raise exception.DatastoreOperationNotSupported(
             operation='enable_root', datastore=MANAGER)
+
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='enable_root_with_password', datastore=MANAGER)
 
     def is_root_enabled(self, context):
         LOG.debug("Checking if root is enabled.")

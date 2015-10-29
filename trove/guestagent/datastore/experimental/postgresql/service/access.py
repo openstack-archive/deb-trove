@@ -13,10 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from trove.common import cfg
-from trove.guestagent.datastore.experimental.postgresql import pgutil
-from trove.openstack.common import log as logging
 from trove.common.i18n import _
+from trove.guestagent.datastore.experimental.postgresql import pgutil
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -38,8 +39,7 @@ class PgSqlAccess(object):
                     "({database}).").format(
                         guest_id=CONF.guest_id,
                         user=username,
-                        database=database,
-                    )
+                        database=database,)
             )
             pgutil.psql(
                 pgutil.AccessQuery.grant(
@@ -61,8 +61,7 @@ class PgSqlAccess(object):
                 "({database}).").format(
                     guest_id=CONF.guest_id,
                     user=username,
-                    database=database,
-                )
+                    database=database,)
         )
         pgutil.psql(
             pgutil.AccessQuery.revoke(

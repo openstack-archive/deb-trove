@@ -15,23 +15,22 @@
 
 from sets import Set
 
-from oslo import messaging
-from trove.common.context import TroveContext
-
-from oslo.utils import importutils
+from oslo_log import log as logging
+import oslo_messaging as messaging
+from oslo_service import periodic_task
+from oslo_utils import importutils
 
 from trove.backup.models import Backup
 import trove.common.cfg as cfg
-from trove.common.i18n import _
-import trove.common.rpc.version as rpc_version
+from trove.common.context import TroveContext
 from trove.common import exception
 from trove.common.exception import ReplicationSlaveAttachError
 from trove.common.exception import TroveError
+from trove.common.i18n import _
+import trove.common.rpc.version as rpc_version
 from trove.common.strategies.cluster import strategy
 import trove.extensions.mgmt.instances.models as mgmtmodels
 from trove.instance.tasks import InstanceTasks
-from trove.openstack.common import log as logging
-from trove.openstack.common import periodic_task
 from trove.taskmanager import models
 from trove.taskmanager.models import FreshInstanceTasks, BuiltInstanceTasks
 
@@ -44,11 +43,11 @@ class Manager(periodic_task.PeriodicTasks):
     target = messaging.Target(version=rpc_version.RPC_API_VERSION)
 
     def __init__(self):
-        super(Manager, self).__init__()
+        super(Manager, self).__init__(CONF)
         self.admin_context = TroveContext(
             user=CONF.nova_proxy_admin_user,
             auth_token=CONF.nova_proxy_admin_pass,
-            tenant=CONF.nova_proxy_admin_tenant_name)
+            tenant=CONF.nova_proxy_admin_tenant_id)
         if CONF.exists_notification_transformer:
             self.exists_transformer = importutils.import_object(
                 CONF.exists_notification_transformer,
@@ -106,7 +105,6 @@ class Manager(periodic_task.PeriodicTasks):
             exception_replicas = []
             for replica in replica_models:
                 try:
-                    replica.wait_for_txn(latest_txn_id)
                     if replica.id != master_candidate.id:
                         replica.detach_replica(old_master, for_failover=True)
                         replica.attach_replica(master_candidate)
@@ -120,7 +118,7 @@ class Manager(periodic_task.PeriodicTasks):
                         "new_master": master_candidate.id
                     }
                     LOG.exception(msg % msg_values)
-                    exception_replicas.append(replica.id)
+                    exception_replicas.append(replica)
 
             try:
                 old_master.demote_replication_master()
@@ -281,7 +279,7 @@ class Manager(periodic_task.PeriodicTasks):
                         context, slave_of_id, flavor, replica_backup_id,
                         replica_number=replica_number)
                     replica_backup_id = snapshot['dataset']['snapshot_id']
-                    replica_backup_created = True
+                    replica_backup_created = (replica_backup_id is not None)
                     instance_tasks.create_instance(
                         flavor, image_id, databases, users, datastore_manager,
                         packages, volume_size, replica_backup_id,
@@ -292,7 +290,7 @@ class Manager(periodic_task.PeriodicTasks):
                     # if it's the first replica, then we shouldn't continue
                     LOG.exception(_(
                         "Could not create replica %(num)d of %(count)d.")
-                        % {'num': replica_number, 'count': len(instance_id)})
+                        % {'num': replica_number, 'count': len(ids)})
                     if replica_number == 1:
                         raise
 
@@ -343,13 +341,20 @@ class Manager(periodic_task.PeriodicTasks):
         cluster_tasks = models.load_cluster_tasks(context, cluster_id)
         cluster_tasks.create_cluster(context, cluster_id)
 
+    def grow_cluster(self, context, cluster_id, new_instance_ids):
+        cluster_tasks = models.load_cluster_tasks(context, cluster_id)
+        cluster_tasks.grow_cluster(context, cluster_id, new_instance_ids)
+
+    def shrink_cluster(self, context, cluster_id, instance_ids):
+        cluster_tasks = models.load_cluster_tasks(context, cluster_id)
+        cluster_tasks.shrink_cluster(context, cluster_id, instance_ids)
+
     def delete_cluster(self, context, cluster_id):
         cluster_tasks = models.load_cluster_tasks(context, cluster_id)
         cluster_tasks.delete_cluster(context, cluster_id)
 
     if CONF.exists_notification_transformer:
-        @periodic_task.periodic_task(
-            ticks_between_runs=CONF.exists_notification_ticks)
+        @periodic_task.periodic_task
         def publish_exists_event(self, context):
             """
             Push this in Instance Tasks to fetch a report/collection

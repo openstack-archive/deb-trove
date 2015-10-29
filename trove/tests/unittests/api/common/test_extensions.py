@@ -16,7 +16,6 @@
 import mock
 import os
 import pkg_resources
-import testtools
 import trove
 
 import ConfigParser as config_parser
@@ -26,6 +25,7 @@ from trove.extensions.routes.account import Account
 from trove.extensions.routes.mgmt import Mgmt
 from trove.extensions.routes.mysql import Mysql
 from trove.extensions.routes.security_group import Security_group
+from trove.tests.unittests import trove_testtools
 
 DEFAULT_EXTENSION_MAP = {
     'Account': [Account, extensions.ExtensionDescriptor],
@@ -63,7 +63,7 @@ class InvalidExtension(object):
         return []
 
 
-class TestExtensionLoading(testtools.TestCase):
+class TestExtensionLoading(trove_testtools.TestCase):
     def setUp(self):
         super(TestExtensionLoading, self).setUp()
 
@@ -99,7 +99,7 @@ class TestExtensionLoading(testtools.TestCase):
         eps = pkg_resources.EntryPoint.parse_group('mock', EP_TEXT)
         mock_iter_eps.return_value = eps.values()
         extension_mgr = extensions.ExtensionManager()
-        self.assertEqual(len(extension_mgr.extensions),
-                         len(DEFAULT_EXTENSION_MAP.keys()),
+        self.assertEqual(len(DEFAULT_EXTENSION_MAP.keys()),
+                         len(extension_mgr.extensions),
                          "Loaded invalid extensions")
         self._assert_default_extensions(extension_mgr.extensions)

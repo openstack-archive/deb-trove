@@ -15,9 +15,10 @@
 
 """Model classes that form the core of instances functionality."""
 
-from oslo.utils.importutils import import_class
-from trove.common import remote
+from oslo_utils.importutils import import_class
+
 from trove.common import cfg
+from trove.common import remote
 
 CONF = cfg.CONF
 

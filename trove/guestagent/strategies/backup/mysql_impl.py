@@ -17,10 +17,12 @@
 
 import re
 
-from trove.guestagent.datastore.mysql.service import ADMIN_USER_NAME
-from trove.guestagent.datastore.mysql.service import get_auth_password
+from oslo_log import log as logging
+
+from trove.common.i18n import _
+from trove.guestagent.datastore.mysql.service import MySqlApp
+from trove.guestagent.datastore.mysql.service_base import ADMIN_USER_NAME
 from trove.guestagent.strategies.backup import base
-from trove.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class MySQLDump(base.BackupRunner):
         user_and_pass = (
             ' --password=%(password)s -u %(user)s '
             '2>/tmp/mysqldump.log' %
-            {'password': get_auth_password(),
+            {'password': MySqlApp.get_auth_password(),
              'user': ADMIN_USER_NAME})
         cmd = ('mysqldump'
                ' --all-databases'
@@ -51,8 +53,9 @@ class InnoBackupEx(base.BackupRunner):
     def cmd(self):
         cmd = ('sudo innobackupex'
                ' --stream=xbstream'
-               ' %(extra_opts)s'
-               ' /var/lib/mysql 2>/tmp/innobackupex.log'
+               ' %(extra_opts)s ' +
+               MySqlApp.get_data_dir() +
+               ' 2>/tmp/innobackupex.log'
                )
         return cmd + self.zip_cmd + self.encrypt_cmd
 
@@ -105,8 +108,8 @@ class InnoBackupExIncremental(InnoBackupEx):
                ' --stream=xbstream'
                ' --incremental'
                ' --incremental-lsn=%(lsn)s'
-               ' %(extra_opts)s'
-               ' /var/lib/mysql'
+               ' %(extra_opts)s ' +
+               MySqlApp.get_data_dir() +
                ' 2>/tmp/innobackupex.log')
         return cmd + self.zip_cmd + self.encrypt_cmd
 

@@ -14,15 +14,17 @@
 #    under the License.
 
 import os
-import pexpect
 from tempfile import NamedTemporaryFile
 
+from oslo_log import log as logging
+import pexpect
+
 from trove.common import cfg
-from trove.common import utils
 from trove.common.exception import GuestError
 from trove.common.exception import ProcessExecutionError
-from trove.openstack.common import log as logging
 from trove.common.i18n import _
+from trove.common import utils
+from trove.guestagent.common import operating_system
 
 TMP_MOUNT_POINT = "/mnt/volume"
 
@@ -35,16 +37,19 @@ class VolumeDevice(object):
     def __init__(self, device_path):
         self.device_path = device_path
 
-    def migrate_data(self, source_dir):
+    def migrate_data(self, source_dir, target_subdir=None):
         """Synchronize the data from the source directory to the new
-        volume.
+        volume; optionally to a new sub-directory on the new volume.
         """
         self.mount(TMP_MOUNT_POINT, write_to_fstab=False)
         if not source_dir[-1] == '/':
             source_dir = "%s/" % source_dir
+        target_dir = TMP_MOUNT_POINT
+        if target_subdir:
+            target_dir = target_dir + "/" + target_subdir
         utils.execute("sudo", "rsync", "--safe-links", "--perms",
                       "--recursive", "--owner", "--group", "--xattrs",
-                      "--sparse", source_dir, TMP_MOUNT_POINT)
+                      "--sparse", source_dir, target_dir)
         self.unmount(TMP_MOUNT_POINT)
 
     def _check_device_exists(self):
@@ -181,7 +186,7 @@ class VolumeMountPoint(object):
 
     def mount(self):
         if not os.path.exists(self.mount_point):
-            utils.execute("sudo", "mkdir", "-p", self.mount_point)
+            operating_system.create_directory(self.mount_point, as_root=True)
         LOG.debug("Mounting volume. Device path:{0}, mount_point:{1}, "
                   "volume_type:{2}, mount options:{3}".format(
                       self.device_path, self.mount_point, self.volume_fstype,

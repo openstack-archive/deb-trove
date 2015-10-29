@@ -13,20 +13,26 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from os import path
+
 from trove.guestagent.common import operating_system
 from trove.guestagent import pkg
 
 OS_NAME = operating_system.get_os()
 
 MONGODB_MOUNT_POINT = "/var/lib/mongodb"
-# After changing bind address mongodb accepts connection
-# on real IP, not on the localhost
-CMD_STATUS = "mongostat --host %s -n 1 | grep connected"
+MONGO_PID_FILE = '/var/run/mongodb/mongodb.pid'
+MONGO_LOG_FILE = '/var/log/mongodb/mongod.log'
 
-TMP_CONFIG = "/tmp/mongodb.conf.tmp"
 CONFIG_CANDIDATES = ["/etc/mongodb.conf", "/etc/mongod.conf"]
 MONGOS_UPSTART = "/etc/init/mongos.conf"
-TMP_MONGOS_UPSTART = "/tmp/mongos.conf.tmp"
+MONGO_ADMIN_NAME = 'os_admin'
+MONGO_ADMIN_ROLES = [{'db': 'admin', 'role': 'userAdminAnyDatabase'},
+                     {'db': 'admin', 'role': 'dbAdminAnyDatabase'},
+                     {'db': 'admin', 'role': 'clusterAdmin'}]
+MONGO_ADMIN_CREDS_FILE = path.join(path.expanduser('~'),
+                                   '.os_mongo_admin_creds.json')
+MONGO_KEY_FILE = '/etc/mongo_key'
 MONGOS_SERVICE_CANDIDATES = ["mongos"]
 MONGOD_SERVICE_CANDIDATES = ["mongodb", "mongod"]
 MONGODB_KILL = "sudo kill %s"

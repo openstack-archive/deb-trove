@@ -13,16 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-
-from trove.common import exception
-import trove.common.utils as utils
-
 from mock import Mock
-import testtools
 from testtools import ExpectedException
+from trove.common import exception
+from trove.common import utils
+from trove.tests.unittests import trove_testtools
 
 
-class TestTroveExecuteWithTimeout(testtools.TestCase):
+class TestTroveExecuteWithTimeout(trove_testtools.TestCase):
 
     def setUp(self):
         super(TestTroveExecuteWithTimeout, self).setUp()
@@ -63,3 +61,17 @@ class TestTroveExecuteWithTimeout(testtools.TestCase):
         utils.LOG.error.assert_called_with(
             u"Command 'test' failed. test-desc Exit code: 42\n"
             "stderr: err\nstdout: out")
+
+    def test_unpack_singleton(self):
+        self.assertEqual([1, 2, 3], utils.unpack_singleton([1, 2, 3]))
+        self.assertEqual(0, utils.unpack_singleton([0]))
+        self.assertEqual('test', utils.unpack_singleton('test'))
+        self.assertEqual('test', utils.unpack_singleton(['test']))
+        self.assertEqual([], utils.unpack_singleton([]))
+        self.assertEqual(None, utils.unpack_singleton(None))
+        self.assertEqual([None, None], utils.unpack_singleton([None, None]))
+        self.assertEqual('test', utils.unpack_singleton([['test']]))
+        self.assertEqual([1, 2, 3], utils.unpack_singleton([[1, 2, 3]]))
+        self.assertEqual(1, utils.unpack_singleton([[[1]]]))
+        self.assertEqual([[1], [2]], utils.unpack_singleton([[1], [2]]))
+        self.assertEqual(['a', 'b'], utils.unpack_singleton(['a', 'b']))

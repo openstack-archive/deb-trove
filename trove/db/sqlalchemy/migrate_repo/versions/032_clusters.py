@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
 from sqlalchemy import ForeignKey
 from sqlalchemy.schema import Column
 from sqlalchemy.schema import Index
@@ -20,13 +21,12 @@ from sqlalchemy.schema import MetaData
 
 from trove.db.sqlalchemy.migrate_repo.schema import Boolean
 from trove.db.sqlalchemy.migrate_repo.schema import create_tables
-from trove.db.sqlalchemy.migrate_repo.schema import drop_tables
 from trove.db.sqlalchemy.migrate_repo.schema import DateTime
+from trove.db.sqlalchemy.migrate_repo.schema import drop_tables
 from trove.db.sqlalchemy.migrate_repo.schema import Integer
 from trove.db.sqlalchemy.migrate_repo.schema import String
 from trove.db.sqlalchemy.migrate_repo.schema import Table
 from trove.db.sqlalchemy import utils as db_utils
-from trove.openstack.common import log as logging
 
 
 logger = logging.getLogger('trove.db.sqlalchemy.migrate_repo.schema')

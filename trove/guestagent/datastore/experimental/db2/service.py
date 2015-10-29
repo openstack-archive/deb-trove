@@ -13,15 +13,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as rd_instance
 from trove.common import utils as utils
-from trove.guestagent.datastore import service
+from trove.guestagent.common import operating_system
 from trove.guestagent.datastore.experimental.db2 import system
+from trove.guestagent.datastore import service
 from trove.guestagent.db import models
-from trove.openstack.common import log as logging
-from trove.openstack.common.gettextutils import _
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -55,12 +57,10 @@ class DB2App(object):
         """
         LOG.debug("Changing ownership of the DB2 data directory.")
         try:
-            utils.execute_with_timeout(
-                system.CHANGE_DB_DIR_OWNER % {'datadir': mount_point},
-                shell=True)
-            utils.execute_with_timeout(
-                system.CHANGE_DB_DIR_GROUP_OWNER % {'datadir': mount_point},
-                shell=True)
+            operating_system.chown(mount_point,
+                                   system.DB2_INSTANCE_OWNER,
+                                   system.DB2_INSTANCE_OWNER,
+                                   recursive=False, as_root=True)
         except exception.ProcessExecutionError:
             raise RuntimeError(_(
                 "Command to change ownership of  DB2 data directory failed."))
@@ -239,7 +239,7 @@ class DB2Admin(object):
                 next_marker = None
             LOG.debug("databases = %s." % str(databases))
         except exception.ProcessExecutionError as pe:
-            LOG.exception(_("An error occured listing databases: %s.") %
+            LOG.exception(_("An error occurred listing databases: %s.") %
                           pe.message)
             pass
         return databases, next_marker
@@ -275,7 +275,7 @@ class DB2Admin(object):
                         LOG.debug(pe)
                         pass
         except exception.ProcessExecutionError as pe:
-            LOG.exception(_("An error occured creating users: %s.") %
+            LOG.exception(_("An error occurred creating users: %s.") %
                           pe.message)
             pass
 
@@ -304,7 +304,7 @@ class DB2Admin(object):
                 LOG.debug("Revoked access for user:%s on database:%s." % (
                     userName, mydb.name))
             except exception.ProcessExecutionError as pe:
-                LOG.debug("Error occured while revoking access to %s." %
+                LOG.debug("Error occurred while revoking access to %s." %
                           mydb.name)
                 pass
             try:

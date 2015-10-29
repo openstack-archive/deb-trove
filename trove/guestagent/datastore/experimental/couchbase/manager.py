@@ -15,17 +15,18 @@
 
 import os
 
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as rd_instance
 from trove.guestagent import backup
-from trove.guestagent import dbaas
-from trove.guestagent import volume
 from trove.guestagent.datastore.experimental.couchbase import service
 from trove.guestagent.datastore.experimental.couchbase import system
-from trove.openstack.common import log as logging
-from trove.openstack.common import periodic_task
-from trove.common.i18n import _
+from trove.guestagent import dbaas
+from trove.guestagent import volume
 
 
 LOG = logging.getLogger(__name__)
@@ -41,8 +42,9 @@ class Manager(periodic_task.PeriodicTasks):
     def __init__(self):
         self.appStatus = service.CouchbaseAppStatus()
         self.app = service.CouchbaseApp(self.appStatus)
+        super(Manager, self).__init__(CONF)
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """
         Updates the couchbase trove instance. It is decorated with
@@ -164,9 +166,16 @@ class Manager(periodic_task.PeriodicTasks):
             operation='list_users', datastore=MANAGER)
 
     def enable_root(self, context):
+        LOG.debug("Enabling root.")
         return self.app.enable_root()
 
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='enable_root_with_password', datastore=MANAGER)
+
     def is_root_enabled(self, context):
+        LOG.debug("Checking if root is enabled.")
         return os.path.exists(system.pwd_file)
 
     def _perform_restore(self, backup_info, context, restore_location):

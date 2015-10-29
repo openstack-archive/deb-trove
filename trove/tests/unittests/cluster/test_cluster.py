@@ -17,7 +17,6 @@ import uuid
 
 from mock import Mock
 from mock import patch
-from testtools import TestCase
 from trove.cluster.models import Cluster
 from trove.cluster.models import ClusterTasks
 from trove.cluster.models import DBCluster
@@ -26,20 +25,24 @@ from trove.common import exception
 from trove.common import remote
 from trove.common.strategies.cluster.experimental.mongodb import (
     api as mongodb_api)
+from trove.common import utils
 from trove.datastore import models as datastore_models
 from trove.instance import models as inst_models
 from trove.instance.models import DBInstance
 from trove.instance.tasks import InstanceTasks
 from trove.quota.quota import QUOTAS
 from trove.taskmanager import api as task_api
+from trove.tests.unittests import trove_testtools
 
 CONF = cfg.CONF
 
 
-class ClusterTest(TestCase):
+class ClusterTest(trove_testtools.TestCase):
     def setUp(self):
         super(ClusterTest, self).setUp()
-        task_api.API.get_client = Mock()
+        self.get_client_patch = patch.object(task_api.API, 'get_client')
+        self.get_client_mock = self.get_client_patch.start()
+        self.addCleanup(self.get_client_patch.stop)
         self.cluster_id = str(uuid.uuid4())
         self.cluster_name = "Cluster" + self.cluster_id
         self.tenant_id = "23423432"
@@ -76,7 +79,8 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          []
+                          [],
+                          None
                           )
 
     def test_create_unequal_flavors(self):
@@ -88,7 +92,8 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
                           )
 
     @patch.object(remote, 'create_nova_client')
@@ -104,7 +109,8 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
                           )
 
     @patch.object(remote, 'create_nova_client')
@@ -133,7 +139,8 @@ class ClusterTest(TestCase):
                           self.cluster_name,
                           self.datastore,
                           self.datastore_version,
-                          instances
+                          instances,
+                          None
                           )
 
     def test_delete_bad_task_status(self):
@@ -169,6 +176,7 @@ class ClusterTest(TestCase):
         self.assertRaises(exception.UnprocessableEntity,
                           self.cluster.add_shard)
 
+    @patch.object(utils, 'generate_uuid', Mock(return_value='new-shard-id'))
     @patch.object(datastore_models.DatastoreVersion, 'load_by_uuid')
     @patch.object(task_api, 'load')
     @patch.object(Cluster, 'update_db')
@@ -205,6 +213,7 @@ class ClusterTest(TestCase):
         mock_task_api.mongodb_add_shard_cluster.return_value = None
         mock_task_api_load.return_value = mock_task_api
         self.cluster.add_shard()
-        mock_update_db.assert_called_with(task_status=
-                                          ClusterTasks.ADDING_SHARD)
-        mock_task_api.mongodb_add_shard_cluster.assert_called
+        mock_update_db.assert_called_with(
+            task_status=ClusterTasks.ADDING_SHARD)
+        mock_task_api.mongodb_add_shard_cluster.assert_called_with(
+            self.cluster.id, 'new-shard-id', 'rs2')

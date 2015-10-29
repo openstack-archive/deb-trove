@@ -15,14 +15,14 @@
 #    under the License.
 
 import jinja2
-from oslo.config import cfg as oslo_config
+from oslo_config import cfg as oslo_config
+from oslo_log import log as logging
 
 from trove.common import cfg
 from trove.common import configurations
 from trove.common import exception
-from trove.common import utils
-from trove.openstack.common import log as logging
 from trove.common.i18n import _
+from trove.common import utils
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -31,8 +31,10 @@ ENV = utils.ENV
 
 # TODO(cp16net) Maybe this should be moved to a config dict
 SERVICE_PARSERS = {
+    'mongodb': configurations.MongoDBConfParser,
     'mysql': configurations.MySQLConfParser,
     'percona': configurations.MySQLConfParser,
+    'redis': configurations.RedisConfParser,
 }
 
 
@@ -143,3 +145,7 @@ class ReplicaSourceConfigTemplate(SingleInstanceConfigTemplate):
 
 class ReplicaConfigTemplate(SingleInstanceConfigTemplate):
     template_name = "replica.config.template"
+
+
+class ClusterConfigTemplate(SingleInstanceConfigTemplate):
+    template_name = "cluster.config.template"

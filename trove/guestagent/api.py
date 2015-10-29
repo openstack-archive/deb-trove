@@ -18,14 +18,14 @@ Handles all request to the Platform or Guest VM
 """
 
 from eventlet import Timeout
-from oslo.messaging.rpc.client import RemoteError
-from oslo import messaging
+from oslo_log import log as logging
+import oslo_messaging as messaging
+from oslo_messaging.rpc.client import RemoteError
 
 from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
 import trove.common.rpc.version as rpc_version
-from trove.openstack.common import log as logging
 from trove import rpc
 
 CONF = cfg.CONF
@@ -183,6 +183,14 @@ class API(object):
         LOG.debug("Enable root user for instance %s.", self.id)
         return self._call("enable_root", AGENT_HIGH_TIMEOUT, self.version_cap)
 
+    def enable_root_with_password(self, root_password=None):
+        """Make a synchronous call to enable the root user for
+           access from anywhere
+        """
+        LOG.debug("Enable root user for instance %s.", self.id)
+        return self._call("enable_root_with_password", AGENT_HIGH_TIMEOUT,
+                          self.version_cap, root_password=root_password)
+
     def disable_root(self):
         """Make a synchronous call to disable the root user for
            access from anywhere
@@ -256,29 +264,31 @@ class API(object):
                 server.stop()
 
     def restart(self):
-        """Restart the MySQL server."""
-        LOG.debug("Sending the call to restart MySQL on the Guest.")
+        """Restart the database server."""
+        LOG.debug("Sending the call to restart the database process "
+                  "on the Guest.")
         self._call("restart", AGENT_HIGH_TIMEOUT, self.version_cap)
 
     def start_db_with_conf_changes(self, config_contents):
-        """Start the MySQL server."""
-        LOG.debug("Sending the call to start MySQL on the Guest with "
-                  "a timeout of %s." % AGENT_HIGH_TIMEOUT)
+        """Start the database server."""
+        LOG.debug("Sending the call to start the database process on "
+                  "the Guest with a timeout of %s." % AGENT_HIGH_TIMEOUT)
         self._call("start_db_with_conf_changes", AGENT_HIGH_TIMEOUT,
                    self.version_cap, config_contents=config_contents)
 
     def reset_configuration(self, configuration):
-        """Ignore running state of MySQL, and just change the config file
-           to a new flavor.
+        """Ignore running state of the database server; just change
+           the config file to a new flavor.
         """
-        LOG.debug("Sending the call to change MySQL conf file on the Guest "
-                  "with a timeout of %s." % AGENT_HIGH_TIMEOUT)
+        LOG.debug("Sending the call to change the database conf file on the "
+                  "Guest with a timeout of %s." % AGENT_HIGH_TIMEOUT)
         self._call("reset_configuration", AGENT_HIGH_TIMEOUT,
                    self.version_cap, configuration=configuration)
 
     def stop_db(self, do_not_start_on_reboot=False):
-        """Stop the MySQL server."""
-        LOG.debug("Sending the call to stop MySQL on the Guest.")
+        """Stop the database server."""
+        LOG.debug("Sending the call to stop the database process "
+                  "on the Guest.")
         self._call("stop_db", AGENT_HIGH_TIMEOUT, self.version_cap,
                    do_not_start_on_reboot=do_not_start_on_reboot)
 
@@ -333,13 +343,20 @@ class API(object):
         """Update the overrides."""
         LOG.debug("Updating overrides values %(overrides)s on instance "
                   "%(id)s.", {'overrides': overrides, 'id': self.id})
-        self._cast("update_overrides", self.version_cap, overrides=overrides,
-                   remove=remove)
+        self._call("update_overrides", AGENT_HIGH_TIMEOUT,
+                   self.version_cap, overrides=overrides, remove=remove)
 
     def apply_overrides(self, overrides):
         LOG.debug("Applying overrides values %(overrides)s on instance "
                   "%(id)s.", {'overrides': overrides, 'id': self.id})
-        self._cast("apply_overrides", self.version_cap, overrides=overrides)
+        self._call("apply_overrides", AGENT_HIGH_TIMEOUT, self.version_cap,
+                   overrides=overrides)
+
+    def backup_required_for_replication(self):
+        LOG.debug("Checking backup requirement for replication")
+        return self._call("backup_required_for_replication",
+                          AGENT_LOW_TIMEOUT,
+                          self.version_cap)
 
     def get_replication_snapshot(self, snapshot_info=None,
                                  replica_source_config=None):

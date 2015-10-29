@@ -1,28 +1,30 @@
-#Copyright [2015] Hewlett-Packard Development Company, L.P.
-#Licensed under the Apache License, Version 2.0 (the "License");
-#you may not use this file except in compliance with the License.
-#You may obtain a copy of the License at
+# Copyright [2015] Hewlett-Packard Development Company, L.P.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#Unless required by applicable law or agreed to in writing, software
-#distributed under the License is distributed on an "AS IS" BASIS,
-#WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#See the License for the specific language governing permissions and
-#limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
+
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as rd_ins
-from trove.guestagent import volume
-from trove.guestagent import dbaas
 from trove.guestagent.datastore.experimental.vertica.service import (
     VerticaAppStatus)
 from trove.guestagent.datastore.experimental.vertica.service import VerticaApp
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
-from trove.openstack.common import periodic_task
+from trove.guestagent import dbaas
+from trove.guestagent import volume
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -34,8 +36,9 @@ class Manager(periodic_task.PeriodicTasks):
     def __init__(self):
         self.appStatus = VerticaAppStatus()
         self.app = VerticaApp(self.appStatus)
+        super(Manager, self).__init__(CONF)
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """Update the status of the Vertica service."""
         self.appStatus.update()
@@ -59,7 +62,7 @@ class Manager(periodic_task.PeriodicTasks):
                 device.unmount_device(device_path)
                 device.format()
                 if path_exists_function(mount_point):
-                    #rsync any existing data
+                    # rsync any existing data
                     device.migrate_data(mount_point)
                     # mount the volume
                     device.mount(mount_point)
@@ -116,9 +119,12 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Resized the filesystem.")
 
     def reset_configuration(self, context, configuration):
+        """
+         Currently this method does nothing. This method needs to be
+         implemented to enable rollback of flavor-resize on guestagent side.
+        """
         LOG.debug("Resetting Vertica configuration.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='reset_configuration', datastore=MANAGER)
+        pass
 
     def change_passwords(self, context, users):
         LOG.debug("Changing password.")
@@ -184,13 +190,15 @@ class Manager(periodic_task.PeriodicTasks):
 
     def enable_root(self, context):
         LOG.debug("Enabling root.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='enable_root', datastore=MANAGER)
+        return self.app.enable_root()
+
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root.")
+        return self.app.enable_root(root_password)
 
     def is_root_enabled(self, context):
         LOG.debug("Checking if root is enabled.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='is_root_enabled', datastore=MANAGER)
+        return self.app.is_root_enabled()
 
     def create_backup(self, context, backup_info):
         LOG.debug("Creating backup.")

@@ -13,24 +13,29 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
-from trove.guestagent import dbaas
-from trove.guestagent import volume
-from trove.common import instance as rd_instance
-from trove.guestagent.common import operating_system
-from trove.guestagent.datastore.experimental.redis.service import (
-    RedisAppStatus)
-from trove.guestagent.datastore.experimental.redis.service import (
-    RedisApp)
-from trove.openstack.common import log as logging
 from trove.common.i18n import _
-from trove.openstack.common import periodic_task
+from trove.common import instance as rd_instance
+from trove.common import utils
+from trove.guestagent import backup
+from trove.guestagent.common import operating_system
+from trove.guestagent.datastore.experimental.redis import service
+from trove.guestagent import dbaas
+from trove.guestagent.strategies.replication import get_replication_strategy
+from trove.guestagent import volume
 
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
-MANAGER = CONF.datastore_manager
+MANAGER = CONF.datastore_manager or 'redis'
+REPLICATION_STRATEGY = CONF.get(MANAGER).replication_strategy
+REPLICATION_NAMESPACE = CONF.get(MANAGER).replication_namespace
+REPLICATION_STRATEGY_CLASS = get_replication_strategy(REPLICATION_STRATEGY,
+                                                      REPLICATION_NAMESPACE)
 
 
 class Manager(periodic_task.PeriodicTasks):
@@ -39,14 +44,18 @@ class Manager(periodic_task.PeriodicTasks):
     based off of the service_type of the trove instance
     """
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    def __init__(self):
+        super(Manager, self).__init__(CONF)
+        self._app = service.RedisApp()
+
+    @periodic_task.periodic_task
     def update_status(self, context):
         """
         Updates the redis trove instance. It is decorated with
         perodic task so it is automatically called every 3 ticks.
         """
         LOG.debug("Update status called.")
-        RedisAppStatus.get().update()
+        self._app.status.update()
 
     def rpc_ping(self, context):
         LOG.debug("Responding to RPC ping.")
@@ -67,17 +76,19 @@ class Manager(periodic_task.PeriodicTasks):
         currently this does nothing.
         """
         LOG.debug("Reset configuration called.")
-        app = RedisApp(RedisAppStatus.get())
-        app.reset_configuration(configuration)
+        self._app.reset_configuration(configuration)
 
     def _perform_restore(self, backup_info, context, restore_location, app):
-        """
-        Perform a restore on this instance,
-        currently it is not implemented.
-        """
-        LOG.debug("Perform restore called.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='_perform_restore', datastore=MANAGER)
+        """Perform a restore on this instance."""
+        LOG.info(_("Restoring database from backup %s.") % backup_info['id'])
+        try:
+            backup.restore(context, backup_info, restore_location)
+        except Exception:
+            LOG.exception(_("Error performing restore from backup %s.") %
+                          backup_info['id'])
+            app.status.set_status(rd_instance.ServiceStatuses.FAILED)
+            raise
+        LOG.info(_("Restored database successfully."))
 
     def prepare(self, context, packages, databases, memory_mb, users,
                 device_path=None, mount_point=None, backup_info=None,
@@ -89,25 +100,42 @@ class Manager(periodic_task.PeriodicTasks):
         prepare handles all the base configuration of the redis instance.
         """
         try:
-            app = RedisApp(RedisAppStatus.get())
-            RedisAppStatus.get().begin_install()
+            self._app.status.begin_install()
             if device_path:
                 device = volume.VolumeDevice(device_path)
                 # unmount if device is already mounted
                 device.unmount_device(device_path)
                 device.format()
                 device.mount(mount_point)
-                operating_system.update_owner('redis', 'redis', mount_point)
+                operating_system.chown(mount_point, 'redis', 'redis',
+                                       as_root=True)
                 LOG.debug('Mounted the volume.')
-            app.install_if_needed(packages)
+            self._app.install_if_needed(packages)
             LOG.info(_('Writing redis configuration.'))
-            app.write_config(config_contents)
-            app.restart()
+            if cluster_config:
+                config_contents = (config_contents + "\n"
+                                   + "cluster-enabled yes\n"
+                                   + "cluster-config-file cluster.conf\n")
+            self._app.configuration_manager.save_configuration(config_contents)
+            self._app.apply_initial_guestagent_configuration()
+            if backup_info:
+                persistence_dir = self._app.get_working_dir()
+                self._perform_restore(backup_info, context, persistence_dir,
+                                      self._app)
+            else:
+                self._app.restart()
+            if snapshot:
+                self.attach_replica(context, snapshot, snapshot['config'])
+            if cluster_config:
+                self._app.status.set_status(
+                    rd_instance.ServiceStatuses.BUILD_PENDING)
+            else:
+                self._app.complete_install_or_restart()
             LOG.info(_('Redis instance has been setup and configured.'))
         except Exception:
             LOG.exception(_("Error setting up Redis instance."))
-            app.status.set_status(rd_instance.ServiceStatuses.FAILED)
-            raise RuntimeError("prepare call has failed.")
+            self._app.status.set_status(rd_instance.ServiceStatuses.FAILED)
+            raise
 
     def restart(self, context):
         """
@@ -116,16 +144,14 @@ class Manager(periodic_task.PeriodicTasks):
         gets a restart message from the taskmanager.
         """
         LOG.debug("Restart called.")
-        app = RedisApp(RedisAppStatus.get())
-        app.restart()
+        self._app.restart()
 
     def start_db_with_conf_changes(self, context, config_contents):
         """
         Start this redis instance with new conf changes.
         """
         LOG.debug("Start DB with conf changes called.")
-        app = RedisApp(RedisAppStatus.get())
-        app.start_db_with_conf_changes(config_contents)
+        self._app.start_db_with_conf_changes(config_contents)
 
     def stop_db(self, context, do_not_start_on_reboot=False):
         """
@@ -134,8 +160,7 @@ class Manager(periodic_task.PeriodicTasks):
         gets a stop message from the taskmanager.
         """
         LOG.debug("Stop DB called.")
-        app = RedisApp(RedisAppStatus.get())
-        app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
+        self._app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
 
     def get_filesystem_stats(self, context, fs_path):
         """Gets the filesystem stats for the path given."""
@@ -145,13 +170,9 @@ class Manager(periodic_task.PeriodicTasks):
         return dbaas.get_filesystem_volume_stats(mount_point)
 
     def create_backup(self, context, backup_info):
-        """
-        This will eventually create a backup. Right now
-        it does nothing.
-        """
-        LOG.debug("Create Backup called.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='create_backup', datastore=MANAGER)
+        """Create a backup of the database."""
+        LOG.debug("Creating backup.")
+        backup.backup(context, backup_info)
 
     def mount_volume(self, context, device_path=None, mount_point=None):
         device = volume.VolumeDevice(device_path)
@@ -172,13 +193,14 @@ class Manager(periodic_task.PeriodicTasks):
 
     def update_overrides(self, context, overrides, remove=False):
         LOG.debug("Updating overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='update_overrides', datastore=MANAGER)
+        if remove:
+            self._app.remove_overrides()
+        else:
+            self._app.update_overrides(context, overrides, remove)
 
     def apply_overrides(self, context, overrides):
         LOG.debug("Applying overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='apply_overrides', datastore=MANAGER)
+        self._app.apply_overrides(self._app.admin, overrides)
 
     def update_attributes(self, context, username, hostname, user_attrs):
         LOG.debug("Updating attributes.")
@@ -242,52 +264,157 @@ class Manager(periodic_task.PeriodicTasks):
         raise exception.DatastoreOperationNotSupported(
             operation='enable_root', datastore=MANAGER)
 
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='enable_root_with_password', datastore=MANAGER)
+
     def is_root_enabled(self, context):
         LOG.debug("Checking if root is enabled.")
         raise exception.DatastoreOperationNotSupported(
             operation='is_root_enabled', datastore=MANAGER)
 
+    def backup_required_for_replication(self, context):
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        return replication.backup_required_for_replication()
+
     def get_replication_snapshot(self, context, snapshot_info,
                                  replica_source_config=None):
         LOG.debug("Getting replication snapshot.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='get_replication_snapshot', datastore=MANAGER)
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replication.enable_as_master(self._app, replica_source_config)
 
-    def attach_replication_slave(self, context, snapshot, slave_config):
-        LOG.debug("Attaching replica.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='attach_replication_slave', datastore=MANAGER)
+        snapshot_id, log_position = (
+            replication.snapshot_for_replication(context, self._app, None,
+                                                 snapshot_info))
+
+        mount_point = CONF.get(MANAGER).mount_point
+        volume_stats = dbaas.get_filesystem_volume_stats(mount_point)
+
+        replication_snapshot = {
+            'dataset': {
+                'datastore_manager': MANAGER,
+                'dataset_size': volume_stats.get('used', 0.0),
+                'volume_size': volume_stats.get('total', 0.0),
+                'snapshot_id': snapshot_id
+            },
+            'replication_strategy': REPLICATION_STRATEGY,
+            'master': replication.get_master_ref(self._app, snapshot_info),
+            'log_position': log_position
+        }
+
+        return replication_snapshot
+
+    def enable_as_master(self, context, replica_source_config):
+        LOG.debug("Calling enable_as_master.")
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replication.enable_as_master(self._app, replica_source_config)
 
     def detach_replica(self, context, for_failover=False):
         LOG.debug("Detaching replica.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='detach_replica', datastore=MANAGER)
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replica_info = replication.detach_slave(self._app, for_failover)
+        return replica_info
 
     def get_replica_context(self, context):
-        raise exception.DatastoreOperationNotSupported(
-            operation='get_replica_context', datastore=MANAGER)
+        LOG.debug("Getting replica context.")
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replica_info = replication.get_replica_context(self._app)
+        return replica_info
+
+    def _validate_slave_for_replication(self, context, replica_info):
+        if (replica_info['replication_strategy'] != REPLICATION_STRATEGY):
+            raise exception.IncompatibleReplicationStrategy(
+                replica_info.update({
+                    'guest_strategy': REPLICATION_STRATEGY
+                }))
+
+    def attach_replica(self, context, replica_info, slave_config):
+        LOG.debug("Attaching replica.")
+        try:
+            if 'replication_strategy' in replica_info:
+                self._validate_slave_for_replication(context, replica_info)
+            replication = REPLICATION_STRATEGY_CLASS(context)
+            replication.enable_as_slave(self._app, replica_info,
+                                        slave_config)
+        except Exception:
+            LOG.exception("Error enabling replication.")
+            self._app.status.set_status(rd_instance.ServiceStatuses.FAILED)
+            raise
 
     def make_read_only(self, context, read_only):
-        raise exception.DatastoreOperationNotSupported(
-            operation='make_read_only', datastore=MANAGER)
+        LOG.debug("Executing make_read_only(%s)" % read_only)
+        self._app.make_read_only(read_only)
 
-    def enable_as_master(self, context, replica_source_config):
-        raise exception.DatastoreOperationNotSupported(
-            operation='enable_as_master', datastore=MANAGER)
+    def _get_repl_info(self):
+        return self._app.admin.get_info('replication')
 
-    def get_txn_count(self):
-        raise exception.DatastoreOperationNotSupported(
-            operation='get_txn_count', datastore=MANAGER)
+    def _get_master_host(self):
+        slave_info = self._get_repl_info()
+        return slave_info and slave_info['master_host'] or None
 
-    def get_latest_txn_id(self):
-        raise exception.DatastoreOperationNotSupported(
-            operation='get_latest_txn_id', datastore=MANAGER)
+    def _get_repl_offset(self):
+        repl_info = self._get_repl_info()
+        LOG.debug("Got repl info: %s" % repl_info)
+        offset_key = '%s_repl_offset' % repl_info['role']
+        offset = repl_info[offset_key]
+        LOG.debug("Found offset %s for key %s." % (offset, offset_key))
+        return int(offset)
 
-    def wait_for_txn(self, txn):
-        raise exception.DatastoreOperationNotSupported(
-            operation='wait_for_txn', datastore=MANAGER)
+    def get_last_txn(self, context):
+        master_host = self._get_master_host()
+        repl_offset = self._get_repl_offset()
+        return master_host, repl_offset
+
+    def get_latest_txn_id(self, context):
+        LOG.info(_("Retrieving latest repl offset."))
+        return self._get_repl_offset()
+
+    def wait_for_txn(self, context, txn):
+        LOG.info(_("Waiting on repl offset '%s'.") % txn)
+
+        def _wait_for_txn():
+            current_offset = self._get_repl_offset()
+            LOG.debug("Current offset: %s." % current_offset)
+            return current_offset >= txn
+
+        try:
+            utils.poll_until(_wait_for_txn, time_out=120)
+        except exception.PollTimeOut:
+            raise RuntimeError(_("Timeout occurred waiting for Redis repl "
+                                 "offset to change to '%s'.") % txn)
+
+    def cleanup_source_on_replica_detach(self, context, replica_info):
+        LOG.debug("Cleaning up the source on the detach of a replica.")
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replication.cleanup_source_on_replica_detach(self._app, replica_info)
 
     def demote_replication_master(self, context):
         LOG.debug("Demoting replica source.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='demote_replication_master', datastore=MANAGER)
+        replication = REPLICATION_STRATEGY_CLASS(context)
+        replication.demote_master(self._app)
+
+    def cluster_meet(self, context, ip, port):
+        LOG.debug("Executing cluster_meet to join node to cluster.")
+        self._app.cluster_meet(ip, port)
+
+    def get_node_ip(self, context):
+        LOG.debug("Retrieving cluster node ip address.")
+        return self._app.get_node_ip()
+
+    def get_node_id_for_removal(self, context):
+        LOG.debug("Validating removal of node from cluster.")
+        return self._app.get_node_id_for_removal()
+
+    def remove_nodes(self, context, node_ids):
+        LOG.debug("Removing nodes from cluster.")
+        self._app.remove_nodes(node_ids)
+
+    def cluster_addslots(self, context, first_slot, last_slot):
+        LOG.debug("Executing cluster_addslots to assign hash slots %s-%s.",
+                  first_slot, last_slot)
+        self._app.cluster_addslots(first_slot, last_slot)
+
+    def cluster_complete(self, context):
+        LOG.debug("Cluster creation complete, starting status checks.")
+        self._app.complete_install_or_restart()

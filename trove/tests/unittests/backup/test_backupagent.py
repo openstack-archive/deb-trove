@@ -1,39 +1,42 @@
-#Copyright 2013 Hewlett-Packard Development Company, L.P.
+# Copyright 2013 Hewlett-Packard Development Company, L.P.
 
-#Licensed under the Apache License, Version 2.0 (the "License");
-#you may not use this file except in compliance with the License.
-#You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#Unless required by applicable law or agreed to in writing, software
-#distributed under the License is distributed on an "AS IS" BASIS,
-#WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#See the License for the specific language governing permissions and
-#limitations under the License.
-
-from mock import Mock, MagicMock, patch, ANY
-from webob.exc import HTTPNotFound
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import hashlib
+import mock
 import os
-import testtools
 
+from mock import Mock, MagicMock, patch, ANY
 from oslo_utils import netutils
-from trove.common import utils
-from trove.common.context import TroveContext
-from trove.conductor import api as conductor_api
-from trove.guestagent.strategies.backup import mysql_impl
-from trove.guestagent.strategies.backup.experimental import couchbase_impl
-from trove.guestagent.strategies.restore.base import RestoreRunner
+from webob.exc import HTTPNotFound
+
 from trove.backup.state import BackupState
+from trove.common.context import TroveContext
+from trove.common import utils
+from trove.conductor import api as conductor_api
 from trove.guestagent.backup import backupagent
+from trove.guestagent.common import configuration
+from trove.guestagent.datastore.experimental.mongodb.service import MongoDBApp
 from trove.guestagent.strategies.backup.base import BackupRunner
 from trove.guestagent.strategies.backup.base import UnknownBackupType
+from trove.guestagent.strategies.backup.experimental import couchbase_impl
+from trove.guestagent.strategies.backup.experimental import mongo_impl
+from trove.guestagent.strategies.backup.experimental import redis_impl
+from trove.guestagent.strategies.backup import mysql_impl
+from trove.guestagent.strategies.backup.mysql_impl import MySqlApp
+from trove.guestagent.strategies.restore.base import RestoreRunner
 from trove.guestagent.strategies.storage.base import Storage
-
-conductor_api.API.get_client = Mock()
-conductor_api.API.update_backup = Mock()
+from trove.tests.unittests import trove_testtools
 
 
 def create_fake_data():
@@ -138,6 +141,7 @@ class MockStorage(Storage):
 
 
 class MockRestoreRunner(RestoreRunner):
+
     def __init__(self, storage, **kwargs):
         pass
 
@@ -160,12 +164,23 @@ class MockStats:
     f_bfree = 512 * 1024
 
 
-class BackupAgentTest(testtools.TestCase):
+class BackupAgentTest(trove_testtools.TestCase):
+
     def setUp(self):
         super(BackupAgentTest, self).setUp()
-        mysql_impl.get_auth_password = MagicMock(return_value='123')
-        backupagent.get_storage_strategy = MagicMock(return_value=MockSwift)
-        os.statvfs = MagicMock(return_value=MockStats)
+        self.get_auth_pwd_patch = patch.object(
+            MySqlApp, 'get_auth_password', MagicMock(return_value='123'))
+        self.get_auth_pwd_mock = self.get_auth_pwd_patch.start()
+        self.addCleanup(self.get_auth_pwd_patch.stop)
+        self.get_ss_patch = patch.object(
+            backupagent, 'get_storage_strategy',
+            MagicMock(return_value=MockSwift))
+        self.get_ss_mock = self.get_ss_patch.start()
+        self.addCleanup(self.get_ss_patch.stop)
+        self.statvfs_patch = patch.object(
+            os, 'statvfs', MagicMock(return_value=MockStats))
+        self.statvfs_mock = self.statvfs_patch.start()
+        self.addCleanup(self.statvfs_patch.stop)
         self.orig_utils_execute_with_timeout = utils.execute_with_timeout
         self.orig_os_get_ip_address = netutils.get_my_ipv4
 
@@ -195,7 +210,9 @@ class BackupAgentTest(testtools.TestCase):
         self.assertIsNotNone(mysql_dump.manifest)
         self.assertEqual('abc.gz.enc', mysql_dump.manifest)
 
-    def test_backup_impl_InnoBackupEx(self):
+    @mock.patch.object(
+        MySqlApp, 'get_data_dir', return_value='/var/lib/mysql/data')
+    def test_backup_impl_InnoBackupEx(self, mock_datadir):
         """This test is for
            guestagent/strategies/backup/impl
         """
@@ -204,7 +221,7 @@ class BackupAgentTest(testtools.TestCase):
         str_innobackup_cmd = ('sudo innobackupex'
                               ' --stream=xbstream'
                               ' %(extra_opts)s'
-                              ' /var/lib/mysql 2>/tmp/innobackupex.log'
+                              ' /var/lib/mysql/data 2>/tmp/innobackupex.log'
                               ' | gzip |'
                               ' openssl enc -aes-256-cbc -salt '
                               '-pass pass:default_aes_cbc_key')
@@ -225,6 +242,34 @@ class BackupAgentTest(testtools.TestCase):
         self.assertIsNotNone(cbbackup.manifest)
         self.assertIn('gz.enc', cbbackup.manifest)
 
+    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    def test_backup_impl_MongoDump(self, _):
+        netutils.get_my_ipv4 = Mock(return_value="1.1.1.1")
+        utils.execute_with_timeout = Mock(return_value=None)
+        mongodump = mongo_impl.MongoDump('mongodump', extra_opts='')
+        self.assertIsNotNone(mongodump)
+        str_mongodump_cmd = ("sudo tar cPf - /var/lib/mongodb/dump | "
+                             "gzip | openssl enc -aes-256-cbc -salt -pass "
+                             "pass:default_aes_cbc_key")
+        self.assertEqual(str_mongodump_cmd, mongodump.cmd)
+        self.assertIsNotNone(mongodump.manifest)
+        self.assertIn('gz.enc', mongodump.manifest)
+
+    @patch.object(utils, 'execute_with_timeout')
+    @patch.object(configuration.ConfigurationManager, 'parse_configuration',
+                  Mock(return_value={'dir': '/var/lib/redis',
+                                     'dbfilename': 'dump.rdb'}))
+    def test_backup_impl_RedisBackup(self, *mocks):
+        netutils.get_my_ipv4 = Mock(return_value="1.1.1.1")
+        redis_backup = redis_impl.RedisBackup('redisbackup', extra_opts='')
+        self.assertIsNotNone(redis_backup)
+        str_redis_backup_cmd = ("sudo cat /var/lib/redis/dump.rdb | "
+                                "gzip | openssl enc -aes-256-cbc -salt -pass "
+                                "pass:default_aes_cbc_key")
+        self.assertEqual(str_redis_backup_cmd, redis_backup.cmd)
+        self.assertIsNotNone(redis_backup.manifest)
+        self.assertIn('gz.enc', redis_backup.manifest)
+
     def test_backup_base(self):
         """This test is for
            guestagent/strategies/backup/base
@@ -241,6 +286,9 @@ class BackupAgentTest(testtools.TestCase):
             self.assertIsNone(backup_runner.zip_cmd)
         self.assertEqual('BackupRunner', backup_runner.backup_type)
 
+    @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
+    @patch.object(conductor_api.API, 'update_backup',
+                  Mock(return_value=Mock()))
     def test_execute_backup(self):
         """This test should ensure backup agent
                 ensures that backup and storage is not running
@@ -283,6 +331,9 @@ class BackupAgentTest(testtools.TestCase):
                 backup_type=backup_info['type'],
                 state=BackupState.COMPLETED))
 
+    @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
+    @patch.object(conductor_api.API, 'update_backup',
+                  Mock(return_value=Mock()))
     def test_execute_bad_process_backup(self):
         agent = backupagent.BackupAgent()
         backup_info = {'id': '123',
@@ -320,6 +371,9 @@ class BackupAgentTest(testtools.TestCase):
                 backup_type=backup_info['type'],
                 state=BackupState.FAILED))
 
+    @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
+    @patch.object(conductor_api.API, 'update_backup',
+                  Mock(return_value=Mock()))
     def test_execute_lossy_backup(self):
         """This test verifies that incomplete writes to swift will fail."""
         with patch.object(MockSwift, 'save',
@@ -365,7 +419,7 @@ class BackupAgentTest(testtools.TestCase):
                              }
                 agent.execute_restore(TroveContext(),
                                       bkup_info,
-                                      '/var/lib/mysql')
+                                      '/var/lib/mysql/data')
 
     def test_restore_unknown(self):
         with patch.object(backupagent, 'get_restore_strategy',
@@ -381,44 +435,45 @@ class BackupAgentTest(testtools.TestCase):
 
             self.assertRaises(UnknownBackupType, agent.execute_restore,
                               context=None, backup_info=bkup_info,
-                              restore_location='/var/lib/mysql')
+                              restore_location='/var/lib/mysql/data')
 
-    def test_backup_incremental_metadata(self):
-        with patch.object(backupagent, 'get_storage_strategy',
-                          return_value=MockSwift):
-            MockStorage.save_metadata = Mock()
-            with patch.object(MockSwift, 'load_metadata',
-                              return_value={'lsn': '54321'}):
-                meta = {
-                    'lsn': '12345',
-                    'parent_location': 'fake',
-                    'parent_checksum': 'md5',
-                }
+    @patch.object(MySqlApp, 'get_data_dir', return_value='/var/lib/mysql/data')
+    @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
+    @patch.object(MockSwift, 'load_metadata', return_value={'lsn': '54321'})
+    @patch.object(MockStorage, 'save_metadata')
+    @patch.object(backupagent, 'get_storage_strategy', return_value=MockSwift)
+    def test_backup_incremental_metadata(self,
+                                         get_storage_strategy_mock,
+                                         save_metadata_mock,
+                                         load_metadata_mock,
+                                         get_datadir_mock):
+        meta = {
+            'lsn': '12345',
+            'parent_location': 'fake',
+            'parent_checksum': 'md5',
+        }
+        with patch.multiple(mysql_impl.InnoBackupExIncremental,
+                            metadata=MagicMock(return_value=meta),
+                            _run=MagicMock(return_value=True),
+                            __exit__=MagicMock(return_value=True)):
+            agent = backupagent.BackupAgent()
 
-                mysql_impl.InnoBackupExIncremental.metadata = MagicMock(
-                    return_value=meta)
-                mysql_impl.InnoBackupExIncremental.run = MagicMock(
-                    return_value=True)
-                mysql_impl.InnoBackupExIncremental.__exit__ = MagicMock(
-                    return_value=True)
+            bkup_info = {'id': '123',
+                         'location': 'fake-location',
+                         'type': 'InnoBackupEx',
+                         'checksum': 'fake-checksum',
+                         'parent': {'location': 'fake', 'checksum': 'md5'}
+                         }
 
-                agent = backupagent.BackupAgent()
+            agent.execute_backup(TroveContext(),
+                                 bkup_info,
+                                 '/var/lib/mysql/data')
 
-                bkup_info = {'id': '123',
-                             'location': 'fake-location',
-                             'type': 'InnoBackupEx',
-                             'checksum': 'fake-checksum',
-                             'parent': {'location': 'fake', 'checksum': 'md5'}
-                             }
+            self.assertTrue(MockStorage.save_metadata.called_once_with(
+                            ANY,
+                            meta))
 
-                agent.execute_backup(TroveContext(),
-                                     bkup_info,
-                                     '/var/lib/mysql')
-
-                self.assertTrue(MockStorage.save_metadata.called_once_with(
-                                ANY,
-                                meta))
-
+    @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
     def test_backup_incremental_bad_metadata(self):
         with patch.object(backupagent, 'get_storage_strategy',
                           return_value=MockSwift):

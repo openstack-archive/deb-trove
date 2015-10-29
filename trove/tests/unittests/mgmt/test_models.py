@@ -14,32 +14,33 @@
 #    under the License.
 #
 import uuid
-from mock import MagicMock, patch, ANY
-from testtools import TestCase
-from testtools.matchers import Equals, Is, Not
 
+from mock import MagicMock, patch, ANY
 from novaclient.v2 import Client
 from novaclient.v2.flavors import FlavorManager, Flavor
 from novaclient.v2.servers import Server, ServerManager
-from oslo.config import cfg
+from oslo_config import cfg
+from testtools.matchers import Equals, Is, Not
+
 from trove.backup.models import Backup
 from trove.common.context import TroveContext
 from trove.common import exception
 from trove.common import instance as rd_instance
 from trove.common import remote
 from trove.datastore import models as datastore_models
+import trove.extensions.mgmt.instances.models as mgmtmodels
 from trove.guestagent.api import API
 from trove.instance.models import DBInstance
 from trove.instance.models import InstanceServiceStatus
 from trove.instance.tasks import InstanceTasks
-import trove.extensions.mgmt.instances.models as mgmtmodels
-from trove.tests.unittests.util import util
 from trove import rpc
+from trove.tests.unittests import trove_testtools
+from trove.tests.unittests.util import util
 
 CONF = cfg.CONF
 
 
-class MockMgmtInstanceTest(TestCase):
+class MockMgmtInstanceTest(trove_testtools.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -47,19 +48,25 @@ class MockMgmtInstanceTest(TestCase):
         cls.version_id = str(uuid.uuid4())
         cls.datastore = datastore_models.DBDatastore.create(
             id=str(uuid.uuid4()),
-            name='mysql',
+            name='mysql' + str(uuid.uuid4()),
             default_version_id=cls.version_id
         )
         cls.version = datastore_models.DBDatastoreVersion.create(
             id=cls.version_id,
             datastore_id=cls.datastore.id,
-            name='5.5',
+            name='5.5' + str(uuid.uuid4()),
             manager='mysql',
             image_id=str(uuid.uuid4()),
             active=1,
             packages="mysql-server-5.5"
         )
         super(MockMgmtInstanceTest, cls).setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.version.delete()
+        cls.datastore.delete()
+        super(MockMgmtInstanceTest, cls).tearDownClass()
 
     def setUp(self):
         self.context = TroveContext()
@@ -69,10 +76,12 @@ class MockMgmtInstanceTest(TestCase):
         self.client.servers = self.server_mgr
         self.flavor_mgr = MagicMock(spec=FlavorManager)
         self.client.flavors = self.flavor_mgr
-        remote.create_admin_nova_client = MagicMock(return_value=self.client)
+        self.admin_client_patch = patch.object(
+            remote, 'create_admin_nova_client', return_value=self.client)
+        self.addCleanup(self.admin_client_patch.stop)
+        self.admin_client_patch.start()
         CONF.set_override('host', 'test_host')
-        CONF.set_override('exists_notification_ticks', 1)
-        CONF.set_override('report_interval', 20)
+        CONF.set_override('exists_notification_interval', 1)
         CONF.set_override('notification_service_id', {'mysql': '123'})
 
         super(MockMgmtInstanceTest, self).setUp()
@@ -82,18 +91,15 @@ class MockMgmtInstanceTest(TestCase):
         status.delete()
 
     def build_db_instance(self, status, task_status=InstanceTasks.NONE):
-        version = datastore_models.DBDatastoreVersion.get_by(name='5.5')
         instance = DBInstance(InstanceTasks.NONE,
                               name='test_name',
                               id=str(uuid.uuid4()),
                               flavor_id='flavor_1',
-                              datastore_version_id=
-                              version.id,
+                              datastore_version_id=self.version.id,
                               compute_instance_id='compute_id_1',
                               server_id='server_id_1',
                               tenant_id='tenant_id_1',
-                              server_status=
-                              rd_instance.ServiceStatuses.
+                              server_status=rd_instance.ServiceStatuses.
                               BUILDING.api_status,
                               deleted=False)
         instance.save()
@@ -247,7 +253,7 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
                                 Not(Is(None)))
                 self.assertIn(status.lower(),
                               [db['state']
-                              for db in payloads])
+                               for db in payloads])
                 self.assertThat(payload['instance_type'],
                                 Equals('db.small'))
                 self.assertThat(payload['instance_type_id'],
@@ -341,7 +347,7 @@ class TestNovaNotificationTransformer(MockMgmtInstanceTest):
                 self.assertThat(payload['audit_period_ending'], Not(Is(None)))
                 self.assertIn(status.lower(),
                               [db['state']
-                              for db in payloads])
+                               for db in payloads])
                 self.assertThat(payload['instance_type'], Equals('db.small'))
                 self.assertThat(payload['instance_type_id'],
                                 Equals('flavor_1'))
@@ -372,24 +378,22 @@ class TestMgmtInstanceTasks(MockMgmtInstanceTest):
         flavor.name = 'db.small'
 
         notifier = MagicMock()
-        rpc.get_notifier = MagicMock(return_value=notifier)
-
-        with patch.object(mgmtmodels, 'load_mgmt_instances',
-                          return_value=[mgmt_instance]):
-            with patch.object(self.flavor_mgr, 'get', return_value=flavor):
-                self.assertThat(self.context.auth_token,
-                                Is('some_secret_password'))
-                with patch.object(notifier, 'info', return_value=None):
-                    # invocation
-                    mgmtmodels.publish_exist_events(
-                        mgmtmodels.NovaNotificationTransformer(
-                            context=self.context),
-                        self.context)
-                    # assertion
-                    notifier.info.assert_any_call(self.context,
-                                                  'trove.instance.exists',
-                                                  ANY)
-                    self.assertThat(self.context.auth_token, Is(None))
+        with patch.object(rpc, 'get_notifier', return_value=notifier):
+            with patch.object(mgmtmodels, 'load_mgmt_instances',
+                              return_value=[mgmt_instance]):
+                with patch.object(self.flavor_mgr, 'get', return_value=flavor):
+                    self.assertThat(self.context.auth_token,
+                                    Is('some_secret_password'))
+                    with patch.object(notifier, 'info', return_value=None):
+                        # invocation
+                        mgmtmodels.publish_exist_events(
+                            mgmtmodels.NovaNotificationTransformer(
+                                context=self.context),
+                            self.context)
+                        # assertion
+                        notifier.info.assert_any_call(
+                            self.context, 'trove.instance.exists', ANY)
+                        self.assertThat(self.context.auth_token, Is(None))
         self.addCleanup(self.do_cleanup, instance, service_status)
 
 
@@ -410,24 +414,28 @@ class TestMgmtInstanceDeleted(MockMgmtInstanceTest):
         #                 db_infos_deleted.count())
 
         with patch.object(self.context, 'is_admin', return_value=True):
-            deleted_instance = db_infos_deleted.all()[0]
-            active_instance = db_infos_active.all()[0]
+            deleted_instance = db_infos_deleted.all()[0] if len(
+                db_infos_deleted.all()) > 0 else None
+            active_instance = db_infos_active.all()[0] if len(
+                db_infos_active.all()) > 0 else None
 
-            instance = DBInstance.find_by(context=self.context,
-                                          id=active_instance.id)
-            self.assertEqual(instance.id, active_instance.id)
+            if active_instance:
+                instance = DBInstance.find_by(context=self.context,
+                                              id=active_instance.id)
+                self.assertEqual(active_instance.id, instance.id)
 
-            self.assertRaises(
-                exception.ModelNotFoundError,
-                DBInstance.find_by,
-                context=self.context,
-                id=deleted_instance.id,
-                deleted=False)
+            if deleted_instance:
+                self.assertRaises(
+                    exception.ModelNotFoundError,
+                    DBInstance.find_by,
+                    context=self.context,
+                    id=deleted_instance.id,
+                    deleted=False)
 
-            instance = DBInstance.find_by(context=self.context,
-                                          id=deleted_instance.id,
-                                          deleted=True)
-            self.assertEqual(instance.id, deleted_instance.id)
+                instance = DBInstance.find_by(context=self.context,
+                                              id=deleted_instance.id,
+                                              deleted=True)
+                self.assertEqual(deleted_instance.id, instance.id)
 
 
 class TestMgmtInstancePing(MockMgmtInstanceTest):

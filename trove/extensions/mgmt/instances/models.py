@@ -13,15 +13,16 @@
 #    under the License.
 import datetime
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import exception
 from trove.common import remote
 from trove.common import utils
-from trove.openstack.common import log as logging
-from trove.instance import models as imodels
-from trove.instance.models import load_instance, InstanceServiceStatus
-from trove.instance import models as instance_models
 from trove.extensions.mysql import models as mysql_models
+from trove.instance import models as imodels
+from trove.instance import models as instance_models
+from trove.instance.models import load_instance, InstanceServiceStatus
 from trove import rpc
 
 LOG = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ class NotificationTransformer(object):
         audit_start = utils.isotime(now, subsecond=True)
         audit_end = utils.isotime(
             now + datetime.timedelta(
-                seconds=CONF.exists_notification_ticks * CONF.report_interval),
+                seconds=CONF.exists_notification_interval),
             subsecond=True)
         return audit_start, audit_end
 

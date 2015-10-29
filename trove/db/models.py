@@ -12,14 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from trove.db import get_db_api
-from trove.db import db_query
+from oslo_log import log as logging
+
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import models
 from trove.common import pagination
 from trove.common import utils
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
+from trove.db import db_query
+from trove.db import get_db_api
 
 LOG = logging.getLogger(__name__)
 

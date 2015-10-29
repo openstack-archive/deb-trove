@@ -16,19 +16,20 @@
 Extra tests to create an instance, shut down MySQL, and delete it.
 """
 
-from proboscis.decorators import time_out
-from proboscis import before_class
-from proboscis import test
-from proboscis import asserts
 import time
+import uuid
 
-from datetime import datetime
+from proboscis import asserts
+from proboscis import before_class
+from proboscis.decorators import time_out
+from proboscis import test
 from troveclient.compat import exceptions
-from trove.tests.util import create_client
+
 from trove.common.utils import poll_until
-from trove.tests.util import test_config
-from trove.tests.api.instances import VOLUME_SUPPORT
 from trove.tests.api.instances import EPHEMERAL_SUPPORT
+from trove.tests.api.instances import VOLUME_SUPPORT
+from trove.tests.util import create_client
+from trove.tests.util import test_config
 
 
 @test(groups=["dbaas.api.instances.down"])
@@ -52,7 +53,7 @@ class TestBase(object):
                 'instance_bigger_flavor_name', 'm1.small')
         flavors = self.client.find_flavors_by_name(flavor_name)
         self.flavor_id = flavors[0].id
-        self.name = "TEST_" + str(datetime.now())
+        self.name = "TEST_" + str(uuid.uuid4())
         # Get the resize to flavor.
         flavors2 = self.client.find_flavors_by_name(flavor2_name)
         self.new_flavor_id = flavors2[0].id

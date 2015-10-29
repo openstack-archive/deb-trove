@@ -13,20 +13,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo.config.cfg import NoSuchOptError
+from oslo_config.cfg import NoSuchOptError
+from oslo_log import log as logging
 
 from trove.cluster import models
 from trove.cluster import views
+from trove.common import apischema
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import pagination
-from trove.common import apischema
+from trove.common.strategies.cluster import strategy
 from trove.common import utils
 from trove.common import wsgi
-from trove.common.strategies.cluster import strategy
 from trove.datastore import models as datastore_models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 
 
 CONF = cfg.CONF
@@ -72,7 +72,13 @@ class ClusterController(wsgi.Controller):
                         "by strategy for manager '%(manager)s'") % (
                             {'action': key, 'manager': manager})
             raise exception.TroveError(message)
-        return selected_action(cluster, body)
+        cluster = selected_action(cluster, body)
+        if cluster:
+            view = views.load_view(cluster, req=req, load_servers=False)
+            wsgi_result = wsgi.Result(view.data(), 202)
+        else:
+            wsgi_result = wsgi.Result(None, 202)
+        return wsgi_result
 
     def show(self, req, tenant_id, id):
         """Return a single cluster."""
@@ -137,6 +143,9 @@ class ClusterController(wsgi.Controller):
         datastore, datastore_version = (
             datastore_models.get_datastore_version(**datastore_args))
 
+        # TODO(saurabhs): add extended_properties to apischema
+        extended_properties = body['cluster'].get('extended_properties', {})
+
         try:
             clusters_enabled = (CONF.get(datastore_version.manager)
                                 .get('cluster_support'))
@@ -152,14 +161,21 @@ class ClusterController(wsgi.Controller):
         instances = []
         for node in nodes:
             flavor_id = utils.get_id_from_href(node['flavorRef'])
+            volume_size = nics = availability_zone = None
             if 'volume' in node:
                 volume_size = int(node['volume']['size'])
-            else:
-                volume_size = None
+            if 'nics' in node:
+                nics = node['nics']
+            if 'availability_zone' in node:
+                availability_zone = node['availability_zone']
+
             instances.append({"flavor_id": flavor_id,
-                              "volume_size": volume_size})
+                              "volume_size": volume_size,
+                              "nics": nics,
+                              "availability_zone": availability_zone})
 
         cluster = models.Cluster.create(context, name, datastore,
-                                        datastore_version, instances)
+                                        datastore_version, instances,
+                                        extended_properties)
         view = views.load_view(cluster, req=req, load_servers=False)
         return wsgi.Result(view.data(), 200)

@@ -21,13 +21,15 @@ import sys
 gettext.install('trove', unicode=1)
 
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import utils
 from trove.configuration import models as config_models
-from trove.db import get_db_api
-from trove.openstack.common import log as logging
 from trove.datastore import models as datastore_models
+from trove.db import get_db_api
 
 
 CONF = cfg.CONF
@@ -42,10 +44,10 @@ class Commands(object):
         self.db_api.db_sync(CONF, repo_path=repo_path)
 
     def db_upgrade(self, version=None, repo_path=None):
-        self.db_api.db_upgrade(CONF, version, repo_path=None)
+        self.db_api.db_upgrade(CONF, version, repo_path=repo_path)
 
     def db_downgrade(self, version, repo_path=None):
-        self.db_api.db_downgrade(CONF, version, repo_path=None)
+        self.db_api.db_downgrade(CONF, version, repo_path=repo_path)
 
     def execute(self):
         exec_method = getattr(self, CONF.action.name)
@@ -89,6 +91,30 @@ class Commands(object):
               % (datastore, datastore_version))
         config_models.load_datastore_configuration_parameters(
             datastore, datastore_version, config_file_location)
+
+    def datastore_version_flavor_add(self, datastore_name,
+                                     datastore_version_name, flavor_ids):
+        """Adds flavors for a given datastore version id."""
+        try:
+            dsmetadata = datastore_models.DatastoreVersionMetadata
+            dsmetadata.add_datastore_version_flavor_association(
+                datastore_name, datastore_version_name, flavor_ids.split(","))
+            print("Added flavors '%s' to the '%s' '%s'."
+                  % (flavor_ids, datastore_name, datastore_version_name))
+        except exception.DatastoreVersionNotFound as e:
+            print(e)
+
+    def datastore_version_flavor_delete(self, datastore_name,
+                                        datastore_version_name, flavor_id):
+        """Deletes a flavor's association with a given datastore."""
+        try:
+            dsmetadata = datastore_models.DatastoreVersionMetadata
+            dsmetadata.delete_datastore_version_flavor_association(
+                datastore_name, datastore_version_name, flavor_id)
+            print("Deleted flavor '%s' from '%s' '%s'."
+                  % (flavor_id, datastore_name, datastore_version_name))
+        except exception.DatastoreVersionNotFound as e:
+            print(e)
 
     def params_of(self, command_name):
         if Commands.has(command_name):
@@ -168,16 +194,33 @@ def main():
             help='Fully qualified file path to the configuration group '
             'parameter validation rules.')
 
+        parser = subparser.add_parser(
+            'datastore_version_flavor_add', help='Adds flavor association to '
+            'a given datastore and datastore version.')
+        parser.add_argument('datastore_name', help='Name of the datastore.')
+        parser.add_argument('datastore_version_name', help='Name of the '
+                            'datastore version.')
+        parser.add_argument('flavor_ids', help='Comma separated list of '
+                            'flavor ids.')
+
+        parser = subparser.add_parser(
+            'datastore_version_flavor_delete', help='Deletes a flavor '
+            'associated with a given datastore and datastore version.')
+        parser.add_argument('datastore_name', help='Name of the datastore.')
+        parser.add_argument('datastore_version_name', help='Name of the '
+                            'datastore version.')
+        parser.add_argument('flavor_id', help='The flavor to be deleted for '
+                            'a given datastore and datastore version.')
     cfg.custom_parser('action', actions)
     cfg.parse_args(sys.argv)
 
     try:
-        logging.setup(None)
+        logging.setup(CONF, None)
 
         Commands().execute()
         sys.exit(0)
     except TypeError as e:
-        print(_("Possible wrong number of arguments supplied %s") % e)
+        print(_("Possible wrong number of arguments supplied %s.") % e)
         sys.exit(2)
     except Exception:
         print(_("Command failed, please check log for more info."))

@@ -18,8 +18,8 @@
 import re
 
 from oslo_concurrency import processutils
+from oslo_log import log as logging
 
-from trove.openstack.common import log as logging
 from trove.common import base_exception as openstack_exception
 from trove.common.i18n import _
 
@@ -117,6 +117,18 @@ class DatastoreVersionNotFound(NotFound):
 class DatastoresNotFound(NotFound):
 
     message = _("Datastores cannot be found.")
+
+
+class DatastoreFlavorAssociationNotFound(NotFound):
+
+    message = _("Datastore '%(datastore)s' version id %(version_id)s "
+                "and flavor %(flavor_id)s mapping not found.")
+
+
+class DatastoreFlavorAssociationAlreadyExists(TroveError):
+
+    message = _("Datastore '%(datastore)s' version %(datastore_version)s "
+                "and flavor %(flavor_id)s mapping already exists.")
 
 
 class DatastoreNoVersion(TroveError):
@@ -501,9 +513,19 @@ class ClusterNumInstancesNotSupported(TroveError):
                 "be %(num_instances)s.")
 
 
+class ClusterNumInstancesNotLargeEnough(TroveError):
+    message = _("The number of instances for your initial cluster must "
+                "be at least %(num_instances)s.")
+
+
 class ClusterInstanceOperationNotSupported(TroveError):
     message = _("Operation not supported for instances that are part of a "
                 "cluster.")
+
+
+class ClusterOperationNotSupported(TroveError):
+
+    message = _("The '%(operation)s' operation is not supported for cluster.")
 
 
 class TroveOperationAuthError(TroveError):
@@ -519,3 +541,13 @@ class BackupTooLarge(TroveError):
     message = _("Backup is too large for given flavor or volume. "
                 "Backup size: %(backup_size)s GBs. "
                 "Available size: %(disk_size)s GBs.")
+
+
+class ImageNotFound(NotFound):
+
+    message = _("Image %(uuid)s cannot be found.")
+
+
+class DatastoreVersionAlreadyExists(BadRequest):
+
+    message = _("A datastore version with the name '%(name)s' already exists.")

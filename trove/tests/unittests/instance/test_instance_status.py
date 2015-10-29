@@ -13,16 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-
-import uuid
-
-from testtools import TestCase
 from trove.common.instance import ServiceStatuses
 from trove.datastore import models
-from trove.instance.models import InstanceStatus
 from trove.instance.models import InstanceServiceStatus
+from trove.instance.models import InstanceStatus
 from trove.instance.models import SimpleInstance
+from trove.tests.unittests import trove_testtools
 from trove.tests.unittests.util import util
+import uuid
 
 
 class FakeInstanceTask(object):
@@ -42,7 +40,7 @@ class FakeDBInstance(object):
         self.task_status = FakeInstanceTask()
 
 
-class BaseInstanceStatusTestCase(TestCase):
+class BaseInstanceStatusTestCase(trove_testtools.TestCase):
 
     def setUp(self):
         util.init_db()
@@ -51,13 +49,13 @@ class BaseInstanceStatusTestCase(TestCase):
             ServiceStatuses.RUNNING)
         self.datastore = models.DBDatastore.create(
             id=str(uuid.uuid4()),
-            name='mysql',
+            name='mysql' + str(uuid.uuid4()),
             default_version_id=self.db_info.datastore_version_id
         )
         self.version = models.DBDatastoreVersion.create(
             id=self.db_info.datastore_version_id,
             datastore_id=self.datastore.id,
-            name='5.5',
+            name='5.5' + str(uuid.uuid4()),
             manager='mysql',
             image_id=str(uuid.uuid4()),
             active=1,

@@ -12,96 +12,352 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
+import mock
+import pymongo
 
-import testtools
-from mock import MagicMock
-from mock import patch
-from trove.common import utils
-from trove.common.context import TroveContext
-from trove.guestagent import volume
-from trove.guestagent.datastore.experimental.mongodb import (
-    service as mongo_service)
-from trove.guestagent.datastore.experimental.mongodb import (
-    manager as mongo_manager)
-from trove.guestagent.volume import VolumeDevice
+import trove.common.context as context
+import trove.common.utils as utils
+import trove.guestagent.backup as backup
+import trove.guestagent.datastore.experimental.mongodb.manager as manager
+import trove.guestagent.datastore.experimental.mongodb.service as service
+import trove.guestagent.db.models as models
+import trove.guestagent.volume as volume
+import trove.tests.unittests.trove_testtools as trove_testtools
 
 
-class GuestAgentMongoDBManagerTest(testtools.TestCase):
+class GuestAgentMongoDBManagerTest(trove_testtools.TestCase):
 
-    def setUp(self):
+    @mock.patch.object(service.MongoDBApp, '_init_overrides_dir')
+    def setUp(self, _):
         super(GuestAgentMongoDBManagerTest, self).setUp()
-        self.context = TroveContext()
-        self.manager = mongo_manager.Manager()
-        self.origin_MongoDbAppStatus = mongo_service.MongoDbAppStatus
-        self.origin_os_path_exists = os.path.exists
-        self.origin_format = volume.VolumeDevice.format
-        self.origin_migrate_data = volume.VolumeDevice.migrate_data
-        self.origin_mount = volume.VolumeDevice.mount
-        self.origin_mount_points = volume.VolumeDevice.mount_points
-        self.origin_stop_db = mongo_service.MongoDBApp.stop_db
-        self.origin_start_db = mongo_service.MongoDBApp.start_db
-        self.orig_exec_with_to = utils.execute_with_timeout
+        self.context = context.TroveContext()
+        self.manager = manager.Manager()
+
+        self.execute_with_timeout_patch = mock.patch.object(
+            utils, 'execute_with_timeout'
+        )
+        self.addCleanup(self.execute_with_timeout_patch.stop)
+        self.execute_with_timeout_patch.start()
+
+        self.pymongo_patch = mock.patch.object(
+            pymongo, 'MongoClient'
+        )
+        self.addCleanup(self.pymongo_patch.stop)
+        self.pymongo_patch.start()
+
+        self.mount_point = '/var/lib/mongodb'
 
     def tearDown(self):
         super(GuestAgentMongoDBManagerTest, self).tearDown()
-        mongo_service.MongoDbAppStatus = self.origin_MongoDbAppStatus
-        os.path.exists = self.origin_os_path_exists
-        volume.VolumeDevice.format = self.origin_format
-        volume.VolumeDevice.migrate_data = self.origin_migrate_data
-        volume.VolumeDevice.mount = self.origin_mount
-        volume.VolumeDevice.mount_points = self.origin_mount_points
-        mongo_service.MongoDBApp.stop_db = self.origin_stop_db
-        mongo_service.MongoDBApp.start_db = self.origin_start_db
-        utils.execute_with_timeout = self.orig_exec_with_to
 
     def test_update_status(self):
-        self.manager.status = MagicMock()
+        self.manager.app.status = mock.MagicMock()
         self.manager.update_status(self.context)
-        self.manager.status.update.assert_any_call()
+        self.manager.app.status.update.assert_any_call()
 
-    def test_prepare_from_backup(self):
-        self._prepare_dynamic(backup_id='backup_id_123abc')
+    def _prepare_method(self, packages=['packages'], databases=None,
+                        memory_mb='2048', users=None, device_path=None,
+                        mount_point=None, backup_info=None,
+                        config_contents=None, root_password=None,
+                        overrides=None, cluster_config=None,):
+        """self.manager.app must be correctly mocked before calling."""
 
-    def _prepare_dynamic(self, device_path='/dev/vdb', is_db_installed=True,
-                         backup_id=None):
+        self.manager.app.status = mock.Mock()
 
-        # covering all outcomes is starting to cause trouble here
-        backup_info = {'id': backup_id,
+        self.manager.prepare(self.context, packages,
+                             databases, memory_mb, users,
+                             device_path=device_path,
+                             mount_point=mount_point,
+                             backup_info=backup_info,
+                             config_contents=config_contents,
+                             root_password=root_password,
+                             overrides=overrides,
+                             cluster_config=cluster_config)
+
+        self.manager.app.status.begin_install.assert_any_call()
+        self.manager.app.install_if_needed.assert_called_with(packages)
+        self.manager.app.stop_db.assert_any_call()
+        self.manager.app.clear_storage.assert_any_call()
+
+        (self.manager.app.apply_initial_guestagent_configuration.
+         assert_called_once_with(cluster_config, self.mount_point))
+
+    @mock.patch.object(volume, 'VolumeDevice')
+    @mock.patch('os.path.exists')
+    def test_prepare_for_volume(self, exists, mocked_volume):
+        device_path = '/dev/vdb'
+
+        self.manager.app = mock.Mock()
+
+        self._prepare_method(device_path=device_path)
+
+        mocked_volume().unmount_device.assert_called_with(device_path)
+        mocked_volume().format.assert_any_call()
+        mocked_volume().migrate_data.assert_called_with(self.mount_point)
+        mocked_volume().mount.assert_called_with(self.mount_point)
+
+    def test_secure(self):
+        self.manager.app = mock.Mock()
+
+        mock_secure = mock.Mock()
+        self.manager.app.secure = mock_secure
+
+        self._prepare_method()
+
+        mock_secure.assert_called_with()
+
+    @mock.patch.object(backup, 'restore')
+    @mock.patch.object(service.MongoDBAdmin, 'is_root_enabled')
+    def test_prepare_from_backup(self, mocked_root_check, mocked_restore):
+        self.manager.app = mock.Mock()
+
+        backup_info = {'id': 'backup_id_123abc',
                        'location': 'fake-location',
                        'type': 'MongoDBDump',
-                       'checksum': 'fake-checksum'} if backup_id else None
+                       'checksum': 'fake-checksum'}
 
-        mock_status = MagicMock()
-        mock_app = MagicMock()
-        self.manager.status = mock_status
-        self.manager.app = mock_app
+        self._prepare_method(backup_info=backup_info)
 
-        mock_status.begin_install = MagicMock(return_value=None)
-        volume.VolumeDevice.format = MagicMock(return_value=None)
-        volume.VolumeDevice.migrate_data = MagicMock(return_value=None)
-        volume.VolumeDevice.mount = MagicMock(return_value=None)
-        volume.VolumeDevice.mount_points = MagicMock(return_value=[])
+        mocked_restore.assert_called_with(self.context, backup_info,
+                                          '/var/lib/mongodb')
+        mocked_root_check.assert_any_call()
 
-        mock_app.stop_db = MagicMock(return_value=None)
-        mock_app.start_db = MagicMock(return_value=None)
-        mock_app.clear_storage = MagicMock(return_value=None)
-        os.path.exists = MagicMock(return_value=is_db_installed)
+    def test_prepare_with_databases(self):
+        self.manager.app = mock.Mock()
 
-        with patch.object(utils, 'execute_with_timeout'):
-            # invocation
-            self.manager.prepare(context=self.context, databases=None,
-                                 packages=['package'],
-                                 memory_mb='2048', users=None,
-                                 device_path=device_path,
-                                 mount_point='/var/lib/mongodb',
-                                 backup_info=backup_info,
-                                 overrides=None,
-                                 cluster_config=None)
+        database = mock.Mock()
+        mock_create_databases = mock.Mock()
+        self.manager.create_database = mock_create_databases
 
-        # verification/assertion
-        mock_status.begin_install.assert_any_call()
-        mock_app.install_if_needed.assert_any_call(['package'])
-        mock_app.stop_db.assert_any_call()
-        VolumeDevice.format.assert_any_call()
-        VolumeDevice.migrate_data.assert_any_call('/var/lib/mongodb')
+        self._prepare_method(databases=[database])
+
+        mock_create_databases.assert_called_with(self.context, [database])
+
+    def test_prepare_with_users(self):
+        self.manager.app = mock.Mock()
+
+        user = mock.Mock()
+        mock_create_users = mock.Mock()
+        self.manager.create_user = mock_create_users
+
+        self._prepare_method(users=[user])
+
+        mock_create_users.assert_called_with(self.context, [user])
+
+    @mock.patch.object(service.MongoDBAdmin, 'enable_root')
+    def test_provide_root_password(self, mocked_enable_root):
+        self.manager.app = mock.Mock()
+
+        self._prepare_method(root_password='test_password')
+
+        mocked_enable_root.assert_called_with('test_password')
+
+    # This is used in the test_*_user tests below
+    _serialized_user = {'_name': 'testdb.testuser', '_password': None,
+                        '_roles': [{'db': 'testdb', 'role': 'testrole'}],
+                        '_username': 'testuser', '_databases': [],
+                        '_host': None,
+                        '_database': {'_name': 'testdb',
+                                      '_character_set': None,
+                                      '_collate': None}}
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_create_user(self, mocked_admin_user, mocked_client):
+        user = self._serialized_user.copy()
+        user['_password'] = 'testpassword'
+        users = [user]
+
+        client = mocked_client().__enter__()['testdb']
+
+        self.manager.create_user(self.context, users)
+
+        client.add_user.assert_called_with('testuser', password='testpassword',
+                                           roles=[{'db': 'testdb',
+                                                   'role': 'testrole'}])
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_delete_user(self, mocked_admin_user, mocked_client):
+        client = mocked_client().__enter__()['testdb']
+
+        self.manager.delete_user(self.context, self._serialized_user)
+
+        client.remove_user.assert_called_with('testuser')
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_get_user(self, mocked_admin_user, mocked_client):
+        mocked_find = mock.MagicMock(return_value={
+            '_id': 'testdb.testuser',
+            'user': 'testuser', 'db': 'testdb',
+            'roles': [{'db': 'testdb', 'role': 'testrole'}]
+        })
+        client = mocked_client().__enter__().admin
+        client.system.users.find_one = mocked_find
+
+        result = self.manager.get_user(self.context, 'testdb.testuser', None)
+
+        mocked_find.assert_called_with({'user': 'testuser', 'db': 'testdb'})
+        self.assertEqual(self._serialized_user, result)
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_list_users(self, mocked_admin_user, mocked_client):
+        # roles are NOT returned by list_users
+        user1 = self._serialized_user.copy()
+        user2 = self._serialized_user.copy()
+        user2['_name'] = 'testdb.otheruser'
+        user2['_username'] = 'otheruser'
+        user2['_roles'] = [{'db': 'testdb2', 'role': 'readWrite'}]
+        user2['_databases'] = [{'_name': 'testdb2',
+                                         '_character_set': None,
+                                         '_collate': None}]
+
+        mocked_find = mock.MagicMock(return_value=[
+            {
+                '_id': 'admin.os_admin',
+                'user': 'os_admin', 'db': 'admin',
+                'roles': [{'db': 'admin', 'role': 'root'}]
+            },
+            {
+                '_id': 'testdb.testuser',
+                'user': 'testuser', 'db': 'testdb',
+                'roles': [{'db': 'testdb', 'role': 'testrole'}]
+            },
+            {
+                '_id': 'testdb.otheruser',
+                'user': 'otheruser', 'db': 'testdb',
+                'roles': [{'db': 'testdb2', 'role': 'readWrite'}]
+            }
+        ])
+
+        client = mocked_client().__enter__().admin
+        client.system.users.find = mocked_find
+
+        users, next_marker = self.manager.list_users(self.context)
+
+        self.assertEqual(None, next_marker)
+        self.assertEqual(sorted([user1, user2]), users)
+
+    @mock.patch.object(service.MongoDBAdmin, 'create_user')
+    @mock.patch.object(utils, 'generate_random_password',
+                       return_value='password')
+    def test_enable_root(self, mock_gen_rand_pwd, mock_create_user):
+        root_user = {'_name': 'admin.root',
+                     '_username': 'root',
+                     '_database': {'_name': 'admin',
+                                   '_character_set': None,
+                                   '_collate': None},
+                     '_password': 'password',
+                     '_roles': [{'db': 'admin', 'role': 'root'}],
+                     '_databases': [],
+                     '_host': None}
+
+        result = self.manager.enable_root(self.context)
+
+        self.assertTrue(mock_create_user.called)
+        self.assertEqual(root_user, result)
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    @mock.patch.object(service.MongoDBAdmin, '_get_user_record',
+                       return_value=models.MongoDBUser('testdb.testuser'))
+    def test_grant_access(self, mocked_get_user,
+                          mocked_admin_user, mocked_client):
+        client = mocked_client().__enter__()['testdb']
+
+        self.manager.grant_access(self.context, 'testdb.testuser',
+                                  None, ['db1', 'db2', 'db3'])
+
+        client.add_user.assert_called_with('testuser', roles=[
+            {'db': 'db1', 'role': 'readWrite'},
+            {'db': 'db2', 'role': 'readWrite'},
+            {'db': 'db3', 'role': 'readWrite'}
+        ])
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    @mock.patch.object(service.MongoDBAdmin, '_get_user_record',
+                       return_value=models.MongoDBUser('testdb.testuser'))
+    def test_revoke_access(self, mocked_get_user,
+                           mocked_admin_user, mocked_client):
+        client = mocked_client().__enter__()['testdb']
+
+        mocked_get_user.return_value.roles = [
+            {'db': 'db1', 'role': 'readWrite'},
+            {'db': 'db2', 'role': 'readWrite'},
+            {'db': 'db3', 'role': 'readWrite'}
+        ]
+
+        self.manager.revoke_access(self.context, 'testdb.testuser',
+                                   None, 'db2')
+
+        client.add_user.assert_called_with('testuser', roles=[
+            {'db': 'db1', 'role': 'readWrite'},
+            {'db': 'db3', 'role': 'readWrite'}
+        ])
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    @mock.patch.object(service.MongoDBAdmin, '_get_user_record',
+                       return_value=models.MongoDBUser('testdb.testuser'))
+    def test_list_access(self, mocked_get_user,
+                         mocked_admin_user, mocked_client):
+        mocked_get_user.return_value.roles = [
+            {'db': 'db1', 'role': 'readWrite'},
+            {'db': 'db2', 'role': 'readWrite'},
+            {'db': 'db3', 'role': 'readWrite'}
+        ]
+
+        accessible_databases = self.manager.list_access(
+            self.context, 'testdb.testuser', None
+        )
+
+        self.assertEqual(['db1', 'db2', 'db3'],
+                         [db['_name'] for db in accessible_databases])
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_create_databases(self, mocked_admin_user, mocked_client):
+        schema = models.MongoDBSchema('testdb').serialize()
+        db_client = mocked_client().__enter__()['testdb']
+
+        self.manager.create_database(self.context, [schema])
+
+        db_client['dummy'].insert.assert_called_with({'dummy': True})
+        db_client.drop_collection.assert_called_with('dummy')
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_list_databases(self,  # mocked_ignored_dbs,
+                            mocked_admin_user, mocked_client):
+        # This list contains the special 'admin', 'local' and 'config' dbs;
+        # the special dbs should be skipped in the output.
+        # Pagination is tested by starting at 'db1', so 'db0' should not
+        # be in the output. The limit is set to 2, meaning the result
+        # should be 'db1' and 'db2'. The next_marker should be 'db3'.
+        mocked_list = mock.MagicMock(
+            return_value=['admin', 'local', 'config',
+                          'db0', 'db1', 'db2', 'db3'])
+        mocked_client().__enter__().database_names = mocked_list
+
+        marker = models.MongoDBSchema('db1').serialize()
+        dbs, next_marker = self.manager.list_databases(
+            self.context, limit=2, marker=marker, include_marker=True)
+
+        mocked_list.assert_any_call()
+        self.assertEqual([models.MongoDBSchema('db1').serialize(),
+                          models.MongoDBSchema('db2').serialize()],
+                         dbs)
+        self.assertEqual(models.MongoDBSchema('db3').serialize(),
+                         next_marker)
+
+    @mock.patch.object(service, 'MongoDBClient')
+    @mock.patch.object(service.MongoDBAdmin, '_admin_user')
+    def test_delete_database(self, mocked_admin_user, mocked_client):
+        schema = models.MongoDBSchema('testdb').serialize()
+
+        self.manager.delete_database(self.context, schema)
+
+        mocked_client().__enter__().drop_database.assert_called_with('testdb')

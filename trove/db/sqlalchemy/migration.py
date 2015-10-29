@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from trove.openstack.common import log as logging
 import os
 
 from migrate.versioning import api as versioning_api
@@ -23,6 +22,7 @@ try:
     from migrate.versioning import exceptions as versioning_exceptions
 except ImportError:
     from migrate import exceptions as versioning_exceptions
+from oslo_log import log as logging
 
 from trove.common import exception
 

@@ -23,20 +23,23 @@ handles RPC calls relating to Platform specific operations.
 
 """
 
+from itertools import chain
 import os
 
-from trove.openstack.common import log
-from itertools import chain
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common.i18n import _
 
 
-LOG = log.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 defaults = {
     'mysql':
     'trove.guestagent.datastore.mysql.manager.Manager',
     'percona':
-    'trove.guestagent.datastore.mysql.manager.Manager',
+    'trove.guestagent.datastore.experimental.percona.manager.Manager',
+    'pxc':
+    'trove.guestagent.datastore.experimental.pxc.manager.Manager',
     'redis':
     'trove.guestagent.datastore.experimental.redis.manager.Manager',
     'cassandra':
@@ -53,6 +56,8 @@ defaults = {
     'trove.guestagent.datastore.experimental.vertica.manager.Manager',
     'db2':
     'trove.guestagent.datastore.experimental.db2.manager.Manager',
+    'mariadb':
+    'trove.guestagent.datastore.experimental.mariadb.manager.Manager'
 }
 CONF = cfg.CONF
 

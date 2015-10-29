@@ -1,32 +1,35 @@
-#Copyright [2015] Hewlett-Packard Development Company, L.P.
-#Licensed under the Apache License, Version 2.0 (the "License");
-#you may not use this file except in compliance with the License.
-#You may obtain a copy of the License at
+# Copyright [2015] Hewlett-Packard Development Company, L.P.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#Unless required by applicable law or agreed to in writing, software
-#distributed under the License is distributed on an "AS IS" BASIS,
-#WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#See the License for the specific language governing permissions and
-#limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import ConfigParser
 import os
 import subprocess
 import tempfile
 
+from oslo_log import log as logging
 from oslo_utils import netutils
+
 from trove.common import cfg
 from trove.common import exception
-from trove.common import utils as utils
+from trove.common.i18n import _
+from trove.common.i18n import _LI
 from trove.common import instance as rd_instance
+from trove.common import utils as utils
+from trove.guestagent.datastore.experimental.vertica import system
 from trove.guestagent.datastore import service
+from trove.guestagent.db import models
 from trove.guestagent import pkg
 from trove.guestagent import volume
-from trove.guestagent.datastore.experimental.vertica import system
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -43,7 +46,7 @@ class VerticaAppStatus(service.BaseDbStatus):
             out, err = system.shell_execute(system.STATUS_ACTIVE_DB,
                                             "dbadmin")
             if out.strip() == DB_NAME:
-                #UP status is confirmed
+                # UP status is confirmed
                 LOG.info(_("Service Status is RUNNING."))
                 return rd_instance.ServiceStatuses.RUNNING
             else:
@@ -162,6 +165,7 @@ class VerticaApp(object):
             system.shell_execute(create_db_command, "dbadmin")
         except Exception:
             LOG.exception(_("Vertica database create failed."))
+            raise RuntimeError(_("Vertica database create failed."))
         LOG.info(_("Vertica database create completed."))
 
     def install_vertica(self, members=netutils.get_my_ipv4()):
@@ -174,6 +178,7 @@ class VerticaApp(object):
             system.shell_execute(install_vertica_cmd)
         except exception.ProcessExecutionError:
             LOG.exception(_("install_vertica failed."))
+            raise RuntimeError(_("install_vertica failed."))
         self._generate_database_password()
         LOG.info(_("install_vertica completed."))
 
@@ -246,6 +251,69 @@ class VerticaApp(object):
         except exception.ProcessExecutionError:
             LOG.exception(_("Failed to prepare for install_vertica."))
             raise
+
+    def _create_user(self, username, password, role):
+        """Creates a user, granting and enabling the given role for it."""
+        LOG.info(_("Creating user in Vertica database."))
+        out, err = system.exec_vsql_command(self._get_database_password(),
+                                            system.CREATE_USER %
+                                            (username, password))
+        if not err:
+            self._grant_role(username, role)
+        if err:
+            LOG.error(err)
+            raise RuntimeError(_("Failed to create user %s.") % username)
+
+    def _grant_role(self, username, role):
+        """Grants a role to the user on the schema."""
+        out, err = system.exec_vsql_command(self._get_database_password(),
+                                            system.GRANT_TO_USER
+                                            % (role, username))
+        if not err:
+            out, err = system.exec_vsql_command(self._get_database_password(),
+                                                system.ENABLE_FOR_USER
+                                                % (username, role))
+            if err:
+                LOG.error(err)
+
+    def enable_root(self, root_password=None):
+        """Resets the root password."""
+        LOG.info(_LI("Enabling root."))
+        user = models.RootUser()
+        user.name = "root"
+        user.host = "%"
+        user.password = root_password or utils.generate_random_password()
+        if not self.is_root_enabled():
+            self._create_user(user.name, user.password, 'pseudosuperuser')
+        else:
+            LOG.debug("Updating %s password." % user.name)
+            try:
+                out, err = system.exec_vsql_command(
+                    self._get_database_password(),
+                    system.ALTER_USER_PASSWORD % (user.name, user.password))
+                if err:
+                    LOG.error(err)
+                    raise RuntimeError(_("Failed to update %s password.")
+                                       % user.name)
+            except exception.ProcessExecutionError:
+                LOG.error(_("Failed to update %s password.") % user.name)
+                raise RuntimeError(_("Failed to update %s password.")
+                                   % user.name)
+        return user.serialize()
+
+    def is_root_enabled(self):
+        """Return True if root access is enabled else False."""
+        LOG.debug("Checking is root enabled.")
+        try:
+            out, err = system.shell_execute(system.USER_EXISTS %
+                                            (self._get_database_password(),
+                                             'root'), 'dbadmin')
+            if err:
+                LOG.error(err)
+                raise RuntimeError(_("Failed to query for root user."))
+        except exception.ProcessExecutionError:
+            raise RuntimeError(_("Failed to query for root user."))
+        return out.rstrip() == "1"
 
     def get_public_keys(self, user):
         """Generates key (if not found), and sends public key for user."""

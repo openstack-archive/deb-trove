@@ -18,12 +18,11 @@
 
 import sys
 
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
 
-from trove.openstack.common import log
 
-
-LOG = log.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 __debug_state = None

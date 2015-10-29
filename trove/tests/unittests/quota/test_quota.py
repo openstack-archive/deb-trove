@@ -12,19 +12,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import testtools
 from mock import Mock, MagicMock, patch
-from trove.quota.quota import DbQuotaDriver
-from trove.quota.models import Resource
+from testtools import skipIf
+
+from trove.common import cfg
+from trove.common import exception
+from trove.db.models import DatabaseModelBase
+from trove.extensions.mgmt.quota.service import QuotaController
 from trove.quota.models import Quota
 from trove.quota.models import QuotaUsage
 from trove.quota.models import Reservation
-from trove.db.models import DatabaseModelBase
-from trove.extensions.mgmt.quota.service import QuotaController
-from trove.common import exception
-from trove.common import cfg
-from trove.quota.quota import run_with_quotas
+from trove.quota.models import Resource
+from trove.quota.quota import DbQuotaDriver
 from trove.quota.quota import QUOTAS
+from trove.quota.quota import run_with_quotas
+from trove.tests.unittests import trove_testtools
 """
 Unit tests for the classes and functions in DbQuotaDriver.py.
 """
@@ -39,7 +41,7 @@ FAKE_TENANT1 = "123456"
 FAKE_TENANT2 = "654321"
 
 
-class Run_with_quotasTest(testtools.TestCase):
+class Run_with_quotasTest(trove_testtools.TestCase):
 
     def setUp(self):
         super(Run_with_quotasTest, self).setUp()
@@ -78,7 +80,7 @@ class Run_with_quotasTest(testtools.TestCase):
         self.assertTrue(f.called)
 
 
-class QuotaControllerTest(testtools.TestCase):
+class QuotaControllerTest(trove_testtools.TestCase):
 
     def setUp(self):
         super(QuotaControllerTest, self).setUp()
@@ -105,7 +107,7 @@ class QuotaControllerTest(testtools.TestCase):
             body = {'quotas': {'instances': None}}
             result = self.controller.update(self.req, body, FAKE_TENANT1,
                                             FAKE_TENANT2)
-            self.assertEqual(quota.save.call_count, 0)
+            self.assertEqual(0, quota.save.call_count)
             self.assertEqual(200, result.status)
 
     def test_update_resource_instance(self):
@@ -115,13 +117,12 @@ class QuotaControllerTest(testtools.TestCase):
             body = {'quotas': {'instances': 2}}
             result = self.controller.update(self.req, body, FAKE_TENANT1,
                                             FAKE_TENANT2)
-            self.assertEqual(instance_quota.save.call_count, 1)
+            self.assertEqual(1, instance_quota.save.call_count)
             self.assertTrue('instances' in result._data['quotas'])
             self.assertEqual(200, result.status)
             self.assertEqual(2, result._data['quotas']['instances'])
 
-    @testtools.skipIf(not CONF.trove_volume_support,
-                      'Volume support is not enabled')
+    @skipIf(not CONF.trove_volume_support, 'Volume support is not enabled')
     def test_update_resource_volume(self):
         instance_quota = MagicMock(spec=Quota)
         volume_quota = MagicMock(spec=Quota)
@@ -135,14 +136,14 @@ class QuotaControllerTest(testtools.TestCase):
             body = {'quotas': {'instances': None, 'volumes': 10}}
             result = self.controller.update(self.req, body, FAKE_TENANT1,
                                             FAKE_TENANT2)
-            self.assertEqual(instance_quota.save.call_count, 0)
+            self.assertEqual(0, instance_quota.save.call_count)
             self.assertFalse('instances' in result._data['quotas'])
-            self.assertEqual(volume_quota.save.call_count, 1)
+            self.assertEqual(1, volume_quota.save.call_count)
             self.assertEqual(200, result.status)
             self.assertEqual(10, result._data['quotas']['volumes'])
 
 
-class DbQuotaDriverTest(testtools.TestCase):
+class DbQuotaDriverTest(trove_testtools.TestCase):
 
     def setUp(self):
 

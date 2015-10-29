@@ -15,7 +15,7 @@
 
 """Various conveniences used for migration scripts."""
 
-from trove.openstack.common import log as logging
+from oslo_log import log as logging
 import sqlalchemy.types
 
 

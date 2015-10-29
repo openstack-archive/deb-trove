@@ -17,8 +17,11 @@ import os
 import tempfile
 import uuid
 
+from oslo_log import log as logging
+
 from trove.common import utils
-from trove.openstack.common import log as logging
+from trove.guestagent.common import operating_system
+from trove.guestagent.common.operating_system import FileMode
 
 LOG = logging.getLogger(__name__)
 
@@ -48,16 +51,12 @@ def result(filename):
     values is determined by the query.
     """
 
-    utils.execute_with_timeout(
-        'sudo', 'chmod', '777', filename,
-    )
+    operating_system.chmod(filename, FileMode.SET_FULL, as_root=True)
     with open(filename, 'r+') as file_handle:
         for line in file_handle:
             if line != "":
                 yield line.split(',')
-    execute(
-        "rm", "{filename}".format(filename=filename),
-    )
+    operating_system.remove(filename, as_root=True)
     raise StopIteration()
 
 

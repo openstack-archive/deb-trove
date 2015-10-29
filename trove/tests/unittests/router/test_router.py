@@ -12,11 +12,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import testtools
+from routes import Mapper
 
 from trove.common.wsgi import Router, Fault
-
-from routes import Mapper
+from trove.tests.unittests import trove_testtools
 
 
 class FakeRequst(object):
@@ -35,7 +34,7 @@ class FakeRequst(object):
     }
 
 
-class TestRouter(testtools.TestCase):
+class TestRouter(trove_testtools.TestCase):
     """Test case for trove `Router` extensions."""
 
     def setUp(self):

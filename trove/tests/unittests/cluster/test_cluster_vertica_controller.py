@@ -1,22 +1,21 @@
-#Copyright [2015] Hewlett-Packard Development Company, L.P.
-#Licensed under the Apache License, Version 2.0 (the "License");
-#you may not use this file except in compliance with the License.
-#You may obtain a copy of the License at
+# Copyright [2015] Hewlett-Packard Development Company, L.P.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#Unless required by applicable law or agreed to in writing, software
-#distributed under the License is distributed on an "AS IS" BASIS,
-#WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#See the License for the specific language governing permissions and
-#limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import jsonschema
 
 from mock import MagicMock
 from mock import Mock
 from mock import patch
-from testtools import TestCase
 from testtools.matchers import Is, Equals
 from trove.cluster import models
 from trove.cluster.models import Cluster
@@ -27,12 +26,26 @@ from trove.common import exception
 from trove.common.strategies.cluster import strategy
 from trove.common import utils
 from trove.datastore import models as datastore_models
+from trove.tests.unittests import trove_testtools
 
 
-class TestClusterController(TestCase):
+class TestClusterController(trove_testtools.TestCase):
     def setUp(self):
         super(TestClusterController, self).setUp()
         self.controller = ClusterController()
+        instances = [
+            {
+                "flavorRef": "7",
+                "volume": {
+                    "size": 1
+                },
+                "availability_zone": "az",
+                "nics": [
+                    {"net-id": "e89aa5fd-6b0a-436d-a75c-1545d34d5331"}
+                ]
+            }
+        ] * 3
+
         self.cluster = {
             "cluster": {
                 "name": "products",
@@ -40,26 +53,7 @@ class TestClusterController(TestCase):
                     "type": "vertica",
                     "version": "7.1"
                 },
-                "instances": [
-                    {
-                        "flavorRef": "7",
-                        "volume": {
-                            "size": 1
-                        },
-                    },
-                    {
-                        "flavorRef": "7",
-                        "volume": {
-                            "size": 1
-                        },
-                    },
-                    {
-                        "flavorRef": "7",
-                        "volume": {
-                            "size": 1
-                        },
-                    },
-                ]
+                "instances": instances
             }
         }
 
@@ -142,9 +136,16 @@ class TestClusterController(TestCase):
         datastore = Mock()
         mock_get_datastore_version.return_value = (datastore,
                                                    datastore_version)
-        instances = [{'volume_size': 1, 'flavor_id': '1234'},
-                     {'volume_size': 1, 'flavor_id': '1234'},
-                     {'volume_size': 1, 'flavor_id': '1234'}]
+        instances = [
+            {
+                'volume_size': 1,
+                'flavor_id': '1234',
+                'availability_zone': 'az',
+                'nics': [
+                    {'net-id': 'e89aa5fd-6b0a-436d-a75c-1545d34d5331'}
+                ]
+            }
+        ] * 3
         mock_id_from_href.return_value = '1234'
 
         mock_cluster = Mock()
@@ -156,7 +157,7 @@ class TestClusterController(TestCase):
         self.controller.create(req, body, tenant_id)
         mock_cluster_create.assert_called_with(context, 'products',
                                                datastore, datastore_version,
-                                               instances)
+                                               instances, {})
 
     @patch.object(Cluster, 'load')
     def test_show_cluster(self,
@@ -204,10 +205,10 @@ class TestClusterController(TestCase):
         cluster = Mock()
         mock_cluster_load.return_value = cluster
         self.controller.delete(req, tenant_id, cluster_id)
-        cluster.delete.assert_called
+        cluster.delete.assert_called_with()
 
 
-class TestClusterControllerWithStrategy(TestCase):
+class TestClusterControllerWithStrategy(trove_testtools.TestCase):
     def setUp(self):
         super(TestClusterControllerWithStrategy, self).setUp()
         self.controller = ClusterController()

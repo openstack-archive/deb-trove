@@ -16,13 +16,16 @@
 
 import csv
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import exception
-from trove.common import utils
 from trove.common.i18n import _
 from trove.guestagent.backup.backupagent import BackupAgent
+from trove.guestagent.common import operating_system
+from trove.guestagent.common.operating_system import FileMode
+from trove.guestagent.datastore.mysql.service import MySqlApp
 from trove.guestagent.strategies.replication import mysql_base
-from trove.openstack.common import log as logging
 
 AGENT = BackupAgent()
 CONF = cfg.CONF
@@ -46,7 +49,8 @@ class MysqlBinlogReplication(mysql_base.MysqlReplicationBase):
             "MASTER_USER='%(user)s', "
             "MASTER_PASSWORD='%(password)s', "
             "MASTER_LOG_FILE='%(log_file)s', "
-            "MASTER_LOG_POS=%(log_pos)s" %
+            "MASTER_LOG_POS=%(log_pos)s, "
+            "MASTER_CONNECT_RETRY=15" %
             {
                 'host': snapshot['master']['host'],
                 'port': snapshot['master']['port'],
@@ -59,9 +63,9 @@ class MysqlBinlogReplication(mysql_base.MysqlReplicationBase):
         service.start_slave()
 
     def _read_log_position(self):
-        INFO_FILE = '/var/lib/mysql/data/xtrabackup_binlog_info'
+        INFO_FILE = ('%s/xtrabackup_binlog_info' % MySqlApp.get_data_dir())
         LOG.info(_("Setting read permissions on %s") % INFO_FILE)
-        utils.execute_with_timeout("sudo", "chmod", "+r", INFO_FILE)
+        operating_system.chmod(INFO_FILE, FileMode.ADD_READ_ALL, as_root=True)
         LOG.info(_("Reading log position from %s") % INFO_FILE)
         try:
             with open(INFO_FILE, 'rb') as f:

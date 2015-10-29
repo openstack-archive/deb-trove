@@ -14,28 +14,29 @@
 #    under the License.
 """I totally stole most of this from melange, thx guys!!!"""
 
+import collections
 import datetime
 import inspect
-import jinja2
-import time
-import six.moves.urllib.parse as urlparse
-import uuid
 import os
 import shutil
+import time
+import types
+import uuid
 
 from eventlet.timeout import Timeout
-from passlib import utils as passlib_utils
-
-from oslo.utils import importutils
-from oslo.utils import timeutils
-from oslo.utils import strutils
+import jinja2
 from oslo_concurrency import processutils
+from oslo_log import log as logging
+from oslo_service import loopingcall
+from oslo_utils import importutils
+from oslo_utils import strutils
+from oslo_utils import timeutils
+from passlib import utils as passlib_utils
+import six.moves.urllib.parse as urlparse
 
 from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
-from trove.openstack.common import log as logging
-from trove.openstack.common import loopingcall
 
 
 CONF = cfg.CONF
@@ -47,7 +48,6 @@ bool_from_string = strutils.bool_from_string
 execute = processutils.execute
 isotime = timeutils.isotime
 
-CONF = cfg.CONF
 ENV = jinja2.Environment(loader=jinja2.ChoiceLoader([
                          jinja2.FileSystemLoader(CONF.template_path),
                          jinja2.PackageLoader("trove", "templates")
@@ -175,14 +175,8 @@ class MethodInspector(object):
         return "%s %s" % (self._func.__name__, args_str)
 
 
-def poll_until(retriever, condition=lambda value: value,
-               sleep_time=1, time_out=None):
-    """Retrieves object until it passes condition, then returns it.
-
-    If time_out_limit is passed in, PollTimeOut will be raised once that
-    amount of time is eclipsed.
-
-    """
+def build_polling_task(retriever, condition=lambda value: value,
+                       sleep_time=1, time_out=None):
     start_time = time.time()
 
     def poll_and_check():
@@ -192,11 +186,21 @@ def poll_until(retriever, condition=lambda value: value,
         if time_out is not None and time.time() - start_time > time_out:
             raise exception.PollTimeOut
 
-    lc = loopingcall.FixedIntervalLoopingCall(
-        f=poll_and_check).start(
-            sleep_time, True)
+    return loopingcall.FixedIntervalLoopingCall(
+        f=poll_and_check).start(sleep_time, True)
 
-    return lc.wait()
+
+def poll_until(retriever, condition=lambda value: value,
+               sleep_time=1, time_out=None):
+    """Retrieves object until it passes condition, then returns it.
+
+    If time_out_limit is passed in, PollTimeOut will be raised once that
+    amount of time is eclipsed.
+
+    """
+
+    return build_polling_task(retriever, condition=condition,
+                              sleep_time=sleep_time, time_out=time_out).wait()
 
 
 # Copied from nova.api.openstack.common in the old code.
@@ -290,3 +294,23 @@ def gen_ports(portstr):
     if int(from_port) > int(to_port):
         raise ValueError
     return from_port, to_port
+
+
+def unpack_singleton(container):
+    """Unpack singleton collections.
+
+    Check whether a given collection is a singleton (has exactly one element)
+    and unpack it if that is the case.
+    Return the original collection otherwise.
+    """
+    if is_collection(container) and len(container) == 1:
+        return unpack_singleton(container[0])
+
+    return container
+
+
+def is_collection(item):
+    """Return True is a given item is an iterable collection, but not a string.
+    """
+    return (isinstance(item, collections.Iterable) and
+            not isinstance(item, types.StringTypes))

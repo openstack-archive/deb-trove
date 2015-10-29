@@ -14,24 +14,25 @@
 #    under the License.
 
 import json
-import pexpect
 import os
 import stat
 import subprocess
 import tempfile
 
+from oslo_log import log as logging
 from oslo_utils import netutils
+import pexpect
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as rd_instance
 from trove.common import utils as utils
-from trove.guestagent import pkg
 from trove.guestagent.common import operating_system
-from trove.guestagent.datastore import service
 from trove.guestagent.datastore.experimental.couchbase import system
+from trove.guestagent.datastore import service
 from trove.guestagent.db import models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
+from trove.guestagent import pkg
 
 
 LOG = logging.getLogger(__name__)
@@ -68,17 +69,16 @@ class CouchbaseApp(object):
         mount_point = CONF.couchbase.mount_point
         try:
             LOG.info(_('Couchbase Server change data dir path.'))
-            operating_system.update_owner('couchbase',
-                                          'couchbase',
-                                          mount_point)
+            operating_system.chown(mount_point, 'couchbase', 'couchbase',
+                                   as_root=True)
             pwd = CouchbaseRootAccess.get_password()
             utils.execute_with_timeout(
                 (system.cmd_node_init
                  % {'data_path': mount_point,
                     'IP': self.ip_address,
                     'PWD': pwd}), shell=True)
-            utils.execute_with_timeout(
-                system.cmd_rm_old_data_dir, shell=True)
+            operating_system.remove(system.INSTANCE_DATA_DIR, force=True,
+                                    as_root=True)
             LOG.debug('Couchbase Server initialize cluster.')
             utils.execute_with_timeout(
                 (system.cmd_cluster_init
@@ -104,11 +104,8 @@ class CouchbaseApp(object):
         """
         LOG.debug('Installing Couchbase Server. Creating %s' %
                   system.COUCHBASE_CONF_DIR)
-        utils.execute_with_timeout('mkdir',
-                                   '-p',
-                                   system.COUCHBASE_CONF_DIR,
-                                   run_as_root=True,
-                                   root_helper='sudo')
+        operating_system.create_directory(system.COUCHBASE_CONF_DIR,
+                                          as_root=True)
         pkg_opts = {}
         packager.pkg_install(packages, pkg_opts, system.TIME_OUT)
         self.start_db()
@@ -316,9 +313,8 @@ class CouchbaseRootAccess(object):
         self.write_password_to_file(root_password)
 
     def write_password_to_file(self, root_password):
-        utils.execute_with_timeout('mkdir', '-p', system.COUCHBASE_CONF_DIR,
-                                   run_as_root=True, root_helper='sudo')
-
+        operating_system.create_directory(system.COUCHBASE_CONF_DIR,
+                                          as_root=True)
         try:
             tempfd, tempname = tempfile.mkstemp()
             os.fchmod(tempfd, stat.S_IRUSR | stat.S_IWUSR)
@@ -333,8 +329,7 @@ class CouchbaseRootAccess(object):
             LOG.exception(message)
             raise RuntimeError(message)
 
-        utils.execute_with_timeout('mv', tempname, system.pwd_file,
-                                   run_as_root=True, root_helper='sudo')
+        operating_system.move(tempname, system.pwd_file, as_root=True)
 
     @staticmethod
     def get_password():

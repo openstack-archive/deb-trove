@@ -12,29 +12,30 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import uuid
-from mock import Mock
-from testtools import TestCase
+
+from mock import Mock, patch
+
+from trove.backup import models as backup_models
 from trove.common import cfg
 from trove.common import exception
-from trove.backup import models as backup_models
-from trove.datastore import models as datastore_models
 from trove.common.instance import ServiceStatuses
-from trove.instance.models import filter_ips
-from trove.instance.models import InstanceServiceStatus
-from trove.instance.models import DBInstance
-from trove.instance.models import Instance
-from trove.instance.models import SimpleInstance
+from trove.datastore import models as datastore_models
 from trove.instance import models
+from trove.instance.models import DBInstance
+from trove.instance.models import filter_ips
+from trove.instance.models import Instance
+from trove.instance.models import InstanceServiceStatus
+from trove.instance.models import SimpleInstance
 from trove.instance.tasks import InstanceTasks
 from trove.taskmanager import api as task_api
 from trove.tests.fakes import nova
+from trove.tests.unittests import trove_testtools
 from trove.tests.unittests.util import util
 
 CONF = cfg.CONF
-task_api.API.get_client = Mock()
 
 
-class SimpleInstanceTest(TestCase):
+class SimpleInstanceTest(trove_testtools.TestCase):
 
     def setUp(self):
         super(SimpleInstanceTest, self).setUp()
@@ -102,8 +103,9 @@ class SimpleInstanceTest(TestCase):
         self.assertTrue('15.123.123.123' in ip)
 
 
-class CreateInstanceTest(TestCase):
+class CreateInstanceTest(trove_testtools.TestCase):
 
+    @patch.object(task_api.API, 'get_client', Mock(return_value=Mock()))
     def setUp(self):
         util.init_db()
         self.context = Mock()
@@ -114,13 +116,13 @@ class CreateInstanceTest(TestCase):
         self.users = []
         self.datastore = datastore_models.DBDatastore.create(
             id=str(uuid.uuid4()),
-            name='mysql',
+            name='mysql' + str(uuid.uuid4()),
         )
         self.datastore_version = (
             datastore_models.DBDatastoreVersion.create(
                 id=str(uuid.uuid4()),
                 datastore_id=self.datastore.id,
-                name="5.5",
+                name="5.5" + str(uuid.uuid4()),
                 manager="mysql",
                 image_id="image_id",
                 packages="",
@@ -136,8 +138,7 @@ class CreateInstanceTest(TestCase):
             name=self.name, flavor_id=self.flavor_id,
             tenant_id=self.tenant_id,
             volume_size=self.volume_size,
-            datastore_version_id=
-            self.datastore_version.id,
+            datastore_version_id=self.datastore_version.id,
             task_status=InstanceTasks.BUILDING,
             configuration_id=self.configuration
         )
@@ -173,6 +174,7 @@ class CreateInstanceTest(TestCase):
             return_value=True)
         super(CreateInstanceTest, self).setUp()
 
+    @patch.object(task_api.API, 'get_client', Mock(return_value=Mock()))
     def tearDown(self):
         self.db_info.delete()
         self.backup.delete()
@@ -181,7 +183,7 @@ class CreateInstanceTest(TestCase):
         models.create_nova_client = self.orig_client
         task_api.API(self.context).create_instance = self.orig_api
         models.run_with_quotas = self.run_with_quotas
-        backup_models.DBBackup.check_swift_object_exist = self.context
+        backup_models.DBBackup.check_swift_object_exist = self.check
         self.backup.delete()
         self.db_info.delete()
         super(CreateInstanceTest, self).tearDown()
@@ -199,7 +201,7 @@ class CreateInstanceTest(TestCase):
                       "given flavor or volume.", str(exc))
 
     def test_can_restore_from_backup_with_almost_equal_size(self):
-        #target size equals to "1Gb"
+        # target size equals to "1Gb"
         self.backup.size = 0.99
         self.backup.save()
         instance = models.Instance.create(
@@ -211,19 +213,19 @@ class CreateInstanceTest(TestCase):
         self.assertIsNotNone(instance)
 
 
-class TestReplication(TestCase):
+class TestReplication(trove_testtools.TestCase):
 
     def setUp(self):
         util.init_db()
 
         self.datastore = datastore_models.DBDatastore.create(
             id=str(uuid.uuid4()),
-            name='name',
+            name='name' + str(uuid.uuid4()),
             default_version_id=str(uuid.uuid4()))
 
         self.datastore_version = datastore_models.DBDatastoreVersion.create(
             id=self.datastore.default_version_id,
-            name='name',
+            name='name' + str(uuid.uuid4()),
             image_id=str(uuid.uuid4()),
             packages=str(uuid.uuid4()),
             datastore_id=self.datastore.id,

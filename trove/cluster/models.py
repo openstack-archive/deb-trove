@@ -13,16 +13,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from trove.cluster.tasks import ClusterTask
 from trove.cluster.tasks import ClusterTasks
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
+from trove.common import remote
 from trove.common.strategies.cluster import strategy
 from trove.datastore import models as datastore_models
 from trove.db import models as dbmodels
 from trove.instance import models as inst_models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 from trove.taskmanager import api as task_api
 
 
@@ -82,6 +84,13 @@ class Cluster(object):
         if self.ds is None:
             self.ds = (datastore_models.Datastore.
                        load(self.ds_version.datastore_id))
+        self._db_instances = None
+
+    @classmethod
+    def get_guest(cls, instance):
+        return remote.create_guest_client(instance.context,
+                                          instance.db_info.id,
+                                          instance.datastore_version.manager)
 
     @classmethod
     def load_all(cls, context, tenant_id):
@@ -170,6 +179,14 @@ class Cluster(object):
         return self.db_info.deleted_at
 
     @property
+    def db_instances(self):
+        """DBInstance objects are persistant, therefore cacheable."""
+        if not self._db_instances:
+            self._db_instances = inst_models.DBInstance.find_all(
+                cluster_id=self.id, deleted=False).all()
+        return self._db_instances
+
+    @property
     def instances(self):
         return inst_models.Instances.load_all_by_cluster_id(self.context,
                                                             self.db_info.id)
@@ -180,20 +197,25 @@ class Cluster(object):
             self.context, self.db_info.id, load_servers=False)
 
     @classmethod
-    def create(cls, context, name, datastore, datastore_version, instances):
+    def create(cls, context, name, datastore, datastore_version,
+               instances, extended_properties):
         api_strategy = strategy.load_api_strategy(datastore_version.manager)
         return api_strategy.cluster_class.create(context, name, datastore,
-                                                 datastore_version, instances)
+                                                 datastore_version, instances,
+                                                 extended_properties)
+
+    def validate_cluster_available(self, valid_states=[ClusterTasks.NONE]):
+        if self.db_info.task_status not in valid_states:
+            msg = (_("This action cannot be performed on the cluster while "
+                     "the current cluster task is '%s'.") %
+                   self.db_info.task_status.name)
+            LOG.error(msg)
+            raise exception.UnprocessableEntity(msg)
 
     def delete(self):
 
-        if self.db_info.task_status not in (ClusterTasks.NONE,
-                                            ClusterTasks.DELETING):
-            current_task = self.db_info.task_status.name
-            msg = _("This action cannot be performed on the cluster while "
-                    "the current cluster task is '%s'.") % current_task
-            LOG.error(msg)
-            raise exception.UnprocessableEntity(msg)
+        self.validate_cluster_available([ClusterTasks.NONE,
+                                         ClusterTasks.DELETING])
 
         db_insts = inst_models.DBInstance.find_all(cluster_id=self.id,
                                                    deleted=False).all()
@@ -222,7 +244,8 @@ class Cluster(object):
 
 def is_cluster_deleting(context, cluster_id):
     cluster = Cluster.load(context, cluster_id)
-    return cluster.db_info.task_status == ClusterTasks.DELETING
+    return (cluster.db_info.task_status == ClusterTasks.DELETING
+            or cluster.db_info.task_status == ClusterTasks.SHRINKING_CLUSTER)
 
 
 def validate_volume_size(size):

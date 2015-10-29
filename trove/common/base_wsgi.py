@@ -27,22 +27,22 @@ import sys
 import time
 
 import eventlet.wsgi
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_log import loggers
+from oslo_serialization import jsonutils
+from oslo_service import service
+from oslo_service import sslutils
 import routes
 import routes.middleware
-#import six
 import webob.dec
 import webob.exc
 from xml.dom import minidom
 from xml.parsers import expat
 
-from trove.openstack.common import exception
-from trove.openstack.common.gettextutils import _
-from trove.openstack.common import jsonutils
-from trove.openstack.common import log as logging
-from trove.openstack.common import service
-from trove.openstack.common import sslutils
-from trove.openstack.common import xmlutils
+from trove.common import base_exception
+from trove.common.i18n import _
+from trove.common import xmlutils
 
 socket_opts = [
     cfg.IntOpt('backlog',
@@ -71,7 +71,7 @@ class Service(service.Service):
     Provides a Service API for wsgi servers.
 
     This gives us the ability to launch wsgi servers with the
-    Launcher classes in service.py.
+    Launcher classes in oslo_service.service.py.
     """
 
     def __init__(self, application, port,
@@ -101,8 +101,8 @@ class Service(service.Service):
                 sock = eventlet.listen(bind_addr,
                                        backlog=backlog,
                                        family=family)
-                if sslutils.is_enabled():
-                    sock = sslutils.wrap(sock)
+                if sslutils.is_enabled(CONF):
+                    sock = sslutils.wrap(CONF, sock)
 
             except socket.error as err:
                 if err.args[0] != errno.EADDRINUSE:
@@ -159,7 +159,7 @@ class Service(service.Service):
         eventlet.wsgi.server(socket,
                              application,
                              custom_pool=self.tg.pool,
-                             log=logging.WritableLogger(logger))
+                             log=loggers.WritableLogger(logger))
 
 
 class Middleware(object):
@@ -330,7 +330,7 @@ class Request(webob.Request):
                                  self.default_request_content_types)
 
         if content_type not in allowed_content_types:
-            raise exception.InvalidContentType(content_type=content_type)
+            raise base_exception.InvalidContentType(content_type=content_type)
         return content_type
 
 
@@ -369,10 +369,10 @@ class Resource(object):
 
         try:
             action, action_args, accept = self.deserialize_request(request)
-        except exception.InvalidContentType:
+        except base_exception.InvalidContentType:
             msg = _("Unsupported Content-Type")
             return webob.exc.HTTPUnsupportedMediaType(explanation=msg)
-        except exception.MalformedRequestBody:
+        except base_exception.MalformedRequestBody:
             msg = _("Malformed request body")
             return webob.exc.HTTPBadRequest(explanation=msg)
 
@@ -481,7 +481,7 @@ class XMLDictSerializer(DictSerializer):
         self._add_xmlns(node, has_atom)
         return node.toprettyxml(indent='    ', encoding='UTF-8')
 
-    #NOTE (ameade): the has_atom should be removed after all of the
+    # NOTE (ameade): the has_atom should be removed after all of the
     # xml serializers and view builders have been updated to the current
     # spec that required all responses include the xmlns:atom, the has_atom
     # flag is to prevent current tests from breaking
@@ -501,7 +501,7 @@ class XMLDictSerializer(DictSerializer):
         if xmlns:
             result.setAttribute('xmlns', xmlns)
 
-        #TODO(bcwaldon): accomplish this without a type-check
+        # TODO(bcwaldon): accomplish this without a type-check
         if type(data) is list:
             collections = metadata.get('list_collections', {})
             if nodename in collections:
@@ -520,7 +520,7 @@ class XMLDictSerializer(DictSerializer):
             for item in data:
                 node = self._to_xml_node(doc, metadata, singular, item)
                 result.appendChild(node)
-        #TODO(bcwaldon): accomplish this without a type-check
+        # TODO(bcwaldon): accomplish this without a type-check
         elif type(data) is dict:
             collections = metadata.get('dict_collections', {})
             if nodename in collections:
@@ -605,7 +605,7 @@ class ResponseSerializer(object):
         try:
             return self.body_serializers[content_type]
         except (KeyError, TypeError):
-            raise exception.InvalidContentType(content_type=content_type)
+            raise base_exception.InvalidContentType(content_type=content_type)
 
 
 class RequestHeadersDeserializer(ActionDispatcher):
@@ -664,7 +664,7 @@ class RequestDeserializer(object):
 
         try:
             content_type = request.get_content_type()
-        except exception.InvalidContentType:
+        except base_exception.InvalidContentType:
             LOG.debug(_("Unrecognized Content-Type provided in request"))
             raise
 
@@ -674,7 +674,7 @@ class RequestDeserializer(object):
 
         try:
             deserializer = self.get_body_deserializer(content_type)
-        except exception.InvalidContentType:
+        except base_exception.InvalidContentType:
             LOG.debug(_("Unable to deserialize body as provided Content-Type"))
             raise
 
@@ -684,7 +684,7 @@ class RequestDeserializer(object):
         try:
             return self.body_deserializers[content_type]
         except (KeyError, TypeError):
-            raise exception.InvalidContentType(content_type=content_type)
+            raise base_exception.InvalidContentType(content_type=content_type)
 
     def get_expected_content_type(self, request):
         return request.best_match_content_type(self.supported_content_types)
@@ -726,7 +726,7 @@ class JSONDeserializer(TextDeserializer):
             return jsonutils.loads(datastring)
         except ValueError:
             msg = _("cannot understand JSON")
-            raise exception.MalformedRequestBody(reason=msg)
+            raise base_exception.MalformedRequestBody(reason=msg)
 
     def default(self, datastring):
         return {'body': self._from_json(datastring)}
@@ -750,7 +750,7 @@ class XMLDeserializer(TextDeserializer):
             return {node.nodeName: self._from_xml_node(node, plurals)}
         except expat.ExpatError:
             msg = _("cannot understand XML")
-            raise exception.MalformedRequestBody(reason=msg)
+            raise base_exception.MalformedRequestBody(reason=msg)
 
     def _from_xml_node(self, node, listnames):
         """Convert a minidom node to a simple Python type.

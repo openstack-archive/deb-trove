@@ -14,15 +14,15 @@
 #    under the License.
 #
 import jsonschema
-
-from testtools import TestCase
 from testtools.matchers import Is
-from trove.extensions.mysql.service import UserController
-from trove.extensions.mysql.service import UserAccessController
+
 from trove.extensions.mysql.service import SchemaController
+from trove.extensions.mysql.service import UserAccessController
+from trove.extensions.mysql.service import UserController
+from trove.tests.unittests import trove_testtools
 
 
-class TestUserController(TestCase):
+class TestUserController(trove_testtools.TestCase):
     def setUp(self):
         super(TestUserController, self).setUp()
         self.controller = UserController()
@@ -47,11 +47,11 @@ class TestUserController(TestCase):
         schema = self.controller.get_schema('create', body)
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))
-        #TODO(zed): Restore after API version increment
-        #errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
-        #self.assertThat(len(errors), Is(1))
-        #self.assertThat(errors[0].message, Equals("[] is too short"))
-        #self.assertThat(errors[0].path.pop(), Equals("users"))
+        # TODO(zed): Restore after API version increment
+        # errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+        # self.assertThat(len(errors), Is(1))
+        # self.assertThat(errors[0].message, Equals("[] is too short"))
+        # self.assertThat(errors[0].path.pop(), Equals("users"))
 
     def test_validate_create_short_password(self):
         body = {"users": [{"name": "joe", "password": ""}]}
@@ -115,7 +115,7 @@ class TestUserController(TestCase):
                            "password": "123"}]}
         schema = self.controller.get_schema('create', body)
         validator = jsonschema.Draft4Validator(schema)
-        #TODO(zed): After API increment, this will NOT be valid.
+        # TODO(zed): After API increment, this will NOT be valid.
         self.assertTrue(validator.is_valid(body))
 
     def test_validate_create_complete_db(self):
@@ -170,11 +170,11 @@ class TestUserController(TestCase):
         schema = self.controller.get_schema('update_all', body)
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))
-        #TODO(zed): Restore after API version increment
-        #errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
-        #self.assertThat(len(errors), Is(1))
-        #self.assertThat(errors[0].message, Equals("[] is too short"))
-        #self.assertThat(errors[0].path.pop(), Equals("users"))
+        # TODO(zed): Restore after API version increment
+        # errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+        # self.assertThat(len(errors), Is(1))
+        # self.assertThat(errors[0].message, Equals("[] is too short"))
+        # self.assertThat(errors[0].path.pop(), Equals("users"))
 
     def test_validate_update_short_password(self):
         body = {"users": [{"name": "joe", "password": ""}]}
@@ -237,10 +237,10 @@ class TestUserController(TestCase):
         schema = self.controller.get_schema('update_all', body)
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))
-        #TODO(zed): Restore after API version increment
-        #errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
-        #self.assertThat(len(errors), Is(1))
-        #self.assertThat(errors[0].message, Equals('[] is too short'))
+        # TODO(zed): Restore after API version increment
+        # errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+        # self.assertThat(len(errors), Is(1))
+        # self.assertThat(errors[0].message, Equals('[] is too short'))
 
     def test_validate_update_short_name(self):
         body = {"users": [{"name": ""}]}
@@ -305,20 +305,20 @@ class TestUserController(TestCase):
         self.assertFalse(validator_none_host.is_valid(body_none_host))
 
 
-class TestUserAccessController(TestCase):
+class TestUserAccessController(trove_testtools.TestCase):
     def test_validate_update_db(self):
         body = {"databases": []}
         schema = (UserAccessController()).get_schema('update_all', body)
         validator = jsonschema.Draft4Validator(schema)
         self.assertTrue(validator.is_valid(body))
-        #TODO(zed): Restore after API version increment
-        #errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
-        #self.assertThat(len(errors), Is(1))
-        #self.assertThat(errors[0].message, Equals("[] is too short"))
-        #self.assertThat(errors[0].path.pop(), Equals("databases"))
+        # TODO(zed): Restore after API version increment
+        # errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
+        # self.assertThat(len(errors), Is(1))
+        # self.assertThat(errors[0].message, Equals("[] is too short"))
+        # self.assertThat(errors[0].path.pop(), Equals("databases"))
 
 
-class TestSchemaController(TestCase):
+class TestSchemaController(trove_testtools.TestCase):
     def setUp(self):
         super(TestSchemaController, self).setUp()
         self.controller = SchemaController()

@@ -14,10 +14,11 @@
 #    under the License.
 #
 
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.guestagent.backup.backupagent import BackupAgent
 from trove.guestagent.strategies.replication import mysql_base
-from trove.openstack.common import log as logging
 
 AGENT = BackupAgent()
 CONF = cfg.CONF
@@ -36,7 +37,8 @@ class MysqlGTIDReplication(mysql_base.MysqlReplicationBase):
             "MASTER_PORT=%(port)s, "
             "MASTER_USER='%(user)s', "
             "MASTER_PASSWORD='%(password)s', "
-            "MASTER_AUTO_POSITION=1 " %
+            "MASTER_AUTO_POSITION=1, "
+            "MASTER_CONNECT_RETRY=15" %
             {
                 'host': snapshot['master']['host'],
                 'port': snapshot['master']['port'],

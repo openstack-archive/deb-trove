@@ -14,18 +14,20 @@
 #    under the License.
 
 from datetime import datetime
+
+from oslo_log import log as logging
+
+import trove.common.apischema as apischema
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import pagination
 from trove.common import wsgi
 from trove.configuration import models
-from trove.configuration import views
 from trove.configuration.models import DBConfigurationParameter
+from trove.configuration import views
 from trove.datastore import models as ds_models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 from trove.instance import models as instances_models
-import trove.common.apischema as apischema
 
 
 CONF = cfg.CONF
@@ -141,12 +143,6 @@ class ConfigurationsController(wsgi.Controller):
 
         context = req.environ[wsgi.CONTEXT_KEY]
         group = models.Configuration.load(context, id)
-        instances = instances_models.DBInstance.find_all(
-            tenant_id=context.tenant,
-            configuration_id=id,
-            deleted=False).all()
-        LOG.debug("Loaded instances for configuration group %s on "
-                  "tenant %s: %s" % (id, tenant_id, instances))
 
         # if name/description are provided in the request body, update the
         # model with these values as well.
@@ -159,20 +155,35 @@ class ConfigurationsController(wsgi.Controller):
         items = self._configuration_items_list(group, body['configuration'])
         deleted_at = datetime.utcnow()
         models.Configuration.remove_all_items(context, group.id, deleted_at)
-        models.Configuration.save(context, group, items, instances)
+        models.Configuration.save(group, items)
+        self._refresh_on_all_instances(context, id)
         return wsgi.Result(None, 202)
 
     def edit(self, req, body, tenant_id, id):
         context = req.environ[wsgi.CONTEXT_KEY]
         group = models.Configuration.load(context, id)
-        instances = instances_models.DBInstance.find_all(
-            tenant_id=context.tenant,
-            configuration_id=id,
-            deleted=False).all()
-        LOG.debug("Loaded instances for configuration group %s on "
-                  "tenant %s: %s" % (id, tenant_id, instances))
         items = self._configuration_items_list(group, body['configuration'])
-        models.Configuration.save(context, group, items, instances)
+        models.Configuration.save(group, items)
+        self._refresh_on_all_instances(context, id)
+
+    def _refresh_on_all_instances(self, context, configuration_id):
+        """Refresh a configuration group on all its instances.
+        """
+        dbinstances = instances_models.DBInstance.find_all(
+            tenant_id=context.tenant,
+            configuration_id=configuration_id,
+            deleted=False).all()
+
+        LOG.debug(
+            "All instances with configuration group '%s' on tenant '%s': %s"
+            % (configuration_id, context.tenant, dbinstances))
+
+        config = models.Configuration(context, configuration_id)
+        for dbinstance in dbinstances:
+            LOG.debug("Applying configuration group '%s' to instance: %s"
+                      % (configuration_id, dbinstance.id))
+            instance = instances_models.Instance.load(context, dbinstance.id)
+            instance.update_overrides(config)
 
     def _configuration_items_list(self, group, configuration):
         ds_version_id = group.datastore_version_id
@@ -236,33 +247,37 @@ class ConfigurationsController(wsgi.Controller):
 
             # integer min/max checking
             if isinstance(v, (int, long)) and not isinstance(v, bool):
-                try:
-                    min_value = int(rule.min_size)
-                except ValueError:
-                    raise exception.TroveError(_(
-                        "Invalid or unsupported min value defined in the "
-                        "configuration-parameters configuration file. "
-                        "Expected integer."))
-                if v < min_value:
-                    output = {"key": k, "min": min_value}
-                    message = _("The value for the configuration parameter "
-                                "%(key)s is less than the minimum allowed: "
-                                "%(min)s") % output
-                    raise exception.UnprocessableEntity(message=message)
+                if rule.min_size is not None:
+                    try:
+                        min_value = int(rule.min_size)
+                    except ValueError:
+                        raise exception.TroveError(_(
+                            "Invalid or unsupported min value defined in the "
+                            "configuration-parameters configuration file. "
+                            "Expected integer."))
+                    if v < min_value:
+                        output = {"key": k, "min": min_value}
+                        message = _(
+                            "The value for the configuration parameter "
+                            "%(key)s is less than the minimum allowed: "
+                            "%(min)s") % output
+                        raise exception.UnprocessableEntity(message=message)
 
-                try:
-                    max_value = int(rule.max_size)
-                except ValueError:
-                    raise exception.TroveError(_(
-                        "Invalid or unsupported max value defined in the "
-                        "configuration-parameters configuration file. "
-                        "Expected integer."))
-                if v > max_value:
-                    output = {"key": k, "max": max_value}
-                    message = _("The value for the configuration parameter "
-                                "%(key)s is greater than the maximum "
-                                "allowed: %(max)s") % output
-                    raise exception.UnprocessableEntity(message=message)
+                if rule.max_size is not None:
+                    try:
+                        max_value = int(rule.max_size)
+                    except ValueError:
+                        raise exception.TroveError(_(
+                            "Invalid or unsupported max value defined in the "
+                            "configuration-parameters configuration file. "
+                            "Expected integer."))
+                    if v > max_value:
+                        output = {"key": k, "max": max_value}
+                        message = _(
+                            "The value for the configuration parameter "
+                            "%(key)s is greater than the maximum "
+                            "allowed: %(max)s") % output
+                        raise exception.UnprocessableEntity(message=message)
 
     @staticmethod
     def _find_type(value_type):
@@ -287,6 +302,7 @@ class ConfigurationsController(wsgi.Controller):
 
 
 class ParametersController(wsgi.Controller):
+
     def index(self, req, tenant_id, datastore, id):
         ds, ds_version = ds_models.get_datastore_version(
             type=datastore, version=id)

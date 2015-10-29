@@ -12,23 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from troveclient.compat import exceptions
-
-from proboscis import before_class
-from proboscis import test
 from proboscis.asserts import assert_not_equal
 from proboscis.asserts import assert_raises
 from proboscis.asserts import assert_true
+from proboscis import before_class
 from proboscis.check import Check
+from proboscis import test
+from troveclient.compat import exceptions
 
 from trove.tests.api.instances import create_new_instance
 from trove.tests.api.instances import CreateInstance
 from trove.tests.config import CONFIG
+from trove.tests import DBAAS_API
+from trove.tests import INSTANCES
+from trove.tests import PRE_INSTANCES
 from trove.tests.util import create_dbaas_client
 from trove.tests.util.users import Requirements
-from trove.tests import DBAAS_API
-from trove.tests import PRE_INSTANCES
-from trove.tests import INSTANCES
 
 GROUP = "dbaas.api.mgmt.hosts"
 
@@ -114,7 +113,7 @@ class HostsMgmtCommands(object):
         assert_not_equal(len(result), 0,
                          "list hosts should not be empty: %s" % str(result))
         hosts = []
-        # Find a host with a instanceCount > 0
+        # Find a host with an instanceCount > 0
         for host in result:
             msg = 'Host: %s, Count: %s' % (host.name, host.instanceCount)
             hosts.append(msg)

@@ -18,14 +18,15 @@
 Routes all the requests to the task manager.
 """
 
-from oslo import messaging
+from oslo_log import log as logging
+import oslo_messaging as messaging
+
 from trove.common import cfg
 from trove.common import exception
-from trove.common.strategies.cluster import strategy
 import trove.common.rpc.version as rpc_version
+from trove.common.strategies.cluster import strategy
 from trove.guestagent import models as agent_models
 from trove import rpc
-from trove.openstack.common import log as logging
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -173,31 +174,26 @@ class API(object):
                    slave_of_id=slave_of_id,
                    cluster_config=cluster_config)
 
-    def update_overrides(self, instance_id, overrides=None):
-        LOG.debug("Making async call to update datastore configurations for "
-                  "instance %s" % instance_id)
-
-        cctxt = self.client.prepare(version=self.version_cap)
-        cctxt.cast(self.context, "update_overrides",
-                   instance_id=instance_id,
-                   overrides=overrides)
-
-    def unassign_configuration(self, instance_id, flavor, configuration_id):
-        LOG.debug("Making async call to remove datastore configurations for "
-                  "instance %s" % instance_id)
-
-        cctxt = self.client.prepare(version=self.version_cap)
-        cctxt.cast(self.context, "unassign_configuration",
-                   instance_id=instance_id,
-                   flavor=self._transform_obj(flavor),
-                   configuration_id=configuration_id)
-
     def create_cluster(self, cluster_id):
         LOG.debug("Making async call to create cluster %s " % cluster_id)
 
         cctxt = self.client.prepare(version=self.version_cap)
         cctxt.cast(self.context, "create_cluster",
                    cluster_id=cluster_id)
+
+    def grow_cluster(self, cluster_id, new_instance_ids):
+        LOG.debug("Making async call to grow cluster %s " % cluster_id)
+
+        cctxt = self.client.prepare(version=self.version_cap)
+        cctxt.cast(self.context, "grow_cluster",
+                   cluster_id=cluster_id, new_instance_ids=new_instance_ids)
+
+    def shrink_cluster(self, cluster_id, instance_ids):
+        LOG.debug("Making async call to shrink cluster %s " % cluster_id)
+
+        cctxt = self.client.prepare(version=self.version_cap)
+        cctxt.cast(self.context, "shrink_cluster",
+                   cluster_id=cluster_id, instance_ids=instance_ids)
 
     def delete_cluster(self, cluster_id):
         LOG.debug("Making async call to delete cluster %s " % cluster_id)

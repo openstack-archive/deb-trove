@@ -13,37 +13,41 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import io
-from six.moves import configparser
+from trove.common import stream_codecs
 
 
-class MySQLConfParser(object):
-    """MySQLConfParser"""
+class RedisConfParser(object):
+
+    CODEC = stream_codecs.PropertiesCodec()
+
     def __init__(self, config):
         self.config = config
 
     def parse(self):
-        good_cfg = self._remove_commented_lines(str(self.config))
-        cfg_parser = configparser.ConfigParser()
-        cfg_parser.readfp(io.BytesIO(str(good_cfg)))
-        return cfg_parser.items("mysqld")
+        return self.CODEC.deserialize(self.config).items()
 
-    def _remove_commented_lines(self, config_str):
-        ret = []
-        for line in config_str.splitlines():
-            line_clean = line.strip()
-            if line_clean.startswith('#'):
-                continue
-            elif line_clean.startswith('!'):
-                continue
-            elif line_clean.startswith(';'):
-                continue
-            # python 2.6 ConfigParser doesn't like params without values
-            elif line_clean.startswith('[') and line_clean.endswith(']'):
-                ret.append(line_clean)
-            elif line_clean and "=" not in line_clean:
-                ret.append(line_clean + " = 1")
-            else:
-                ret.append(line_clean)
-        rendered = "\n".join(ret)
-        return rendered
+
+class MySQLConfParser(object):
+
+    SERVER_CONF_SECTION = 'mysqld'
+    CODEC = stream_codecs.IniCodec(
+        default_value='1', comment_markers=('#', ';', '!'))
+
+    def __init__(self, config):
+        self.config = config
+
+    def parse(self):
+        config_dict = self.CODEC.deserialize(self.config)
+        mysqld_section_dict = config_dict[self.SERVER_CONF_SECTION]
+        return mysqld_section_dict.items()
+
+
+class MongoDBConfParser(object):
+
+    CODEC = stream_codecs.SafeYamlCodec(default_flow_style=False)
+
+    def __init__(self, config):
+        self.config = config
+
+    def parse(self):
+        return self.CODEC.deserialize(self.config).items()

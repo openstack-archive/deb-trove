@@ -23,18 +23,47 @@ from trove.tests.api import instances
 from trove.tests.api import instances_actions
 from trove.tests.api.mgmt import accounts
 from trove.tests.api.mgmt import admin_required
+from trove.tests.api.mgmt import datastore_versions
 from trove.tests.api.mgmt import hosts
 from trove.tests.api.mgmt import instances as mgmt_instances
 from trove.tests.api.mgmt import storage
+from trove.tests.api import pxc
+from trove.tests.api import redis
 from trove.tests.api import replication
 from trove.tests.api import root
 from trove.tests.api import user_access
 from trove.tests.api import users
 from trove.tests.api import versions
+from trove.tests.scenario.groups import backup_group
+from trove.tests.scenario.groups import cluster_actions_group
+from trove.tests.scenario.groups import database_actions_group
+from trove.tests.scenario.groups import instance_actions_group
+from trove.tests.scenario.groups import instance_delete_group
+from trove.tests.scenario.groups import negative_cluster_actions_group
+from trove.tests.scenario.groups import replication_group
+from trove.tests.scenario.groups import user_actions_group
 
 
 GROUP_SERVICES_INITIALIZE = "services.initialize"
 
+
+def build_group(*groups):
+    def merge(collection, *items):
+        for item in items:
+            if isinstance(item, list):
+                merge(collection, *item)
+            else:
+                if item not in collection:
+                    collection.append(item)
+
+    out = []
+    merge(out, *groups)
+    return out
+
+
+def register(datastores, *test_groups):
+    proboscis.register(groups=build_group(datastores),
+                       depends_on_groups=build_group(*test_groups))
 
 black_box_groups = [
     flavors.GROUP,
@@ -59,6 +88,7 @@ black_box_groups = [
     instances.GROUP_STOP,
     versions.GROUP,
     instances.GROUP_GUEST,
+    datastore_versions.GROUP,
 ]
 proboscis.register(groups=["blackbox", "mysql"],
                    depends_on_groups=black_box_groups)
@@ -69,6 +99,7 @@ simple_black_box_groups = [
     versions.GROUP,
     instances.GROUP_START_SIMPLE,
     admin_required.GROUP,
+    datastore_versions.GROUP,
 ]
 proboscis.register(groups=["simple_blackbox"],
                    depends_on_groups=simple_black_box_groups)
@@ -80,17 +111,79 @@ black_box_mgmt_groups = [
     instances_actions.GROUP_REBOOT,
     admin_required.GROUP,
     mgmt_instances.GROUP,
+    datastore_versions.GROUP,
 ]
 proboscis.register(groups=["blackbox_mgmt"],
                    depends_on_groups=black_box_mgmt_groups)
 
-# Datastores groups for int-tests
-datastore_group = [
+#
+# Group designations for datastore agnostic int-tests
+#
+initial_groups = [
     GROUP_SERVICES_INITIALIZE,
     flavors.GROUP,
     versions.GROUP,
     instances.GROUP_START_SIMPLE,
+    instance_delete_group.GROUP
 ]
-proboscis.register(groups=["cassandra", "couchbase", "mongodb", "postgresql",
-                           "redis"],
-                   depends_on_groups=datastore_group)
+backup_groups = list(initial_groups)
+backup_groups.extend([backup_group.GROUP])
+
+user_actions_groups = list(initial_groups)
+user_actions_groups.extend([user_actions_group.GROUP])
+
+database_actions_groups = list(initial_groups)
+database_actions_groups.extend([database_actions_group.GROUP])
+
+cluster_actions_groups = list(initial_groups)
+cluster_actions_groups.extend([cluster_actions_group.GROUP,
+                               negative_cluster_actions_group.GROUP])
+
+instance_actions_groups = list(initial_groups)
+instance_actions_groups.extend([instance_actions_group.GROUP])
+
+replication_groups = list(initial_groups)
+replication_groups.extend([replication_group.GROUP])
+
+# Module based groups
+register(["backup"], backup_groups)
+register(["cluster"], cluster_actions_groups)
+register(["database"], database_actions_group)
+register(["instance_actions"], instance_actions_groups)
+register(["user"], user_actions_groups)
+register(["replication"], replication_groups)
+
+# Datastore based groups - these should contain all functionality
+# currently supported by the datastore
+register(["cassandra_supported"], backup_groups, instance_actions_groups)
+register(["couchbase_supported"], instance_actions_groups)
+register(["postgresql_supported"], backup_groups, database_actions_groups,
+         instance_actions_groups, user_actions_groups)
+register(["mongodb_supported"], backup_groups, cluster_actions_groups,
+         database_actions_groups, instance_actions_groups, user_actions_groups)
+register(["mysql_supported"], backup_groups, database_actions_groups,
+         instance_actions_groups, replication_groups, user_actions_groups)
+register(["redis_supported"], backup_groups, instance_actions_groups,
+         replication_groups)
+register(["vertica_supported"], cluster_actions_groups,
+         instance_actions_groups)
+register(["pxc_supported"], instance_actions_groups, cluster_actions_groups)
+
+# Redis int-tests
+redis_group = [
+    GROUP_SERVICES_INITIALIZE,
+    flavors.GROUP,
+    versions.GROUP,
+    instances.GROUP_START_SIMPLE,
+    instances.GROUP_QUOTAS,
+    redis.REDIS_GROUP,
+]
+proboscis.register(groups=["redis"],
+                   depends_on_groups=redis_group)
+
+# PXC int-tests
+pxc_group = [
+    pxc.PXC_GROUP,
+]
+proboscis.register(groups=["pxc"],
+                   depends_on_groups=pxc_group)

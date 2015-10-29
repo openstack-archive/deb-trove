@@ -20,8 +20,9 @@ Projects should subclass this class if they wish to enhance the request
 context or provide additional information in their specific WSGI pipeline.
 """
 
-from trove.openstack.common import context
-from trove.openstack.common import local
+from oslo_context import context
+
+from trove.common import local
 
 
 class TroveContext(context.RequestContext):

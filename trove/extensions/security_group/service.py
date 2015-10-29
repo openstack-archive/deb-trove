@@ -13,16 +13,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
+
+from oslo_log import log as logging
+
 from trove.common import cfg
 from trove.common import exception
-from trove.common import wsgi
+from trove.common.i18n import _
 from trove.common import utils
+from trove.common import wsgi
 from trove.datastore.models import DatastoreVersion
 from trove.extensions.security_group import models
 from trove.extensions.security_group import views
 from trove.instance import models as instance_models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF

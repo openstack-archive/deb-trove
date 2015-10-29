@@ -18,13 +18,15 @@ import json
 import os.path
 import time
 
+from oslo_log import log as logging
+
 from trove.common import exception
 from trove.common import utils
-from trove.guestagent import dbaas
+from trove.guestagent.common import operating_system
 from trove.guestagent.datastore.experimental.couchbase import service
 from trove.guestagent.datastore.experimental.couchbase import system
+from trove.guestagent import dbaas
 from trove.guestagent.strategies.restore import base
-from trove.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
@@ -42,8 +44,7 @@ class CbBackup(base.RestoreRunner):
 
     def pre_restore(self):
         try:
-            utils.execute_with_timeout("rm -rf " + system.COUCHBASE_DUMP_DIR,
-                                       shell=True)
+            operating_system.remove(system.COUCHBASE_DUMP_DIR, force=True)
         except exception.ProcessExecutionError as p:
             LOG.error(p)
             raise p

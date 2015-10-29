@@ -14,15 +14,18 @@
 #    under the License.
 
 import re
+
+from oslo_log import log as logging
+
 from trove.common import cfg
+from trove.common.i18n import _
 from trove.common import utils
+from trove.guestagent.common import operating_system
 from trove.guestagent.datastore.experimental.postgresql import pgutil
 from trove.guestagent.datastore.experimental.postgresql.service.process import(
     PgSqlProcess)
 from trove.guestagent.datastore.experimental.postgresql.service.status import(
     PgSqlAppStatus)
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -68,14 +71,10 @@ class PgSqlConfig(PgSqlProcess):
         )
         with open('/tmp/pgsql_config', 'w+') as config_file:
             config_file.write(configuration)
-        utils.execute_with_timeout(
-            'sudo', 'chown', 'postgres', '/tmp/pgsql_config',
-            timeout=30,
-        )
-        utils.execute_with_timeout(
-            'sudo', 'mv', '/tmp/pgsql_config', config_location,
-            timeout=30,
-        )
+        operating_system.chown('/tmp/pgsql_config', 'postgres', None,
+                               recursive=False, as_root=True)
+        operating_system.move('/tmp/pgsql_config', config_location, timeout=30,
+                              as_root=True)
 
     def set_db_to_listen(self, context):
         """Allow remote connections with encrypted passwords."""
@@ -96,17 +95,11 @@ class PgSqlConfig(PgSqlProcess):
             config_file.write(out)
             config_file.write("host    all     all     0.0.0.0/0   md5\n")
 
-        utils.execute_with_timeout(
-            'sudo', 'chown', 'postgres', '/tmp/pgsql_hba_config',
-            timeout=30,
-        )
-        utils.execute_with_timeout(
-            'sudo', 'mv', '/tmp/pgsql_hba_config',
-            PGSQL_HBA_CONFIG.format(
-                version=self._get_psql_version(),
-            ),
-            timeout=30,
-        )
+        operating_system.chown('/tmp/pgsql_hba_config',
+                               'postgres', None, recursive=False, as_root=True)
+        operating_system.move('/tmp/pgsql_hba_config', PGSQL_HBA_CONFIG.format(
+            version=self._get_psql_version(),
+        ), timeout=30, as_root=True)
 
     def start_db_with_conf_changes(self, context, config_contents):
         """Restarts the PgSql instance with a new configuration."""

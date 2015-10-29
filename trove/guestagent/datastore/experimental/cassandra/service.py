@@ -15,17 +15,21 @@
 
 import os
 import tempfile
-import yaml
+
+from oslo_log import log as logging
 from oslo_utils import netutils
+import yaml
+
 from trove.common import cfg
-from trove.common import utils
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as rd_instance
+from trove.common import utils
+from trove.guestagent.common import operating_system
+from trove.guestagent.common.operating_system import FileMode
 from trove.guestagent.datastore.experimental.cassandra import system
 from trove.guestagent.datastore import service
 from trove.guestagent import pkg
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
 
 
 LOG = logging.getLogger(__name__)
@@ -62,8 +66,7 @@ class CassandraApp(object):
 
     def init_storage_structure(self, mount_point):
         try:
-            cmd = system.INIT_FS % mount_point
-            utils.execute_with_timeout(cmd, shell=True)
+            operating_system.create_directory(mount_point, as_root=True)
         except exception.ProcessExecutionError:
             LOG.exception(_("Error while initiating storage structure."))
 
@@ -135,13 +138,16 @@ class CassandraApp(object):
         # we move the file.
         try:
             os.write(conf_fd, config_contents)
-            execute_function("sudo", "mv", conf_path, system.CASSANDRA_CONF)
-            #TODO(denis_makogon): figure out the dynamic way to discover
+            operating_system.move(conf_path, system.CASSANDRA_CONF,
+                                  as_root=True)
+            # TODO(denis_makogon): figure out the dynamic way to discover
             # configs owner since it can cause errors if there is
             # no cassandra user in operating system
-            execute_function("sudo", "chown",
-                             "cassandra:cassandra", system.CASSANDRA_CONF)
-            execute_function("sudo", "chmod", "a+r", system.CASSANDRA_CONF)
+            operating_system.chown(system.CASSANDRA_CONF,
+                                   'cassandra', 'cassandra', recursive=False,
+                                   as_root=True)
+            operating_system.chmod(system.CASSANDRA_CONF,
+                                   FileMode.ADD_READ_ALL, as_root=True)
         except Exception:
             LOG.exception(
                 _("Exception generating Cassandra configuration %s.") %

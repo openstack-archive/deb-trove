@@ -14,29 +14,29 @@
 #    under the License.
 """Wsgi helper utilities for trove"""
 
-import eventlet.wsgi
 import math
-import jsonschema
-import paste.urlmap
 import re
 import time
 import traceback
 import uuid
+
+import eventlet.wsgi
+import jsonschema
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
+from oslo_service import service
+import paste.urlmap
 import webob
 import webob.dec
 import webob.exc
 
+from trove.common import base_wsgi
+from trove.common import cfg
 from trove.common import context as rd_context
 from trove.common import exception
-from trove.common import utils
 from trove.common.i18n import _
-from oslo.serialization import jsonutils
-
-from trove.openstack.common import pastedeploy
-from trove.openstack.common import service
-from trove.common import base_wsgi
-from trove.openstack.common import log as logging
-from trove.common import cfg
+from trove.common import pastedeploy
+from trove.common import utils
 
 CONTEXT_KEY = 'trove.context'
 Router = base_wsgi.Router
@@ -52,8 +52,6 @@ eventlet.wsgi.MAX_HEADER_LINE = CONF.max_header_line
 eventlet.patcher.monkey_patch(all=False, socket=True)
 
 LOG = logging.getLogger('trove.common.wsgi')
-
-CONF = cfg.CONF
 
 
 def versioned_urlmap(*args, **kwargs):
@@ -77,10 +75,11 @@ def launch(app_name, port, paste_config_file, data={},
         launcher.wait()
 
     """
+    LOG.debug("Trove started on %s", host)
     app = pastedeploy.paste_deploy_app(paste_config_file, app_name, data)
     server = base_wsgi.Service(app, port, host=host,
                                backlog=backlog, threads=threads)
-    return service.launch(server, workers)
+    return service.launch(CONF, server, workers)
 
 
 # Note: taken from Nova
@@ -373,8 +372,9 @@ class Controller(object):
         if cls.schemas:
             matching_schema = cls.schemas.get(action, {})
             if matching_schema:
-                LOG.debug("Found Schema: %s" % matching_schema.get("name",
-                                                                   "none"))
+                LOG.debug(
+                    "Found Schema: %s" % matching_schema.get("name",
+                                                             matching_schema))
             return matching_schema
 
     @staticmethod

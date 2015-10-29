@@ -13,17 +13,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from trove.openstack.common import log as logging
+from oslo_log import log as logging
 
 from trove.common import extensions
-from trove.extensions.mgmt.clusters.service import ClusterController
+from trove.extensions.mgmt.clusters.service import MgmtClusterController
 from trove.extensions.mgmt.configuration import service as conf_service
-from trove.extensions.mgmt.instances.service import MgmtInstanceController
-from trove.extensions.mgmt.host.service import HostController
-from trove.extensions.mgmt.quota.service import QuotaController
+from trove.extensions.mgmt.datastores.service import DatastoreVersionController
 from trove.extensions.mgmt.host.instance import service as hostservice
-from trove.extensions.mgmt.volume.service import StorageController
+from trove.extensions.mgmt.host.service import HostController
+from trove.extensions.mgmt.instances.service import MgmtInstanceController
+from trove.extensions.mgmt.quota.service import QuotaController
 from trove.extensions.mgmt.upgrade.service import UpgradeController
+from trove.extensions.mgmt.volume.service import StorageController
 
 LOG = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class Mgmt(extensions.ExtensionDescriptor):
 
         clusters = extensions.ResourceExtension(
             '{tenant_id}/mgmt/clusters',
-            ClusterController(),
+            MgmtClusterController(),
             member_actions={'action': 'POST'})
         resources.append(clusters)
 
@@ -101,5 +102,11 @@ class Mgmt(extensions.ExtensionDescriptor):
             conf_service.ConfigurationsParameterController(),
             member_actions={})
         resources.append(datastore_configuration_parameters)
+
+        datastore_version = extensions.ResourceExtension(
+            '{tenant_id}/mgmt/datastore-versions',
+            DatastoreVersionController(),
+            member_actions={})
+        resources.append(datastore_version)
 
         return resources

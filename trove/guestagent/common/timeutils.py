@@ -1,5 +1,6 @@
-from oslo.utils import timeutils
 from datetime import datetime
+
+from oslo_utils import timeutils
 
 
 def float_utcnow():

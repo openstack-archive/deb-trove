@@ -14,16 +14,16 @@
 
 import routes
 
-from trove.common import wsgi
+from trove.backup.service import BackupController
 from trove.cluster.service import ClusterController
+from trove.common import wsgi
 from trove.configuration.service import ConfigurationsController
 from trove.configuration.service import ParametersController
+from trove.datastore.service import DatastoreController
 from trove.flavor.service import FlavorController
 from trove.instance.service import InstanceController
 from trove.limits.service import LimitsController
-from trove.backup.service import BackupController
 from trove.versions import VersionsController
-from trove.datastore.service import DatastoreController
 
 
 class API(wsgi.Router):
@@ -57,6 +57,13 @@ class API(wsgi.Router):
         mapper.connect("/{tenant_id}/datastores/{datastore}/versions/{id}",
                        controller=datastore_resource,
                        action="version_show")
+        mapper.connect(
+            "/{tenant_id}/datastores/{datastore}/versions/"
+            "{version_id}/flavors",
+            controller=datastore_resource,
+            action="list_associated_flavors",
+            conditions={'method': ['GET']}
+        )
         mapper.connect("/{tenant_id}/datastores/versions/{uuid}",
                        controller=datastore_resource,
                        action="version_show_by_uuid")

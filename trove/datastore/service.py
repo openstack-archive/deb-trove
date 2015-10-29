@@ -18,6 +18,7 @@
 
 from trove.common import wsgi
 from trove.datastore import models, views
+from trove.flavor import views as flavor_views
 
 
 class DatastoreController(wsgi.Controller):
@@ -27,7 +28,7 @@ class DatastoreController(wsgi.Controller):
         datastore_versions = (models.DatastoreVersions.load(datastore.id))
         return wsgi.Result(views.
                            DatastoreView(datastore, datastore_versions,
-                           req).data(), 200)
+                                         req).data(), 200)
 
     def index(self, req, tenant_id):
         context = req.environ[wsgi.CONTEXT_KEY]
@@ -38,7 +39,7 @@ class DatastoreController(wsgi.Controller):
         datastores_versions = models.DatastoreVersions.load_all(only_active)
         return wsgi.Result(views.
                            DatastoresView(datastores, datastores_versions,
-                           req).data(), 200)
+                                          req).data(), 200)
 
     def version_show(self, req, tenant_id, datastore, id):
         datastore = models.Datastore.load(datastore)
@@ -61,3 +62,16 @@ class DatastoreController(wsgi.Controller):
         return wsgi.Result(views.
                            DatastoreVersionsView(datastore_versions,
                                                  req).data(), 200)
+
+    def list_associated_flavors(self, req, tenant_id, datastore,
+                                version_id):
+        """
+        All nova flavors are returned for a datastore-version unless
+        one or more entries are found in datastore_version_metadata,
+        in which case only those are returned.
+        """
+        context = req.environ[wsgi.CONTEXT_KEY]
+        flavors = (models.DatastoreVersionMetadata.
+                   list_datastore_version_flavor_associations(
+                       context, datastore, version_id))
+        return wsgi.Result(flavor_views.FlavorsView(flavors, req).data(), 200)

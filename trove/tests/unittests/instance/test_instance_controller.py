@@ -14,15 +14,16 @@
 #    under the License.
 #
 import jsonschema
-from testtools import TestCase
+from mock import Mock
 from testtools.matchers import Is, Equals
 from testtools.testcase import skip
+
 from trove.common import apischema
 from trove.instance.service import InstanceController
-from mock import Mock
+from trove.tests.unittests import trove_testtools
 
 
-class TestInstanceController(TestCase):
+class TestInstanceController(trove_testtools.TestCase):
     def setUp(self):
         super(TestInstanceController, self).setUp()
         self.controller = InstanceController()
@@ -142,7 +143,7 @@ class TestInstanceController(TestCase):
         validator = jsonschema.Draft4Validator(schema)
         self.assertFalse(validator.is_valid(body))
         errors = sorted(validator.iter_errors(body), key=lambda e: e.path)
-        self.assertEqual(len(errors), 1)
+        self.assertEqual(1, len(errors))
         self.assertIn("'$#$%^^' does not match '^.*[0-9a-zA-Z]+.*$'",
                       errors[0].message)
 
@@ -249,10 +250,10 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.detach_replica.call_count, 0)
-        self.assertEqual(instance.unassign_configuration.call_count, 0)
-        self.assertEqual(instance.assign_configuration.call_count, 0)
-        self.assertEqual(instance.update_db.call_count, 0)
+        self.assertEqual(0, instance.detach_replica.call_count)
+        self.assertEqual(0, instance.unassign_configuration.call_count)
+        self.assertEqual(0, instance.assign_configuration.call_count)
+        self.assertEqual(0, instance.update_db.call_count)
 
     def test_modify_instance_with_nonempty_args_calls_update_db(self):
         instance = self._setup_modify_instance_mocks()
@@ -270,7 +271,7 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.detach_replica.call_count, 0)
+        self.assertEqual(0, instance.detach_replica.call_count)
 
     def test_modify_instance_with_True_detach_replica_arg(self):
         instance = self._setup_modify_instance_mocks()
@@ -279,7 +280,7 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.detach_replica.call_count, 1)
+        self.assertEqual(1, instance.detach_replica.call_count)
 
     def test_modify_instance_with_configuration_id_arg(self):
         instance = self._setup_modify_instance_mocks()
@@ -288,7 +289,7 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.assign_configuration.call_count, 1)
+        self.assertEqual(1, instance.assign_configuration.call_count)
 
     def test_modify_instance_with_None_configuration_id_arg(self):
         instance = self._setup_modify_instance_mocks()
@@ -297,7 +298,7 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.unassign_configuration.call_count, 1)
+        self.assertEqual(1, instance.unassign_configuration.call_count)
 
     def test_modify_instance_with_all_args(self):
         instance = self._setup_modify_instance_mocks()
@@ -307,6 +308,6 @@ class TestInstanceController(TestCase):
 
         self.controller._modify_instance(instance, **args)
 
-        self.assertEqual(instance.detach_replica.call_count, 1)
-        self.assertEqual(instance.assign_configuration.call_count, 1)
+        self.assertEqual(1, instance.detach_replica.call_count)
+        self.assertEqual(1, instance.assign_configuration.call_count)
         instance.update_db.assert_called_once_with(**args)

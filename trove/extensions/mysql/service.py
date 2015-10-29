@@ -13,49 +13,30 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+
+from oslo_log import log as logging
+from oslo_utils import importutils
+from oslo_utils import strutils
 import webob.exc
 
-from oslo.utils import strutils
-
+import trove.common.apischema as apischema
+from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import pagination
-from trove.common import wsgi
 from trove.common.utils import correct_id_with_req
-from trove.extensions.mysql.common import populate_validated_databases
+from trove.common import wsgi
 from trove.extensions.mysql.common import populate_users
+from trove.extensions.mysql.common import populate_validated_databases
 from trove.extensions.mysql.common import unquote_user_host
 from trove.extensions.mysql import models
 from trove.extensions.mysql import views
 from trove.guestagent.db import models as guest_models
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
-import trove.common.apischema as apischema
 
 
 LOG = logging.getLogger(__name__)
-
-
-class RootController(wsgi.Controller):
-    """Controller for instance functionality."""
-
-    def index(self, req, tenant_id, instance_id):
-        """Returns True if root is enabled for the given instance;
-                    False otherwise.
-        """
-        LOG.info(_("Getting root enabled for instance '%s'") % instance_id)
-        LOG.info(_("req : '%s'\n\n") % req)
-        context = req.environ[wsgi.CONTEXT_KEY]
-        is_root_enabled = models.Root.load(context, instance_id)
-        return wsgi.Result(views.RootEnabledView(is_root_enabled).data(), 200)
-
-    def create(self, req, tenant_id, instance_id):
-        """Enable the root user for the db instance."""
-        LOG.info(_("Enabling root for instance '%s'") % instance_id)
-        LOG.info(_("req : '%s'\n\n") % req)
-        context = req.environ[wsgi.CONTEXT_KEY]
-        user_name = context.user
-        root = models.Root.create(context, instance_id, user_name)
-        return wsgi.Result(views.RootCreatedView(root).data(), 200)
+import_class = importutils.import_class
+CONF = cfg.CONF
 
 
 class UserController(wsgi.Controller):

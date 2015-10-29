@@ -15,14 +15,16 @@
 #
 
 import os
+
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
-from trove.guestagent import volume
-from trove.guestagent.datastore.experimental.cassandra import service
-from trove.openstack.common import periodic_task
-from trove.openstack.common import log as logging
 from trove.common.i18n import _
+from trove.guestagent.datastore.experimental.cassandra import service
 from trove.guestagent import dbaas
+from trove.guestagent import volume
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -34,8 +36,9 @@ class Manager(periodic_task.PeriodicTasks):
     def __init__(self):
         self.appStatus = service.CassandraAppStatus()
         self.app = service.CassandraApp(self.appStatus)
+        super(Manager, self).__init__(CONF)
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """Update the status of the Cassandra service."""
         self.appStatus.update()
@@ -91,9 +94,9 @@ class Manager(periodic_task.PeriodicTasks):
                 device.unmount_device(device_path)
                 device.format()
                 if os.path.exists(mount_point):
-                    #rsync exiting data
+                    # rsync exiting data
                     device.migrate_data(mount_point)
-                #mount the volume
+                # mount the volume
                 device.mount(mount_point)
                 LOG.debug("Mounting new volume.")
 
@@ -156,6 +159,11 @@ class Manager(periodic_task.PeriodicTasks):
     def enable_root(self, context):
         raise exception.DatastoreOperationNotSupported(
             operation='enable_root', datastore=MANAGER)
+
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='enable_root_with_password', datastore=MANAGER)
 
     def is_root_enabled(self, context):
         raise exception.DatastoreOperationNotSupported(

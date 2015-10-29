@@ -13,13 +13,16 @@
 #    under the License.
 from eventlet import Timeout
 import mock
-import testtools
+import oslo_messaging as messaging
+from oslo_messaging.rpc.client import RemoteError
 from testtools.matchers import Is
 
 import trove.common.context as context
 from trove.common import exception
+from trove.common.remote import guest_client
 from trove.guestagent import api
 from trove import rpc
+from trove.tests.unittests import trove_testtools
 
 REPLICATION_SNAPSHOT = {'master': {'id': '123', 'host': '192.168.0.1',
                                    'port': 3306},
@@ -38,18 +41,18 @@ def _mock_call_pwd_change(cmd, version=None, users=None):
 
 def _mock_call(cmd, timeout, version=None, username=None, hostname=None,
                database=None, databases=None):
-    #To check get_user, list_access, grant_access, revoke_access in cmd.
+    # To check get_user, list_access, grant_access, revoke_access in cmd.
     if cmd in ('get_user', 'list_access', 'grant_access', 'revoke_access'):
         return True
     else:
         raise BaseException("Test Failed")
 
 
-class ApiTest(testtools.TestCase):
-    def setUp(self):
+class ApiTest(trove_testtools.TestCase):
+    @mock.patch.object(rpc, 'get_client')
+    def setUp(self, *args):
         super(ApiTest, self).setUp()
         self.context = context.TroveContext()
-        rpc.get_client = mock.Mock()
         self.guest = api.API(self.context, 0)
         self.guest._cast = _mock_call_pwd_change
         self.guest._call = _mock_call
@@ -76,6 +79,13 @@ class ApiTest(testtools.TestCase):
         self.assertEqual('guestagent.instance-id-x23d2d',
                          self.api._get_routing_key())
 
+    def test_update_attributes(self):
+        self.api.update_attributes('test_user', '%', {'name': 'new_user'})
+
+        self._verify_rpc_prepare_before_cast()
+        self._verify_cast('update_attributes', username='test_user',
+                          hostname='%', user_attrs={'name': 'new_user'})
+
     def test_create_user(self):
         self.api.create_user('test_user')
 
@@ -94,6 +104,15 @@ class ApiTest(testtools.TestCase):
     def test_api_call_timeout(self):
         self.call_context.call.side_effect = Timeout()
         self.assertRaises(exception.GuestTimeout, self.api.restart)
+
+    def test_api_cast_remote_error(self):
+        self.call_context.cast.side_effect = RemoteError('Error')
+        self.assertRaises(exception.GuestError, self.api.delete_database,
+                          'test_db')
+
+    def test_api_call_remote_error(self):
+        self.call_context.call.side_effect = RemoteError('Error')
+        self.assertRaises(exception.GuestError, self.api.stop_db)
 
     def test_list_users(self):
         exp_resp = ['user1', 'user2', 'user3']
@@ -147,6 +166,15 @@ class ApiTest(testtools.TestCase):
         self._verify_call('enable_root')
         self.assertThat(resp, Is(True))
 
+    def test_enable_root_with_password(self):
+        self.call_context.call.return_value = True
+
+        resp = self.api.enable_root_with_password()
+
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('enable_root_with_password', root_password=None)
+        self.assertThat(resp, Is(True))
+
     def test_disable_root(self):
         self.call_context.call.return_value = True
 
@@ -174,6 +202,13 @@ class ApiTest(testtools.TestCase):
         self._verify_call('get_hwinfo')
         self.assertThat(resp, Is('[blah]'))
 
+    def test_rpc_ping(self):
+        # execute
+        self.api.rpc_ping()
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('rpc_ping')
+
     def test_get_diagnostics(self):
         self.call_context.call.return_value = '[all good]'
 
@@ -194,6 +229,14 @@ class ApiTest(testtools.TestCase):
 
         self._verify_rpc_prepare_before_call()
         self._verify_call('start_db_with_conf_changes', config_contents=None)
+
+    def test_reset_configuration(self):
+        # execute
+        self.api.reset_configuration({'config_contents': 'some junk'})
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('reset_configuration',
+                          configuration={'config_contents': 'some junk'})
 
     def test_stop_db(self):
         self.api.stop_db(do_not_start_on_reboot=False)
@@ -223,17 +266,41 @@ class ApiTest(testtools.TestCase):
         self._verify_rpc_prepare_before_cast()
         self._verify_cast('create_backup', backup_info={'id': '123'})
 
+    def test_unmount_volume(self):
+        # execute
+        self.api.unmount_volume('/dev/vdb', '/var/lib/mysql')
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('unmount_volume', device_path='/dev/vdb',
+                          mount_point='/var/lib/mysql')
+
+    def test_mount_volume(self):
+        # execute
+        self.api.mount_volume('/dev/vdb', '/var/lib/mysql')
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('mount_volume', device_path='/dev/vdb',
+                          mount_point='/var/lib/mysql')
+
+    def test_resize_fs(self):
+        # execute
+        self.api.resize_fs('/dev/vdb', '/var/lib/mysql')
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('resize_fs', device_path='/dev/vdb',
+                          mount_point='/var/lib/mysql')
+
     def test_update_overrides(self):
         self.api.update_overrides('123')
 
-        self._verify_rpc_prepare_before_cast()
-        self._verify_cast('update_overrides', overrides='123', remove=False)
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('update_overrides', overrides='123', remove=False)
 
     def test_apply_overrides(self):
         self.api.apply_overrides('123')
 
-        self._verify_rpc_prepare_before_cast()
-        self._verify_cast('apply_overrides', overrides='123')
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('apply_overrides', overrides='123')
 
     def test_get_replication_snapshot(self):
         # execute
@@ -294,6 +361,13 @@ class ApiTest(testtools.TestCase):
         self._verify_rpc_prepare_before_call()
         self._verify_call('get_txn_count')
 
+    def test_get_last_txn(self):
+        # execute
+        self.api.get_last_txn()
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('get_last_txn')
+
     def test_get_latest_txn_id(self):
         # execute
         self.api.get_latest_txn_id()
@@ -308,6 +382,15 @@ class ApiTest(testtools.TestCase):
         self._verify_rpc_prepare_before_call()
         self._verify_call('wait_for_txn', txn="")
 
+    def test_cleanup_source_on_replica_detach(self):
+        # execute
+        self.api.cleanup_source_on_replica_detach({'replication_user':
+                                                   'test_user'})
+        # verify
+        self._verify_rpc_prepare_before_call()
+        self._verify_call('cleanup_source_on_replica_detach',
+                          replica_info={'replication_user': 'test_user'})
+
     def test_demote_replication_master(self):
         # execute
         self.api.demote_replication_master()
@@ -315,8 +398,9 @@ class ApiTest(testtools.TestCase):
         self._verify_rpc_prepare_before_call()
         self._verify_call('demote_replication_master')
 
-    def test_prepare(self):
-        self.api._create_guest_queue = mock.Mock()
+    @mock.patch.object(messaging, 'Target')
+    @mock.patch.object(rpc, 'get_server')
+    def test_prepare(self, *args):
         self.api.prepare('2048', 'package1', 'db1', 'user1', '/dev/vdt',
                          '/mnt/opt', None, 'cont', '1-2-3-4',
                          'override', {'id': '2-3-4-5'})
@@ -330,8 +414,9 @@ class ApiTest(testtools.TestCase):
             overrides='override', cluster_config={'id': '2-3-4-5'},
             snapshot=None)
 
-    def test_prepare_with_backup(self):
-        self.api._create_guest_queue = mock.Mock()
+    @mock.patch.object(messaging, 'Target')
+    @mock.patch.object(rpc, 'get_server')
+    def test_prepare_with_backup(self, *args):
         backup = {'id': 'backup_id_123'}
         self.api.prepare('2048', 'package1', 'db1', 'user1', '/dev/vdt',
                          '/mnt/opt', backup, 'cont', '1-2-3-4',
@@ -380,12 +465,18 @@ class ApiTest(testtools.TestCase):
         self.call_context.cast = mock.Mock()
 
 
-class ApiStrategyTest(testtools.TestCase):
+class ApiStrategyTest(trove_testtools.TestCase):
 
     @mock.patch('trove.guestagent.api.API.__init__',
                 mock.Mock(return_value=None))
-    def test_guest_client(self):
-        from trove.common.remote import guest_client
+    def test_guest_client_mongodb(self):
         client = guest_client(mock.Mock(), mock.Mock(), 'mongodb')
         self.assertFalse(hasattr(client, 'add_config_servers2'))
         self.assertTrue(callable(client.add_config_servers))
+
+    @mock.patch('trove.guestagent.api.API.__init__',
+                mock.Mock(return_value=None))
+    def test_guest_client_vertica(self):
+        client = guest_client(mock.Mock(), mock.Mock(), 'vertica')
+        self.assertFalse(hasattr(client, 'get_public_keys2'))
+        self.assertTrue(callable(client.get_public_keys))

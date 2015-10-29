@@ -15,19 +15,19 @@
 
 import os
 
-from oslo_utils import netutils
+from oslo_log import log as logging
+from oslo_service import periodic_task
+
 from trove.common import cfg
 from trove.common import exception
+from trove.common.i18n import _
 from trove.common import instance as ds_instance
+from trove.guestagent import backup
+from trove.guestagent.common import operating_system
+from trove.guestagent.datastore.experimental.mongodb import service
+from trove.guestagent.datastore.experimental.mongodb import system
 from trove.guestagent import dbaas
 from trove.guestagent import volume
-from trove.guestagent.common import operating_system
-from trove.guestagent.datastore.experimental.mongodb import (
-    service as mongo_service)
-from trove.guestagent.datastore.experimental.mongodb import system
-from trove.openstack.common import log as logging
-from trove.common.i18n import _
-from trove.openstack.common import periodic_task
 
 
 LOG = logging.getLogger(__name__)
@@ -38,13 +38,13 @@ MANAGER = CONF.datastore_manager
 class Manager(periodic_task.PeriodicTasks):
 
     def __init__(self):
-        self.status = mongo_service.MongoDbAppStatus()
-        self.app = mongo_service.MongoDBApp(self.status)
+        self.app = service.MongoDBApp()
+        super(Manager, self).__init__(CONF)
 
-    @periodic_task.periodic_task(ticks_between_runs=3)
+    @periodic_task.periodic_task
     def update_status(self, context):
         """Update the status of the MongoDB service."""
-        self.status.update()
+        self.app.status.update()
 
     def rpc_ping(self, context):
         LOG.debug("Responding to RPC ping.")
@@ -58,8 +58,9 @@ class Manager(periodic_task.PeriodicTasks):
 
         LOG.debug("Preparing MongoDB instance.")
 
-        self.status.begin_install()
+        self.app.status.begin_install()
         self.app.install_if_needed(packages)
+        self.app.wait_for_start()
         self.app.stop_db()
         self.app.clear_storage()
         mount_point = system.MONGODB_MOUNT_POINT
@@ -71,56 +72,52 @@ class Manager(periodic_task.PeriodicTasks):
             if os.path.exists(system.MONGODB_MOUNT_POINT):
                 device.migrate_data(mount_point)
             device.mount(mount_point)
-            operating_system.update_owner(system.MONGO_USER,
-                                          system.MONGO_USER, mount_point)
+            operating_system.chown(mount_point,
+                                   system.MONGO_USER, system.MONGO_USER,
+                                   as_root=True)
 
             LOG.debug("Mounted the volume %(path)s as %(mount)s." %
                       {'path': device_path, "mount": mount_point})
 
-        conf_changes = self.get_config_changes(cluster_config, mount_point)
-        config_contents = self.app.update_config_contents(
-            config_contents, conf_changes)
-        if cluster_config is None:
-            self.app.start_db_with_conf_changes(config_contents)
+        if config_contents:
+            # Save resolved configuration template first.
+            self.app.configuration_manager.save_configuration(config_contents)
+
+        # Apply guestagent specific configuration changes.
+        self.app.apply_initial_guestagent_configuration(
+            cluster_config, mount_point)
+
+        if not cluster_config:
+            # Create the Trove admin user.
+            self.app.secure()
+
+        # Don't start mongos until add_config_servers is invoked,
+        # don't start members as they should already be running.
+        if not (self.app.is_query_router or self.app.is_cluster_member):
+            self.app.start_db(update_db=True)
+
+        if not cluster_config and backup_info:
+            self._perform_restore(backup_info, context, mount_point, self.app)
+            if service.MongoDBAdmin().is_root_enabled():
+                self.app.status.report_root(context, 'root')
+
+        if not cluster_config and root_password:
+            LOG.debug('Root password provided. Enabling root.')
+            service.MongoDBAdmin().enable_root(root_password)
+
+        if not cluster_config:
+            if databases:
+                self.create_database(context, databases)
+            if users:
+                self.create_user(context, users)
+
+        if cluster_config:
+            self.app.status.set_status(
+                ds_instance.ServiceStatuses.BUILD_PENDING)
         else:
-            if cluster_config['instance_type'] == "query_router":
-                self.app.reset_configuration({'config_contents':
-                                              config_contents})
-                self.app.write_mongos_upstart()
-                self.app.status.is_query_router = True
-                # don't start mongos until add_config_servers is invoked
+            self.app.complete_install_or_restart()
 
-            elif cluster_config['instance_type'] == "config_server":
-                self.app.status.is_config_server = True
-                self.app.start_db_with_conf_changes(config_contents)
-
-            elif cluster_config['instance_type'] == "member":
-                self.app.start_db_with_conf_changes(config_contents)
-
-            else:
-                LOG.error(_("Bad cluster configuration; instance type "
-                            "given as %s.") % cluster_config['instance_type'])
-                self.status.set_status(ds_instance.ServiceStatuses.FAILED)
-                return
-
-            self.status.set_status(ds_instance.ServiceStatuses.BUILD_PENDING)
         LOG.info(_('Completed setup of MongoDB database instance.'))
-
-    def get_config_changes(self, cluster_config, mount_point=None):
-        LOG.debug("Getting configuration changes.")
-        config_changes = {}
-        if cluster_config is not None:
-            config_changes['bind_ip'] = netutils.get_my_ipv4()
-            if cluster_config["instance_type"] == "config_server":
-                config_changes["configsvr"] = "true"
-            elif cluster_config["instance_type"] == "member":
-                config_changes["replSet"] = cluster_config["replica_set_name"]
-        if (mount_point is not None and
-                (cluster_config is None or
-                 cluster_config['instance_type'] != "query_router")):
-            config_changes['dbpath'] = mount_point
-
-        return config_changes
 
     def restart(self, context):
         LOG.debug("Restarting MongoDB.")
@@ -154,75 +151,75 @@ class Manager(periodic_task.PeriodicTasks):
             operation='update_attributes', datastore=MANAGER)
 
     def create_database(self, context, databases):
-        LOG.debug("Creating database.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='create_database', datastore=MANAGER)
+        LOG.debug("Creating database(s).")
+        return service.MongoDBAdmin().create_database(databases)
 
     def create_user(self, context, users):
-        LOG.debug("Creating user.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='create_user', datastore=MANAGER)
+        LOG.debug("Creating user(s).")
+        return service.MongoDBAdmin().create_users(users)
 
     def delete_database(self, context, database):
         LOG.debug("Deleting database.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='delete_database', datastore=MANAGER)
+        return service.MongoDBAdmin().delete_database(database)
 
     def delete_user(self, context, user):
         LOG.debug("Deleting user.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='delete_user', datastore=MANAGER)
+        return service.MongoDBAdmin().delete_user(user)
 
     def get_user(self, context, username, hostname):
         LOG.debug("Getting user.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='get_user', datastore=MANAGER)
+        return service.MongoDBAdmin().get_user(username)
 
     def grant_access(self, context, username, hostname, databases):
         LOG.debug("Granting acccess.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='grant_access', datastore=MANAGER)
+        return service.MongoDBAdmin().grant_access(username, databases)
 
     def revoke_access(self, context, username, hostname, database):
         LOG.debug("Revoking access.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='revoke_access', datastore=MANAGER)
+        return service.MongoDBAdmin().revoke_access(username, database)
 
     def list_access(self, context, username, hostname):
         LOG.debug("Listing access.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='list_access', datastore=MANAGER)
+        return service.MongoDBAdmin().list_access(username)
 
     def list_databases(self, context, limit=None, marker=None,
                        include_marker=False):
         LOG.debug("Listing databases.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='list_databases', datastore=MANAGER)
+        return service.MongoDBAdmin().list_databases(limit, marker,
+                                                     include_marker)
 
     def list_users(self, context, limit=None, marker=None,
                    include_marker=False):
         LOG.debug("Listing users.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='list_users', datastore=MANAGER)
+        return service.MongoDBAdmin().list_users(limit, marker, include_marker)
 
     def enable_root(self, context):
         LOG.debug("Enabling root.")
+        return service.MongoDBAdmin().enable_root()
+
+    def enable_root_with_password(self, context, root_password=None):
+        LOG.debug("Enabling root with password.")
         raise exception.DatastoreOperationNotSupported(
-            operation='enable_root', datastore=MANAGER)
+            operation='enable_root_with_password', datastore=MANAGER)
 
     def is_root_enabled(self, context):
         LOG.debug("Checking if root is enabled.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='is_root_enabled', datastore=MANAGER)
+        return service.MongoDBAdmin().is_root_enabled()
 
     def _perform_restore(self, backup_info, context, restore_location, app):
-        raise exception.DatastoreOperationNotSupported(
-            operation='_perform_restore', datastore=MANAGER)
+        LOG.info(_("Restoring database from backup %s.") % backup_info['id'])
+        try:
+            backup.restore(context, backup_info, restore_location)
+        except Exception:
+            LOG.exception(_("Error performing restore from backup %s.") %
+                          backup_info['id'])
+            self.status.set_status(ds_instance.ServiceStatuses.FAILED)
+            raise
+        LOG.info(_("Restored database successfully."))
 
     def create_backup(self, context, backup_info):
         LOG.debug("Creating backup.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='create_backup', datastore=MANAGER)
+        backup.backup(context, backup_info)
 
     def mount_volume(self, context, device_path=None, mount_point=None):
         LOG.debug("Mounting the device %s at the mount point %s." %
@@ -243,13 +240,14 @@ class Manager(periodic_task.PeriodicTasks):
 
     def update_overrides(self, context, overrides, remove=False):
         LOG.debug("Updating overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='update_overrides', datastore=MANAGER)
+        if remove:
+            self.app.remove_overrides()
+        else:
+            self.app.update_overrides(context, overrides, remove)
 
     def apply_overrides(self, context, overrides):
-        LOG.debug("Applying overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='apply_overrides', datastore=MANAGER)
+        LOG.debug("Overrides will be applied after restart.")
+        pass
 
     def get_replication_snapshot(self, context, snapshot_info,
                                  replica_source_config=None):
@@ -303,7 +301,7 @@ class Manager(periodic_task.PeriodicTasks):
             self.app.add_members(members)
             LOG.debug("add_members call has finished.")
         except Exception:
-            self.status.set_status(ds_instance.ServiceStatuses.FAILED)
+            self.app.status.set_status(ds_instance.ServiceStatuses.FAILED)
             raise
 
     def add_config_servers(self, context, config_servers):
@@ -313,7 +311,7 @@ class Manager(periodic_task.PeriodicTasks):
             self.app.add_config_servers(config_servers)
             LOG.debug("add_config_servers call has finished.")
         except Exception:
-            self.status.set_status(ds_instance.ServiceStatuses.FAILED)
+            self.app.status.set_status(ds_instance.ServiceStatuses.FAILED)
             raise
 
     def add_shard(self, context, replica_set_name, replica_set_member):
@@ -324,11 +322,39 @@ class Manager(periodic_task.PeriodicTasks):
             self.app.add_shard(replica_set_name, replica_set_member)
             LOG.debug("add_shard call has finished.")
         except Exception:
-            self.status.set_status(ds_instance.ServiceStatuses.FAILED)
+            self.app.status.set_status(ds_instance.ServiceStatuses.FAILED)
             raise
 
     def cluster_complete(self, context):
         # Now that cluster creation is complete, start status checks
         LOG.debug("Cluster creation complete, starting status checks.")
-        status = self.status._get_actual_db_status()
-        self.status.set_status(status)
+        status = self.app.status._get_actual_db_status()
+        self.app.status.set_status(status)
+
+    def get_key(self, context):
+        # Return the cluster key
+        LOG.debug("Getting the cluster key.")
+        return self.app.get_key()
+
+    def prep_primary(self, context):
+        LOG.debug("Preparing to be primary member.")
+        self.app.prep_primary()
+
+    def create_admin_user(self, context, password):
+        self.app.create_admin_user(password)
+
+    def store_admin_password(self, context, password):
+        self.app.store_admin_password(password)
+
+    def get_replica_set_name(self, context):
+        # Return this nodes replica set name
+        LOG.debug("Getting the replica set name.")
+        return self.app.replica_set_name
+
+    def get_admin_password(self, context):
+        # Return the admin password from this instance
+        LOG.debug("Getting the admin password.")
+        return self.app.admin_password
+
+    def is_shard_active(self, context, replica_set_name):
+        return self.app.is_shard_active(replica_set_name)
