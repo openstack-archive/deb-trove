@@ -1,3 +1,10 @@
+openstack-trove (1:4.0.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Fixed (build-)depends for this release.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 29 Oct 2015 03:10:20 +0100
+
 openstack-trove (2015.1.0-4) unstable; urgency=medium
 
   * Rebuilt with SQLAlchemy >= 1.0 (Closes: #794352).
