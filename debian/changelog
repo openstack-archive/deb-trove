@@ -1,3 +1,9 @@
+openstack-trove (1:4.0.0-2) unstable; urgency=medium
+
+  * Rebuilt with openstack-pkg-tools 37 to use Keystone API v3.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 03 Nov 2015 09:13:13 +0000
+
 openstack-trove (1:4.0.0-1) unstable; urgency=medium
 
   * New upstream release.
