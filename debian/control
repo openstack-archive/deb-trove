@@ -167,6 +167,8 @@ Package: trove-api
 Architecture: all
 Depends: adduser,
          trove-common,
+         python-openstackclient,
+         q-text-as-data,
          ${misc:Depends},
          ${python:Depends},
 Description: Database as a Service for OpenStack - API server
