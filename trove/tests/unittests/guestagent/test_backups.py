@@ -12,13 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import mock
-from mock import ANY, DEFAULT, patch
+from mock import ANY, DEFAULT, Mock, patch
 from testtools.testcase import ExpectedException
 from trove.common import exception
 from trove.common import utils
 from trove.guestagent.common import configuration
+from trove.guestagent.common.configuration import ImportOverrideStrategy
 from trove.guestagent.common import operating_system
-from trove.guestagent.datastore.experimental.mongodb.service import MongoDBApp
 from trove.guestagent.strategies.backup import base as backupBase
 from trove.guestagent.strategies.backup.mysql_impl import MySqlApp
 from trove.guestagent.strategies.restore import base as restoreBase
@@ -96,22 +96,34 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
 
     def setUp(self):
         super(GuestAgentBackupTest, self).setUp()
+        self.patch_pc = patch('trove.guestagent.datastore.service.'
+                              'BaseDbStatus.prepare_completed')
+        self.mock_pc = self.patch_pc.start()
+        self.mock_pc.__get__ = Mock(return_value=True)
+        self.addCleanup(self.patch_pc.stop)
         self.get_auth_pwd_patch = patch.object(
             MySqlApp, 'get_auth_password', mock.Mock(return_value='password'))
         self.get_auth_pwd_mock = self.get_auth_pwd_patch.start()
         self.addCleanup(self.get_auth_pwd_patch.stop)
-        self.orig_exec_with_to = utils.execute_with_timeout
-        self.get_data_dir_patcher = patch.object(
+
+        self.exec_timeout_patch = patch.object(utils, 'execute_with_timeout')
+        self.exec_timeout_mock = self.exec_timeout_patch.start()
+        self.addCleanup(self.exec_timeout_patch.stop)
+
+        self.get_data_dir_patch = patch.object(
             MySqlApp, 'get_data_dir', return_value='/var/lib/mysql/data')
-        self.mock_get_datadir = self.get_data_dir_patcher.start()
+        self.get_datadir_mock = self.get_data_dir_patch.start()
+        self.addCleanup(self.get_data_dir_patch.stop)
+
+        backupBase.BackupRunner.is_zipped = True
+        backupBase.BackupRunner.is_encrypted = True
+        restoreBase.RestoreRunner.is_zipped = True
+        restoreBase.RestoreRunner.is_encrypted = True
 
     def tearDown(self):
         super(GuestAgentBackupTest, self).tearDown()
-        utils.execute_with_timeout = self.orig_exec_with_to
-        self.get_data_dir_patcher.stop()
 
     def test_backup_decrypted_xtrabackup_command(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_XTRA_CLS)
         bkup = RunnerClass(12345, extra_opts="")
@@ -119,7 +131,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz", bkup.manifest)
 
     def test_backup_decrypted_xtrabackup_with_extra_opts_command(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_XTRA_CLS)
         bkup = RunnerClass(12345, extra_opts="--no-lock")
@@ -127,8 +138,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz", bkup.manifest)
 
     def test_backup_encrypted_xtrabackup_command(self):
-        backupBase.BackupRunner.is_zipped = True
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_XTRA_CLS)
         bkup = RunnerClass(12345, extra_opts="")
@@ -137,7 +146,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz.enc", bkup.manifest)
 
     def test_backup_xtrabackup_incremental(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_XTRA_INCR_CLS)
         opts = {'lsn': '54321', 'extra_opts': ''}
@@ -147,7 +155,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz", bkup.manifest)
 
     def test_backup_xtrabackup_incremental_with_extra_opts_command(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_XTRA_INCR_CLS)
         opts = {'lsn': '54321', 'extra_opts': '--no-lock'}
@@ -157,8 +164,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz", bkup.manifest)
 
     def test_backup_xtrabackup_incremental_encrypted(self):
-        backupBase.BackupRunner.is_zipped = True
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_XTRA_INCR_CLS)
         opts = {'lsn': '54321', 'extra_opts': ''}
@@ -168,7 +173,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.xbstream.gz.enc", bkup.manifest)
 
     def test_backup_decrypted_mysqldump_command(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_SQLDUMP_CLS)
         bkup = RunnerClass(12345, extra_opts="")
@@ -176,7 +180,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.gz", bkup.manifest)
 
     def test_backup_decrypted_mysqldump_with_extra_opts_command(self):
-        backupBase.BackupRunner.is_zipped = True
         backupBase.BackupRunner.is_encrypted = False
         RunnerClass = utils.import_class(BACKUP_SQLDUMP_CLS)
         bkup = RunnerClass(12345, extra_opts="--events --routines --triggers")
@@ -184,8 +187,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.gz", bkup.manifest)
 
     def test_backup_encrypted_mysqldump_command(self):
-        backupBase.BackupRunner.is_zipped = True
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_SQLDUMP_CLS)
         bkup = RunnerClass(12345, user="user",
@@ -195,7 +196,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual("12345.gz.enc", bkup.manifest)
 
     def test_restore_decrypted_xtrabackup_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_XTRA_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -204,8 +204,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(PREPARE, restr.prepare_cmd)
 
     def test_restore_encrypted_xtrabackup_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_XTRA_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -230,7 +228,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(expected, observed)
 
     def test_restore_decrypted_xtrabackup_incremental_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_XTRA_INCR_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -245,8 +242,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(expected, observed)
 
     def test_restore_encrypted_xtrabackup_incremental_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_XTRA_INCR_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -261,7 +256,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(expected, observed)
 
     def test_restore_decrypted_mysqldump_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_SQLDUMP_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -269,8 +263,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(UNZIP + PIPE + SQLDUMP_RESTORE, restr.restore_cmd)
 
     def test_restore_encrypted_mysqldump_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_SQLDUMP_CLS)
         restr = RunnerClass(None, restore_location="/var/lib/mysql/data",
@@ -279,7 +271,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
                          restr.restore_cmd)
 
     def test_backup_encrypted_cbbackup_command(self):
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_CBBACKUP_CLS)
         utils.execute_with_timeout = mock.Mock(return_value=None)
@@ -300,7 +291,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertIn("gz", bkp.manifest)
 
     def test_restore_decrypted_cbbackup_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_CBBACKUP_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
@@ -308,8 +298,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(UNZIP + PIPE + CBBACKUP_RESTORE, restr.restore_cmd)
 
     def test_restore_encrypted_cbbackup_command(self):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_CBBACKUP_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
@@ -333,9 +321,8 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
             # (see bug/1423759).
             remove.assert_called_once_with(ANY, force=True, as_root=True)
 
-    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def test_backup_encrypted_mongodump_command(self, _):
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_MONGODUMP_CLS)
         utils.execute_with_timeout = mock.Mock(return_value=None)
@@ -345,7 +332,7 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
             MONGODUMP_CMD + PIPE + ZIP + PIPE + ENCRYPT, bkp.command)
         self.assertIn("gz.enc", bkp.manifest)
 
-    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def test_backup_not_encrypted_mongodump_command(self, _):
         backupBase.BackupRunner.is_encrypted = False
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
@@ -356,19 +343,16 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
         self.assertEqual(MONGODUMP_CMD + PIPE + ZIP, bkp.command)
         self.assertIn("gz", bkp.manifest)
 
-    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def test_restore_decrypted_mongodump_command(self, _):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_MONGODUMP_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
                             location="filename", checksum="md5")
         self.assertEqual(restr.restore_cmd, UNZIP + PIPE + MONGODUMP_RESTORE)
 
-    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def test_restore_encrypted_mongodump_command(self, _):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_MONGODUMP_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
@@ -381,7 +365,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
                   mock.Mock(return_value={'dir': '/var/lib/redis',
                                           'dbfilename': 'dump.rdb'}))
     def test_backup_encrypted_redisbackup_command(self, *mocks):
-        backupBase.BackupRunner.is_encrypted = True
         backupBase.BackupRunner.encrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(BACKUP_REDIS_CLS)
         bkp = RunnerClass(12345)
@@ -409,7 +392,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
     @patch.object(operating_system, 'chown')
     @patch.object(operating_system, 'create_directory')
     def test_restore_decrypted_redisbackup_command(self, *mocks):
-        restoreBase.RestoreRunner.is_zipped = True
         restoreBase.RestoreRunner.is_encrypted = False
         RunnerClass = utils.import_class(RESTORE_REDIS_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
@@ -422,8 +404,6 @@ class GuestAgentBackupTest(trove_testtools.TestCase):
     @patch.object(operating_system, 'chown')
     @patch.object(operating_system, 'create_directory')
     def test_restore_encrypted_redisbackup_command(self, *mocks):
-        restoreBase.RestoreRunner.is_zipped = True
-        restoreBase.RestoreRunner.is_encrypted = True
         restoreBase.RestoreRunner.decrypt_key = CRYPTO_KEY
         RunnerClass = utils.import_class(RESTORE_REDIS_CLS)
         restr = RunnerClass(None, restore_location="/tmp",
@@ -516,52 +496,57 @@ class MongodbBackupTests(trove_testtools.TestCase):
 
     def setUp(self):
         super(MongodbBackupTests, self).setUp()
+
         self.exec_timeout_patch = patch.object(utils, 'execute_with_timeout')
-        self.exec_timeout_patch.start()
-        self.mongodb_init_overrides_dir_patch = patch.object(
-            MongoDBApp,
-            '_init_overrides_dir')
-        self.mongodb_init_overrides_dir_patch.start()
-        self.backup_runner = utils.import_class(
-            BACKUP_MONGODUMP_CLS)
+        self.exec_timeout_mock = self.exec_timeout_patch.start()
+        self.addCleanup(self.exec_timeout_patch.stop)
+
+        self.init_overrides_dir_patch = patch.object(
+            ImportOverrideStrategy, '_initialize_import_directory')
+        self.init_overrides_dir_mock = self.init_overrides_dir_patch.start()
+        self.addCleanup(self.init_overrides_dir_patch.stop)
+
+        self.backup_runner = utils.import_class(BACKUP_MONGODUMP_CLS)
+
         self.backup_runner_patch = patch.multiple(
             self.backup_runner, _run=DEFAULT,
             _run_pre_backup=DEFAULT, _run_post_backup=DEFAULT)
+        self.backup_runner_mocks = self.backup_runner_patch.start()
+        self.addCleanup(self.backup_runner_patch.stop)
 
     def tearDown(self):
         super(MongodbBackupTests, self).tearDown()
-        self.backup_runner_patch.stop()
-        self.exec_timeout_patch.stop()
-        self.mongodb_init_overrides_dir_patch.stop()
 
     def test_backup_success(self):
-        backup_runner_mocks = self.backup_runner_patch.start()
         with self.backup_runner(12345):
             pass
 
-        backup_runner_mocks['_run_pre_backup'].assert_called_once_with()
-        backup_runner_mocks['_run'].assert_called_once_with()
-        backup_runner_mocks['_run_post_backup'].assert_called_once_with()
+        self.backup_runner_mocks['_run_pre_backup'].assert_called_once_with()
+        self.backup_runner_mocks['_run'].assert_called_once_with()
+        self.backup_runner_mocks['_run_post_backup'].assert_called_once_with()
 
     def test_backup_failed_due_to_run_backup(self):
-        backup_runner_mocks = self.backup_runner_patch.start()
-        backup_runner_mocks['_run'].configure_mock(
+        self.backup_runner_mocks['_run'].configure_mock(
             side_effect=exception.TroveError('test')
         )
         with ExpectedException(exception.TroveError, 'test'):
             with self.backup_runner(12345):
                 pass
-        backup_runner_mocks['_run_pre_backup'].assert_called_once_with()
-        backup_runner_mocks['_run'].assert_called_once_with()
-        self.assertEqual(0, backup_runner_mocks['_run_post_backup'].call_count)
+        self.backup_runner_mocks['_run_pre_backup'].assert_called_once_with()
+        self.backup_runner_mocks['_run'].assert_called_once_with()
+        self.assertEqual(
+            0, self.backup_runner_mocks['_run_post_backup'].call_count)
 
 
 class MongodbRestoreTests(trove_testtools.TestCase):
 
-    @patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def setUp(self, _):
         super(MongodbRestoreTests, self).setUp()
 
+        self.patch_ope = patch('os.path.expanduser')
+        self.mock_ope = self.patch_ope.start()
+        self.addCleanup(self.patch_ope.stop)
         self.restore_runner = utils.import_class(
             RESTORE_MONGODUMP_CLS)('swift', location='http://some.where',
                                    checksum='True_checksum',

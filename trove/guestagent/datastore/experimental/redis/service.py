@@ -72,22 +72,6 @@ class RedisApp(object):
     on a trove instance.
     """
 
-    @classmethod
-    def _init_overrides_dir(cls):
-        """Initialize a directory for configuration overrides.
-        """
-        revision_dir = guestagent_utils.build_file_path(
-            os.path.dirname(system.REDIS_CONFIG),
-            ConfigurationManager.DEFAULT_STRATEGY_OVERRIDES_SUB_DIR)
-
-        if not os.path.exists(revision_dir):
-            operating_system.create_directory(
-                revision_dir,
-                user=system.REDIS_OWNER, group=system.REDIS_OWNER,
-                force=True, as_root=True)
-
-        return revision_dir
-
     def __init__(self, state_change_wait_time=None):
         """
         Sets default status and state_change_wait_time
@@ -97,7 +81,9 @@ class RedisApp(object):
         else:
             self.state_change_wait_time = CONF.state_change_wait_time
 
-        revision_dir = self._init_overrides_dir()
+        revision_dir = guestagent_utils.build_file_path(
+            os.path.dirname(system.REDIS_CONFIG),
+            ConfigurationManager.DEFAULT_STRATEGY_OVERRIDES_SUB_DIR)
         config_value_mappings = {'yes': True, 'no': False, "''": None}
         self._value_converter = StringConverter(config_value_mappings)
         self.configuration_manager = ConfigurationManager(
@@ -127,13 +113,6 @@ class RedisApp(object):
             LOG.info(_('Installing Redis.'))
             self._install_redis(packages)
         LOG.info(_('Redis installed completely.'))
-
-    def complete_install_or_restart(self):
-        """
-        finalize status updates for install or restart.
-        """
-        LOG.debug("Complete install or restart called.")
-        self.status.end_install_or_restart()
 
     def _install_redis(self, packages):
         """
@@ -175,7 +154,7 @@ class RedisApp(object):
                 rd_instance.ServiceStatuses.SHUTDOWN,
                 self.state_change_wait_time, update_db):
             LOG.error(_('Could not stop Redis.'))
-            self.status.end_install_or_restart()
+            self.status.end_restart()
 
     def restart(self):
         """
@@ -187,7 +166,7 @@ class RedisApp(object):
             self.stop_db()
             self.start_redis()
         finally:
-            self.status.end_install_or_restart()
+            self.status.end_restart()
 
     def update_overrides(self, context, overrides, remove=False):
         if overrides:
@@ -248,11 +227,6 @@ class RedisApp(object):
         self.apply_initial_guestagent_configuration()
         self.start_redis(True)
 
-    def reset_configuration(self, configuration):
-        LOG.info(_("Resetting configuration."))
-        config_contents = configuration['config_contents']
-        self.configuration_manager.save_configuration(config_contents)
-
     def start_redis(self, update_db=False):
         """
         Start the redis daemon.
@@ -271,7 +245,7 @@ class RedisApp(object):
                                            root_helper='sudo')
             except exception.ProcessExecutionError:
                 LOG.exception(_('Error killing stalled redis start command.'))
-            self.status.end_install_or_restart()
+            self.status.end_restart()
 
     def apply_initial_guestagent_configuration(self):
         """Update guestagent-controlled configuration properties.

@@ -16,7 +16,7 @@ import hashlib
 import mock
 import os
 
-from mock import Mock, MagicMock, patch, ANY
+from mock import Mock, MagicMock, patch, ANY, DEFAULT
 from oslo_utils import netutils
 from webob.exc import HTTPNotFound
 
@@ -26,7 +26,7 @@ from trove.common import utils
 from trove.conductor import api as conductor_api
 from trove.guestagent.backup import backupagent
 from trove.guestagent.common import configuration
-from trove.guestagent.datastore.experimental.mongodb.service import MongoDBApp
+from trove.guestagent.common.configuration import ImportOverrideStrategy
 from trove.guestagent.strategies.backup.base import BackupRunner
 from trove.guestagent.strategies.backup.base import UnknownBackupType
 from trove.guestagent.strategies.backup.experimental import couchbase_impl
@@ -168,6 +168,15 @@ class BackupAgentTest(trove_testtools.TestCase):
 
     def setUp(self):
         super(BackupAgentTest, self).setUp()
+        self.patch_ope = patch.multiple('os.path',
+                                        exists=DEFAULT)
+        self.mock_ope = self.patch_ope.start()
+        self.addCleanup(self.patch_ope.stop)
+        self.patch_pc = patch('trove.guestagent.datastore.service.'
+                              'BaseDbStatus.prepare_completed')
+        self.mock_pc = self.patch_pc.start()
+        self.mock_pc.__get__ = Mock(return_value=True)
+        self.addCleanup(self.patch_pc.stop)
         self.get_auth_pwd_patch = patch.object(
             MySqlApp, 'get_auth_password', MagicMock(return_value='123'))
         self.get_auth_pwd_mock = self.get_auth_pwd_patch.start()
@@ -242,7 +251,7 @@ class BackupAgentTest(trove_testtools.TestCase):
         self.assertIsNotNone(cbbackup.manifest)
         self.assertIn('gz.enc', cbbackup.manifest)
 
-    @mock.patch.object(MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def test_backup_impl_MongoDump(self, _):
         netutils.get_my_ipv4 = Mock(return_value="1.1.1.1")
         utils.execute_with_timeout = Mock(return_value=None)
@@ -374,7 +383,8 @@ class BackupAgentTest(trove_testtools.TestCase):
     @patch.object(conductor_api.API, 'get_client', Mock(return_value=Mock()))
     @patch.object(conductor_api.API, 'update_backup',
                   Mock(return_value=Mock()))
-    def test_execute_lossy_backup(self):
+    @patch('trove.guestagent.backup.backupagent.LOG')
+    def test_execute_lossy_backup(self, mock_logging):
         """This test verifies that incomplete writes to swift will fail."""
         with patch.object(MockSwift, 'save',
                           return_value=(False, 'Error', 'y', 'z')):
@@ -421,7 +431,8 @@ class BackupAgentTest(trove_testtools.TestCase):
                                       bkup_info,
                                       '/var/lib/mysql/data')
 
-    def test_restore_unknown(self):
+    @patch('trove.guestagent.backup.backupagent.LOG')
+    def test_restore_unknown(self, mock_logging):
         with patch.object(backupagent, 'get_restore_strategy',
                           side_effect=ImportError):
 
@@ -442,7 +453,8 @@ class BackupAgentTest(trove_testtools.TestCase):
     @patch.object(MockSwift, 'load_metadata', return_value={'lsn': '54321'})
     @patch.object(MockStorage, 'save_metadata')
     @patch.object(backupagent, 'get_storage_strategy', return_value=MockSwift)
-    def test_backup_incremental_metadata(self,
+    @patch('trove.guestagent.backup.backupagent.LOG')
+    def test_backup_incremental_metadata(self, mock_logging,
                                          get_storage_strategy_mock,
                                          save_metadata_mock,
                                          load_metadata_mock,
@@ -462,7 +474,9 @@ class BackupAgentTest(trove_testtools.TestCase):
                          'location': 'fake-location',
                          'type': 'InnoBackupEx',
                          'checksum': 'fake-checksum',
-                         'parent': {'location': 'fake', 'checksum': 'md5'}
+                         'parent': {'location': 'fake', 'checksum': 'md5'},
+                         'datastore': 'mysql',
+                         'datastore_version': 'bo.gus'
                          }
 
             agent.execute_backup(TroveContext(),

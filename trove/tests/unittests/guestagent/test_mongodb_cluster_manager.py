@@ -20,6 +20,7 @@ import pymongo
 import trove.common.context as context
 import trove.common.instance as ds_instance
 import trove.common.utils as utils
+from trove.guestagent.common.configuration import ImportOverrideStrategy
 from trove.guestagent.common import operating_system
 import trove.guestagent.datastore.experimental.mongodb.manager as manager
 import trove.guestagent.datastore.experimental.mongodb.service as service
@@ -30,13 +31,14 @@ import trove.tests.unittests.trove_testtools as trove_testtools
 
 class GuestAgentMongoDBClusterManagerTest(trove_testtools.TestCase):
 
-    @mock.patch.object(service.MongoDBApp, '_init_overrides_dir')
+    @mock.patch.object(ImportOverrideStrategy, '_initialize_import_directory')
     def setUp(self, _):
         super(GuestAgentMongoDBClusterManagerTest, self).setUp()
         self.context = context.TroveContext()
         self.manager = manager.Manager()
         self.manager.app.configuration_manager = mock.MagicMock()
-        self.manager.app.status = mock.MagicMock()
+        self.manager.app.status.set_status = mock.MagicMock()
+        self.manager.app.status.set_host = mock.MagicMock()
         self.conf_mgr = self.manager.app.configuration_manager
 
         self.pymongo_patch = mock.patch.object(
@@ -115,7 +117,7 @@ class GuestAgentMongoDBClusterManagerTest(trove_testtools.TestCase):
         mock_config.assert_called_once_with()
         mock_secure.assert_called_once_with(None)
         self.manager.app.status.set_status.assert_called_with(
-            ds_instance.ServiceStatuses.BUILD_PENDING)
+            ds_instance.ServiceStatuses.INSTANCE_READY, force=True)
 
     @mock.patch.object(service.MongoDBApp, '_initialize_writable_run_dir')
     @mock.patch.object(service.MongoDBApp, '_configure_as_config_server')
@@ -127,7 +129,7 @@ class GuestAgentMongoDBClusterManagerTest(trove_testtools.TestCase):
         mock_config.assert_called_once_with()
         mock_secure.assert_called_once_with(None)
         self.manager.app.status.set_status.assert_called_with(
-            ds_instance.ServiceStatuses.BUILD_PENDING)
+            ds_instance.ServiceStatuses.INSTANCE_READY, force=True)
 
     @mock.patch.object(service.MongoDBApp, '_initialize_writable_run_dir')
     @mock.patch.object(service.MongoDBApp, '_configure_as_cluster_member')
@@ -138,7 +140,7 @@ class GuestAgentMongoDBClusterManagerTest(trove_testtools.TestCase):
         mock_config.assert_called_once_with('rs1')
         mock_secure.assert_called_once_with(None)
         self.manager.app.status.set_status.assert_called_with(
-            ds_instance.ServiceStatuses.BUILD_PENDING)
+            ds_instance.ServiceStatuses.INSTANCE_READY, force=True)
 
     @mock.patch.object(operating_system, 'write_file')
     @mock.patch.object(service.MongoDBApp, '_configure_network')

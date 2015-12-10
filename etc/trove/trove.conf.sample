@@ -104,10 +104,10 @@ block_device_mapping = vdb
 device_path = /dev/vdb
 # Maximum volume size for an instance
 max_accepted_volume_size = 10
-max_instances_per_user = 5
+max_instances_per_tenant = 5
 # Maximum volume capacity (in GB) spanning across all trove volumes per tenant
-max_volumes_per_user = 100
-max_backups_per_user = 5
+max_volumes_per_tenant = 100
+max_backups_per_tenant = 5
 volume_time_out=30
 
 # Config options for rate limits
@@ -142,10 +142,6 @@ taskmanager_queue = taskmanager
 # Auth
 admin_roles = admin
 
-# Users to ignore for user create/list/delete operations
-ignore_users = os_admin, root
-ignore_dbs = lost+found, mysql, information_schema
-
 # Guest related conf
 agent_heartbeat_time = 10
 agent_call_low_timeout = 5
@@ -165,7 +161,7 @@ api_paste_config = api-paste.ini
 # notification_driver=noop
 
 # Topics used for OpenStack notifications, list value. Default is 'notifications'.
-# notification_topics=['notifications', ]
+# notification_topics=notifications
 
 # ============ Logging information =============================
 #log_dir = /integration/report
@@ -219,6 +215,11 @@ tcp_ports = 3306
 volume_support = True
 device_path = /dev/vdb
 
+# Users to ignore for user create/list/delete operations
+ignore_users = os_admin, root
+ignore_dbs = mysql, information_schema, performance_schema
+
+
 [redis]
 tcp_ports = 6379
 #redis uses local storage
@@ -250,3 +251,42 @@ device_path = /dev/vdb
 cluster_support = True
 cluster_member_count = 3
 api_strategy = trove.common.strategies.cluster.experimental.vertica.api.VerticaAPIStrategy
+
+
+# ============ CORS configuration =============================
+
+[cors]
+
+#
+# Options defined in oslo_middleware.cors.CORS.
+# This entire section is optional.
+#
+
+# The default protocol, domain, and port from which HTTP requests are
+# permitted.
+# allowed_origin=https://localhost:443
+
+# Whether to permit credential headers on CORS requests.
+# allow_credentials = True
+
+# CORS preflight responses may be cached. This setting allows you to tell the
+# client how many seconds that cache should persist.
+# max_age=3600
+
+# The list of HTTP methods which clients may access. These may be overridden by
+# the software itself.
+# allow_methods=GET,POST,PUT,DELETE,PATCH
+
+# The default list of headers each CORS client may access.
+# allow_headers=X-Custom-Header
+
+# The default list of headers exposed on each CORS request. To allow proper
+# microversion detection, please ensure that the 'X-OpenStack-Ironic-API-Version
+# header is included in this list.
+# expose_headers=X-Custom-Header
+
+[cors.optional]
+
+# An additional domain from which CORS requests are permitted, which defaults
+# to settings set above.
+# allowed_origin=https://otherhost:443

@@ -15,8 +15,11 @@
 
 import inspect
 import mock
+import os
 import sys
 import testtools
+
+from trove.tests import root_logger
 
 
 class TestCase(testtools.TestCase):
@@ -31,11 +34,21 @@ class TestCase(testtools.TestCase):
         # Number of nested levels to examine when searching for mocks.
         # Higher setting will potentially uncover more dangling objects,
         # at the cost of increased scanning time.
-        cls._max_recursion_depth = 2
-        cls._fail_fast = False  # Skip remaining tests after the first failure.
-        cls._only_unique = True  # Report only unique dangling mock references.
+        cls._max_recursion_depth = int(os.getenv(
+            'TROVE_TESTS_UNMOCK_RECURSION_DEPTH', 2))
+        # Should we skip the remaining tests after the first failure.
+        cls._fail_fast = cls.is_bool(os.getenv(
+            'TROVE_TESTS_UNMOCK_FAIL_FAST', False))
+        # Should we report only unique dangling mock references.
+        cls._only_unique = cls.is_bool(os.getenv(
+            'TROVE_TESTS_UNMOCK_ONLY_UNIQUE', True))
 
         cls._dangling_mocks = set()
+        root_logger.DefaultRootLogger(enable_backtrace=False)
+
+    @classmethod
+    def is_bool(cls, val):
+        return str(val).lower() in ['true', '1', 't', 'y', 'yes', 'on', 'set']
 
     def setUp(self):
         if self.__class__._fail_fast and self.__class__._dangling_mocks:
@@ -45,6 +58,14 @@ class TestCase(testtools.TestCase):
         super(TestCase, self).setUp()
         self.addCleanup(self._assert_modules_unmocked)
         self._mocks_before = self._find_mock_refs()
+        root_logger.DefaultRootHandler.set_info(self.id())
+
+    def tearDown(self):
+        # yes, this is gross and not thread aware.
+        # but the only way to make it thread aware would require that
+        # we single thread all testing
+        root_logger.DefaultRootHandler.set_info(info=None)
+        super(TestCase, self).tearDown()
 
     def _assert_modules_unmocked(self):
         """Check that all members of loaded modules are currently unmocked.

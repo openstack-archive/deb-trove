@@ -18,9 +18,10 @@
 import os.path
 
 from oslo_config import cfg
+from oslo_config.cfg import NoSuchOptError
 from oslo_log import log as logging
 
-import trove
+from trove.version import version_info as version
 
 
 UNKNOWN_SERVICE_ID = 'unknown-service-id-error'
@@ -33,10 +34,10 @@ path_opts = [
 ]
 
 common_opts = [
-    cfg.StrOpt('bind_host', default='0.0.0.0',
-               help='IP address the API server will listen on.'),
-    cfg.IntOpt('bind_port', default=8779,
-               help='Port the API server will listen on.'),
+    cfg.IPOpt('bind_host', default='0.0.0.0',
+              help='IP address the API server will listen on.'),
+    cfg.PortOpt('bind_port', default=8779,
+                help='Port the API server will listen on.'),
     cfg.StrOpt('api_paste_config', default="api-paste.ini",
                help='File name for the paste.deploy config for trove-api.'),
     cfg.BoolOpt('trove_volume_support', default=True,
@@ -54,6 +55,8 @@ common_opts = [
                help='Service type to use when searching catalog.'),
     cfg.StrOpt('nova_compute_endpoint_type', default='publicURL',
                help='Service endpoint type to use when searching catalog.'),
+    cfg.IntOpt('nova_client_version', default=2,
+               help="The version of of the compute service client."),
     cfg.StrOpt('neutron_url', help='URL without the tenant segment.'),
     cfg.StrOpt('neutron_service_type', default='network',
                help='Service type to use when searching catalog.'),
@@ -76,8 +79,8 @@ common_opts = [
                help='Service endpoint type to use when searching catalog.'),
     cfg.StrOpt('trove_auth_url', default='http://0.0.0.0:5000/v2.0',
                help='Trove authentication URL.'),
-    cfg.StrOpt('host', default='0.0.0.0',
-               help='Host to listen for RPC messages.'),
+    cfg.IPOpt('host', default='0.0.0.0',
+              help='Host to listen for RPC messages.'),
     cfg.IntOpt('report_interval', default=30,
                help='The interval (in seconds) which periodic tasks are run.'),
     cfg.BoolOpt('trove_dns_support', default=False,
@@ -127,11 +130,6 @@ common_opts = [
                help='Page size for listing backups.'),
     cfg.IntOpt('configurations_page_size', default=20,
                help='Page size for listing configurations.'),
-    cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
-                help='Users to exclude when listing users.'),
-    cfg.ListOpt('ignore_dbs',
-                default=['mysql', 'information_schema', 'performance_schema'],
-                help='Databases to exclude when listing databases.'),
     cfg.IntOpt('agent_call_low_timeout', default=5,
                help="Maximum time (in seconds) to wait for Guest Agent 'quick'"
                     "requests (such as retrieving a list of users or "
@@ -146,6 +144,8 @@ common_opts = [
     cfg.StrOpt('guest_id', default=None, help="ID of the Guest Instance."),
     cfg.IntOpt('state_change_wait_time', default=3 * 60,
                help='Maximum time (in seconds) to wait for a state change.'),
+    cfg.IntOpt('state_change_poll_time', default=3,
+               help='Interval between state change poll requests (seconds).'),
     cfg.IntOpt('agent_heartbeat_time', default=10,
                help='Maximum time (in seconds) for the Guest Agent to reply '
                     'to a heartbeat request.'),
@@ -164,15 +164,19 @@ common_opts = [
                help='Maximum time (in seconds) to wait for a volume format.'),
     cfg.StrOpt('mount_options', default='defaults,noatime',
                help='Options to use when mounting a volume.'),
-    cfg.IntOpt('max_instances_per_user', default=5,
-               help='Default maximum number of instances per tenant.'),
+    cfg.IntOpt('max_instances_per_tenant',
+               default=5,
+               help='Default maximum number of instances per tenant.',
+               deprecated_name='max_instances_per_user'),
     cfg.IntOpt('max_accepted_volume_size', default=5,
                help='Default maximum volume size (in GB) for an instance.'),
-    cfg.IntOpt('max_volumes_per_user', default=20,
+    cfg.IntOpt('max_volumes_per_tenant', default=20,
                help='Default maximum volume capacity (in GB) spanning across '
-                    'all Trove volumes per tenant.'),
-    cfg.IntOpt('max_backups_per_user', default=50,
-               help='Default maximum number of backups created by a tenant.'),
+                    'all Trove volumes per tenant.',
+               deprecated_name='max_volumes_per_user'),
+    cfg.IntOpt('max_backups_per_tenant', default=50,
+               help='Default maximum number of backups created by a tenant.',
+               deprecated_name='max_backups_per_user'),
     cfg.StrOpt('quota_driver', default='trove.quota.quota.DbQuotaDriver',
                help='Default driver to use for quota checks.'),
     cfg.StrOpt('taskmanager_queue', default='taskmanager',
@@ -403,7 +407,9 @@ profiler_opts = [
     cfg.BoolOpt("enabled", default=False,
                 help="If False fully disable profiling feature."),
     cfg.BoolOpt("trace_sqlalchemy", default=True,
-                help="If False doesn't trace SQL requests.")
+                help="If False doesn't trace SQL requests."),
+    cfg.StrOpt("hmac_keys", default="SECRET_KEY",
+               help="Secret key to use to sign tracing messages."),
 ]
 
 
@@ -485,6 +491,15 @@ mysql_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for mysql.'),
+    cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
+                help='Users to exclude when listing users.',
+                deprecated_name='ignore_users',
+                deprecated_group='DEFAULT'),
+    cfg.ListOpt('ignore_dbs',
+                default=['mysql', 'information_schema', 'performance_schema'],
+                help='Databases to exclude when listing databases.',
+                deprecated_name='ignore_dbs',
+                deprecated_group='DEFAULT'),
 ]
 
 # Percona
@@ -549,6 +564,15 @@ percona_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for percona.'),
+    cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
+                help='Users to exclude when listing users.',
+                deprecated_name='ignore_users',
+                deprecated_group='DEFAULT'),
+    cfg.ListOpt('ignore_dbs',
+                default=['mysql', 'information_schema', 'performance_schema'],
+                help='Databases to exclude when listing databases.',
+                deprecated_name='ignore_dbs',
+                deprecated_group='DEFAULT'),
 ]
 
 # Percona XtraDB Cluster
@@ -602,6 +626,9 @@ pxc_opts = [
                 'backup.'),
     cfg.ListOpt('ignore_users', default=['os_admin', 'root', 'clusterrepuser'],
                 help='Users to exclude when listing users.'),
+    cfg.ListOpt('ignore_dbs',
+                default=['mysql', 'information_schema', 'performance_schema'],
+                help='Databases to exclude when listing databases.'),
     cfg.BoolOpt('cluster_support', default=True,
                 help='Enable clusters to be created and managed.'),
     cfg.IntOpt('min_cluster_member_count', default=3,
@@ -769,7 +796,7 @@ couchbase_opts = [
     cfg.StrOpt('mount_point', default='/var/lib/couchbase',
                help="Filesystem path for mounting "
                "volumes if volume support is enabled."),
-    cfg.BoolOpt('root_on_create', default=True,
+    cfg.BoolOpt('root_on_create', default=False,
                 help='Enable the automatic creation of the root user for the '
                 'service during instance-create. The generated password for '
                 'the root user is immediately returned in the response of '
@@ -860,10 +887,10 @@ mongodb_opts = [
                help='Namespace to load restore strategies from.',
                deprecated_name='restore_namespace',
                deprecated_group='DEFAULT'),
-    cfg.IntOpt('mongodb_port', default=27017,
-               help='Port for mongod and mongos instances.'),
-    cfg.IntOpt('configsvr_port', default=27019,
-               help='Port for instances running as config servers.'),
+    cfg.PortOpt('mongodb_port', default=27017,
+                help='Port for mongod and mongos instances.'),
+    cfg.PortOpt('configsvr_port', default=27019,
+                help='Port for instances running as config servers.'),
     cfg.ListOpt('ignore_dbs', default=['admin', 'local', 'config'],
                 help='Databases to exclude when listing databases.'),
     cfg.ListOpt('ignore_users', default=['admin.os_admin', 'admin.root'],
@@ -1126,6 +1153,15 @@ mariadb_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for mysql.'),
+    cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
+                help='Users to exclude when listing users.',
+                deprecated_name='ignore_users',
+                deprecated_group='DEFAULT'),
+    cfg.ListOpt('ignore_dbs',
+                default=['mysql', 'information_schema', 'performance_schema'],
+                help='Databases to exclude when listing databases.',
+                deprecated_name='ignore_dbs',
+                deprecated_group='DEFAULT'),
 ]
 
 # RPC version groups
@@ -1194,5 +1230,41 @@ def custom_parser(parsername, parser):
 def parse_args(argv, default_config_files=None):
     cfg.CONF(args=argv[1:],
              project='trove',
-             version=trove.__version__,
+             version=version.cached_version_string(),
              default_config_files=default_config_files)
+
+
+def get_ignored_dbs(manager=None):
+    try:
+        return get_configuration_property('ignore_dbs', manager=manager)
+    except NoSuchOptError:
+        return []
+
+
+def get_ignored_users(manager=None):
+    try:
+        return get_configuration_property('ignore_users', manager=manager)
+    except NoSuchOptError:
+        return []
+
+
+def get_configuration_property(property_name, manager=None):
+    """
+    Get a configuration property.
+    Try to get it from the datastore-specific section first.
+    If it is not available, retrieve it from the DEFAULT section.
+    """
+
+    # TODO(pmalik): Note that the unit and fake-integration tests
+    # do not define 'CONF.datastore_manager'. *MySQL* options will
+    # be loaded unless the caller passes a manager name explicitly.
+    #
+    # Once the tests are fixed this conditional expression should be removed
+    # and the proper value should always be either loaded from
+    # 'CONF.datastore_manager' or passed-in by the caller.
+    datastore_manager = manager or CONF.datastore_manager or 'mysql'
+
+    try:
+        return CONF.get(datastore_manager).get(property_name)
+    except NoSuchOptError:
+        return CONF.get(property_name)

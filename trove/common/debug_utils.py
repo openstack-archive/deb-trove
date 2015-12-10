@@ -39,8 +39,9 @@ pydev_debug_opts = [
     cfg.StrOpt("pydev_debug_host",
                help="Pydev debug server host (localhost by default)."),
 
-    cfg.IntOpt("pydev_debug_port",
-               help="Pydev debug server port (5678 by default)."),
+    cfg.PortOpt("pydev_debug_port",
+                default=5678,
+                help="Pydev debug server port (5678 by default)."),
 
     cfg.StrOpt("pydev_path",
                help="Set path to pydevd library, used if pydevd is "
@@ -81,6 +82,23 @@ def enabled():
     """
     assert __debug_state is not None, ("debug_utils are not initialized. "
                                        "Please call setup() method first")
+
+    # if __debug_state is set and we have monkey patched
+    # eventlet.thread, issue a warning.
+    # You can't safely use eventlet.is_monkey_patched() on the
+    # threading module so you have to do this little dance.
+    # Discovered after much head scratching, see also
+    #
+    # http://stackoverflow.com/questions/32452110/
+    #     does-eventlet-do-monkey-patch-for-threading-module
+    #
+    # note multi-line URL
+    if __debug_state:
+        import threading
+        if threading.current_thread.__module__ == 'eventlet.green.threading':
+            LOG.warn(_("Enabling debugging with eventlet monkey patched "
+                       "could produce unexpected behavior."))
+
     return __debug_state
 
 
@@ -121,8 +139,6 @@ def __setup_remote_pydev_debug(pydev_debug_host=None, pydev_debug_port=None,
         otherwise exception should be raised
     """
 
-    if pydev_debug_port is None:
-        pydev_debug_port = 5678
     try:
         import pydevd
         LOG.debug("pydevd module was imported from system path")

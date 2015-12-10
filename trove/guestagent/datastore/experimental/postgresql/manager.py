@@ -16,9 +16,7 @@
 
 import os
 
-from oslo_config import cfg as os_cfg
 from oslo_log import log as logging
-from oslo_service import periodic_task
 
 from .service.config import PgSqlConfig
 from .service.database import PgSqlDatabase
@@ -26,18 +24,16 @@ from .service.install import PgSqlInstall
 from .service.root import PgSqlRoot
 from .service.status import PgSqlAppStatus
 from .service.users import PgSqlUsers
-from trove.common import cfg
 from trove.guestagent import backup
-from trove.guestagent import dbaas
+from trove.guestagent.datastore import manager
 from trove.guestagent import volume
 
 
 LOG = logging.getLogger(__name__)
-CONF = cfg.CONF
 
 
 class Manager(
-        periodic_task.PeriodicTasks,
+        manager.Manager,
         PgSqlUsers,
         PgSqlDatabase,
         PgSqlRoot,
@@ -45,42 +41,17 @@ class Manager(
         PgSqlInstall,
 ):
 
-    def __init__(self, *args, **kwargs):
-        if len(args) and isinstance(args[0], os_cfg.ConfigOpts):
-            conf = args[0]
-        elif 'conf' in kwargs:
-            conf = kwargs['conf']
-        else:
-            conf = CONF
+    def __init__(self):
+        super(Manager, self).__init__('postgresql')
 
-        super(Manager, self).__init__(conf)
+    @property
+    def status(self):
+        return PgSqlAppStatus.get()
 
-    @periodic_task.periodic_task
-    def update_status(self, context):
-        PgSqlAppStatus.get().update()
-
-    def rpc_ping(self, context):
-        LOG.debug("Responding to RPC ping.")
-        return True
-
-    def prepare(
-            self,
-            context,
-            packages,
-            databases,
-            memory_mb,
-            users,
-            device_path=None,
-            mount_point=None,
-            backup_info=None,
-            config_contents=None,
-            root_password=None,
-            overrides=None,
-            cluster_config=None,
-            snapshot=None
-    ):
+    def do_prepare(self, context, packages, databases, memory_mb, users,
+                   device_path, mount_point, backup_info, config_contents,
+                   root_password, overrides, cluster_config, snapshot):
         self.install(context, packages)
-        PgSqlAppStatus.get().begin_restart()
         self.stop_db(context)
         if device_path:
             device = volume.VolumeDevice(device_path)
@@ -98,41 +69,5 @@ class Manager(
         if root_password and not backup_info:
             self.enable_root(context, root_password)
 
-        PgSqlAppStatus.get().end_install_or_restart()
-
-        if databases:
-            self.create_database(context, databases)
-
-        if users:
-            self.create_user(context, users)
-
-    def get_filesystem_stats(self, context, fs_path):
-        mount_point = CONF.get(CONF.datastore_manager).mount_point
-        return dbaas.get_filesystem_volume_stats(mount_point)
-
     def create_backup(self, context, backup_info):
         backup.backup(context, backup_info)
-
-    def mount_volume(self, context, device_path=None, mount_point=None):
-        """Mount the volume as specified by device_path to mount_point."""
-        device = volume.VolumeDevice(device_path)
-        device.mount(mount_point, write_to_fstab=False)
-        LOG.debug(
-            "Mounted device {device} at mount point {mount}.".format(
-                device=device_path, mount=mount_point))
-
-    def unmount_volume(self, context, device_path=None, mount_point=None):
-        """Unmount the volume as specified by device_path from mount_point."""
-        device = volume.VolumeDevice(device_path)
-        device.unmount(mount_point)
-        LOG.debug(
-            "Unmounted device {device} from mount point {mount}.".format(
-                device=device_path, mount=mount_point))
-
-    def resize_fs(self, context, device_path=None, mount_point=None):
-        """Resize the filesystem as specified by device_path at mount_point."""
-        device = volume.VolumeDevice(device_path)
-        device.resize_fs(mount_point)
-        LOG.debug(
-            "Resized the filesystem at {mount}.".format(
-                mount=mount_point))

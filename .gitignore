@@ -5,6 +5,7 @@ trove_test.sqlite
 run_tests.log
 guest-agent-files.txt
 trove.egg*
+.eggs/
 trove/vcsversion.py
 *py*.egg
 .coverage
@@ -32,6 +33,9 @@ apidocs/src/.DS_Store
 apidocs/src/samples/.DS_Store
 apidocs/includewars.xml
 apidocs/src/bookinfo.xml
+
+# Files created by releasenotes build
+releasenotes/build
 
 # Generated files
 target/
