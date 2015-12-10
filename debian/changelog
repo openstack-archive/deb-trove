@@ -3,6 +3,9 @@ openstack-trove (1:5.0.0~b1-1) experimental; urgency=medium
   * New upstream release.
   * Fixed (build-)depends for this release.
   * Redesign running unit tests.
+  * Black list:
+    - guestagent.test_dbaas.BaseDbStatusTest.test_begin_install
+    - guestagent.test_vertica_manager.GuestAgentManagerTest.test_cluster_complete
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 10 Dec 2015 17:42:26 +0100
 
