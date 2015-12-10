@@ -1,0 +1,16 @@
+Description: Fix import error
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2015-12-10
+
+--- openstack-trove-5.0.0~b1.orig/trove/tests/unittests/trove_testtools.py
++++ openstack-trove-5.0.0~b1/trove/tests/unittests/trove_testtools.py
+@@ -110,7 +110,7 @@ class TestCase(testtools.TestCase):
+                         elif inspect.isclass(member):
+                             self._find_mocks(
+                                 full_name, member, container, depth + 1)
+-            except ImportError:
++            except:
+                 pass  # Module cannot be imported - ignore it.
+ 
+     def _get_loaded_modules(self):
