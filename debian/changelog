@@ -2,6 +2,7 @@ openstack-trove (1:5.0.0~b1-1) experimental; urgency=medium
 
   * New upstream release.
   * Fixed (build-)depends for this release.
+  * Redesign running unit tests.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 10 Dec 2015 17:42:26 +0100
 
