@@ -5,9 +5,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
 Last-Update: 2015-04-13
 
---- openstack-trove-2015.1~rc1.orig/etc/trove/trove.conf.sample
-+++ openstack-trove-2015.1~rc1/etc/trove/trove.conf.sample
-@@ -177,9 +177,7 @@ api_paste_config = api-paste.ini
+Index: openstack-trove/etc/trove/trove.conf.sample
+===================================================================
+--- openstack-trove.orig/etc/trove/trove.conf.sample
++++ openstack-trove/etc/trove/trove.conf.sample
+@@ -173,9 +173,7 @@ api_paste_config = api-paste.ini
  # SQLAlchemy connection string for the reference implementation
  # registry server. Any valid SQLAlchemy connection string is fine.
  # See: http://www.sqlalchemy.org/docs/05/reference/sqlalchemy/connections.html#sqlalchemy.create_engine
