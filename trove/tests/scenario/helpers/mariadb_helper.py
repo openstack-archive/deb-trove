@@ -1,4 +1,4 @@
-# Copyright 2015 IBM Corp.
+# Copyright 2015 Tesora Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-SERVICE_CANDIDATES = ["couchdb"]
-UPDATE_BIND_ADDRESS = (
-    "sudo sed -i -r 's/;bind_address = 127.0.0.1/bind_address = 0.0.0.0/' "
-    "/etc/couchdb/local.ini")
-TIME_OUT = 1200
-COUCHDB_HTTPD_PORT = "5984"
-COUCHDB_SERVER_STATUS = "curl http://127.0.0.1:" + COUCHDB_HTTPD_PORT
+from trove.tests.scenario.helpers.mysql_helper import MysqlHelper
+
+
+class MariadbHelper(MysqlHelper):
+
+    def __init__(self, expected_override_name):
+        super(MariadbHelper, self).__init__(expected_override_name)

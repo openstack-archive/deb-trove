@@ -456,7 +456,7 @@ def load_any_instance(context, id, load_server=True):
         return load_instance(BuiltInstance, context, id,
                              needs_server=load_server)
     except exception.UnprocessableEntity:
-        LOG.warn(_LW("Could not load instance %s."), id)
+        LOG.warning(_LW("Could not load instance %s."), id)
         return load_instance(FreshInstance, context, id, needs_server=False)
 
 
@@ -569,7 +569,7 @@ class BaseInstance(SimpleInstance):
 
             if self.slaves:
                 msg = _("Detach replicas before deleting replica source.")
-                LOG.warn(msg)
+                LOG.warning(msg)
                 raise exception.ReplicaSourceDeleteForbidden(msg)
 
             self.update_db(task_status=InstanceTasks.DELETING,
@@ -668,8 +668,9 @@ class Instance(BuiltInstance):
     @classmethod
     def create(cls, context, name, flavor_id, image_id, databases, users,
                datastore, datastore_version, volume_size, backup_id,
-               availability_zone=None, nics=None, configuration_id=None,
-               slave_of_id=None, cluster_config=None, replica_count=None):
+               availability_zone=None, nics=None,
+               configuration_id=None, slave_of_id=None, cluster_config=None,
+               replica_count=None, volume_type=None):
 
         # All nova flavors are permitted for a datastore-version unless one
         # or more entries are found in datastore_version_metadata,
@@ -682,7 +683,9 @@ class Instance(BuiltInstance):
             valid_flavors = tuple(f.value for f in bound_flavors)
             if flavor_id not in valid_flavors:
                 raise exception.DatastoreFlavorAssociationNotFound(
-                    version_id=datastore_version.id, flavor_id=flavor_id)
+                    datastore=datastore.name,
+                    datastore_version=datastore_version.name,
+                    flavor_id=flavor_id)
 
         datastore_cfg = CONF.get(datastore_version.manager)
         client = create_nova_client(context)
@@ -843,7 +846,8 @@ class Instance(BuiltInstance):
                 instance_id, instance_name, flavor, image_id, databases, users,
                 datastore_version.manager, datastore_version.packages,
                 volume_size, backup_id, availability_zone, root_password,
-                nics, overrides, slave_of_id, cluster_config)
+                nics, overrides, slave_of_id, cluster_config,
+                volume_type=volume_type)
 
             return SimpleInstance(context, db_info, service_status,
                                   root_password)

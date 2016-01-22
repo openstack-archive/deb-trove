@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import urllib
+from six.moves.urllib import parse as urllib_parse
 
 from trove.tests.scenario.runners.test_runners import TestRunner
 from troveclient.compat import exceptions
@@ -101,7 +101,7 @@ class UserActionsRunner(TestRunner):
         self.assert_pagination_match(list_page, full_list, 0, limit)
         if marker:
             last_user = list_page[-1]
-            expected_marker = urllib.quote(
+            expected_marker = urllib_parse.quote(
                 '%s@%s' % (last_user.name, last_user.host))
             self.assert_equal(expected_marker, marker,
                               "Pagination marker should be the last element "
@@ -120,31 +120,34 @@ class UserActionsRunner(TestRunner):
     def run_user_create_with_blank_name(
             self, expected_exception=exceptions.BadRequest,
             expected_http_code=400):
+        usr_def = self.test_helper.get_non_existing_user_definition()
         # Test with missing user name attribute.
+        no_name_usr_def = self.copy_dict(usr_def, ignored_keys=['name'])
         self.assert_users_create_failure(
-            self.instance_info.id,
-            {'password': 'password1', 'databases': []},
+            self.instance_info.id, no_name_usr_def,
             expected_exception, expected_http_code)
 
         # Test with empty user name attribute.
+        blank_name_usr_def = self.copy_dict(usr_def)
+        blank_name_usr_def.update({'name': ''})
         self.assert_users_create_failure(
-            self.instance_info.id,
-            {'name': '', 'password': 'password1', 'databases': []},
+            self.instance_info.id, blank_name_usr_def,
             expected_exception, expected_http_code)
 
     def run_user_create_with_blank_password(
             self, expected_exception=exceptions.BadRequest,
             expected_http_code=400):
+        usr_def = self.test_helper.get_non_existing_user_definition()
         # Test with missing password attribute.
+        no_pass_usr_def = self.copy_dict(usr_def, ignored_keys=['password'])
         self.assert_users_create_failure(
-            self.instance_info.id,
-            {'name': 'nopassguy', 'databases': []},
+            self.instance_info.id, no_pass_usr_def,
             expected_exception, expected_http_code)
 
         # Test with missing databases attribute.
+        no_db_usr_def = self.copy_dict(usr_def, ignored_keys=['databases'])
         self.assert_users_create_failure(
-            self.instance_info.id,
-            {'name': 'nodbguy', 'password': 'password1'},
+            self.instance_info.id, no_db_usr_def,
             expected_exception, expected_http_code)
 
     def run_existing_user_create(
@@ -224,9 +227,13 @@ class UserActionsRunner(TestRunner):
                     expected_exception, expected_http_code)
 
     def run_user_attribute_update(self, expected_http_code=202):
-        update_attribites = {'name': 'dblessguy', 'password': 'password2'}
+        updated_def = self.user_defs[0]
+        # Update the name by appending a random string to it.
+        updated_name = ''.join([updated_def['name'], 'upd'])
+        update_attribites = {'name': updated_name,
+                             'password': 'password2'}
         self.assert_user_attribute_update(
-            self.instance_info.id, self.user_defs[0],
+            self.instance_info.id, updated_def,
             update_attribites, expected_http_code)
 
     def assert_user_attribute_update(self, instance_id, user_def,
@@ -270,8 +277,9 @@ class UserActionsRunner(TestRunner):
     def run_nonexisting_user_show(
             self, expected_exception=exceptions.NotFound,
             expected_http_code=404):
+        usr_def = self.test_helper.get_non_existing_user_definition()
         self.assert_user_show_failure(
-            self.instance_info.id, {'name': 'nonexistingusr'},
+            self.instance_info.id, {'name': usr_def['name']},
             expected_exception, expected_http_code)
 
     def assert_user_show_failure(self, instance_id, user_def,
@@ -297,16 +305,18 @@ class UserActionsRunner(TestRunner):
 
     def run_nonexisting_user_update(self, expected_http_code=404):
         # Test valid update on a non-existing user.
-        user_def = {'name': 'justashadow'}
+        usr_def = self.test_helper.get_non_existing_user_definition()
+        update_def = {'name': usr_def['name']}
         self.assert_user_attribute_update_failure(
-            self.instance_info.id, user_def, user_def,
+            self.instance_info.id, update_def, update_def,
             exceptions.NotFound, expected_http_code)
 
     def run_nonexisting_user_delete(
             self, expected_exception=exceptions.NotFound,
             expected_http_code=404):
+        usr_def = self.test_helper.get_non_existing_user_definition()
         self.assert_user_delete_failure(
-            self.instance_info.id, {'name': 'justashadow'},
+            self.instance_info.id, {'name': usr_def['name']},
             expected_exception, expected_http_code)
 
     def assert_user_delete_failure(

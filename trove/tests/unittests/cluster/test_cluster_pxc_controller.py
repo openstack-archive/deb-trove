@@ -139,6 +139,7 @@ class TestClusterController(trove_testtools.TestCase):
         instances = [
             {
                 'volume_size': 1,
+                'volume_type': None,
                 'flavor_id': '1234',
                 'availability_zone': 'az',
                 'nics': [
@@ -253,7 +254,8 @@ class TestClusterControllerWithStrategy(trove_testtools.TestCase):
                                       mock_cluster_create,
                                       mock_get_datastore_version):
 
-        cfg.CONF.set_override('cluster_support', False, group='pxc')
+        cfg.CONF.set_override('cluster_support', False, group='pxc',
+                              enforce_type=True)
 
         body = self.cluster
         tenant_id = Mock()
@@ -278,7 +280,8 @@ class TestClusterControllerWithStrategy(trove_testtools.TestCase):
                                      mock_get_datastore_version,
                                      mock_cluster_view_data):
 
-        cfg.CONF.set_override('cluster_support', True, group='pxc')
+        cfg.CONF.set_override('cluster_support', True, group='pxc',
+                              enforce_type=True)
 
         body = self.cluster
         tenant_id = Mock()
