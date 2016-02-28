@@ -79,7 +79,7 @@ Build-Depends-Indep: iproute2,
 Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/openstack-trove.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/openstack-trove.git
-Homepage: http://github.com/openstack/trove
+Homepage: https://github.com/openstack/trove
 
 Package: python-trove
 Architecture: all
