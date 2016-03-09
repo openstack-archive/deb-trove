@@ -3,9 +3,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
 Last-Update: 2016-01-23
 
---- openstack-trove-5.0.0~b2.orig/trove/tests/unittests/trove_testtools.py
-+++ openstack-trove-5.0.0~b2/trove/tests/unittests/trove_testtools.py
-@@ -112,7 +112,7 @@ class TestCase(testtools.TestCase):
+Index: openstack-trove/trove/tests/unittests/trove_testtools.py
+===================================================================
+--- openstack-trove.orig/trove/tests/unittests/trove_testtools.py
++++ openstack-trove/trove/tests/unittests/trove_testtools.py
+@@ -143,7 +143,7 @@ class TestCase(testtools.TestCase):
                                  full_name, member, container, depth + 1)
              except ImportError:
                  pass  # Module cannot be imported - ignore it.
