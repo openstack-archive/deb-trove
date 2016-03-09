@@ -18,7 +18,7 @@ import uuid
 
 from cinderclient import exceptions as cinder_exceptions
 import cinderclient.v2.client as cinderclient
-from mock import Mock, MagicMock, patch, PropertyMock
+from mock import Mock, MagicMock, patch, PropertyMock, call
 from novaclient import exceptions as nova_exceptions
 import novaclient.v2.flavors
 import novaclient.v2.servers
@@ -35,11 +35,13 @@ from trove.common.exception import MalformedSecurityGroupRuleError
 from trove.common.exception import PollTimeOut
 from trove.common.exception import TroveError
 from trove.common.instance import ServiceStatuses
+from trove.common.notification import TroveInstanceModifyVolume
 from trove.common import remote
 import trove.common.template as template
 from trove.common import utils
 from trove.datastore import models as datastore_models
 import trove.db.models
+from trove.extensions.common import models as common_models
 from trove.extensions.mysql import models as mysql_models
 import trove.guestagent.api
 from trove.instance.models import BaseInstance
@@ -553,7 +555,8 @@ class ResizeVolumeTest(trove_testtools.TestCase):
         utils.poll_until.side_effect = None
         self.instance.reset_mock()
 
-    def test_resize_volume_active_server_succeeds(self):
+    @patch.object(TroveInstanceModifyVolume, 'notify')
+    def test_resize_volume_active_server_succeeds(self, *args):
         server = Mock(status=InstanceStatus.ACTIVE)
         self.instance.attach_mock(server, 'server')
         self.action.execute()
@@ -797,7 +800,7 @@ class BuiltInstanceTasksTest(trove_testtools.TestCase):
     @patch.object(BaseInstance, 'update_db')
     def test_attach_replica(self, mock_update_db):
         master = MagicMock()
-        replica_context = Mock()
+        replica_context = trove_testtools.TroveTestContext(self)
         mock_guest = MagicMock()
         mock_guest.get_replica_context = Mock(return_value=replica_context)
         type(master).guest = PropertyMock(return_value=mock_guest)
@@ -1028,3 +1031,25 @@ class RootReportTest(trove_testtools.TestCase):
             self.assertTrue(mysql_models.RootHistory.load.called)
             self.assertEqual(history.user, report.user)
             self.assertEqual(history.id, report.id)
+
+
+class ClusterRootTest(trove_testtools.TestCase):
+
+    @patch.object(common_models.RootHistory, "create")
+    @patch.object(common_models.Root, "create")
+    def test_cluster_root_create(self, root_create, root_history_create):
+        context = Mock()
+        uuid = utils.generate_uuid()
+        user = "root"
+        password = "rootpassword"
+        cluster_instances = [utils.generate_uuid(), utils.generate_uuid()]
+        common_models.ClusterRoot.create(context, uuid, user, password,
+                                         cluster_instances)
+        root_create.assert_called_with(context, uuid, user, password,
+                                       cluster_instances_list=None)
+        self.assertEqual(2, root_history_create.call_count)
+        calls = [
+            call(context, cluster_instances[0], user),
+            call(context, cluster_instances[1], user)
+        ]
+        root_history_create.assert_has_calls(calls)

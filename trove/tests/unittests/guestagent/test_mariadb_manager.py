@@ -17,47 +17,50 @@ from mock import patch
 import testtools
 
 from trove.common.context import TroveContext
-from trove.guestagent.datastore.experimental.pxc.manager import Manager
-import trove.guestagent.datastore.experimental.pxc.service as dbaas
+from trove.guestagent.datastore.experimental.mariadb import (
+    manager as mariadb_manager)
+from trove.guestagent.datastore.experimental.mariadb import (
+    service as mariadb_service)
+from trove.guestagent.datastore.mysql_common import service as mysql_service
 
 
 class GuestAgentManagerTest(testtools.TestCase):
 
     def setUp(self):
         super(GuestAgentManagerTest, self).setUp()
-        self.manager = Manager()
+        self.manager = mariadb_manager.Manager()
         self.context = TroveContext()
-        self.patcher_rs = patch(
+        patcher_rs = patch(
             'trove.guestagent.strategies.replication.get_instance')
-        self.mock_rs_class = self.patcher_rs.start()
+        patcher_rs.start()
+        self.addCleanup(patcher_rs.stop)
 
-    def tearDown(self):
-        super(GuestAgentManagerTest, self).tearDown()
-        self.patcher_rs.stop()
-
-    def test_install_cluster(self):
-        mock_status = MagicMock()
-        dbaas.PXCAppStatus.get = MagicMock(return_value=mock_status)
-
-        dbaas.PXCApp.install_cluster = MagicMock(return_value=None)
+    @patch.object(mysql_service.BaseMySqlAppStatus, 'get',
+                  new_callable=MagicMock)
+    @patch.object(mariadb_service.MariaDBApp, 'install_cluster',
+                  new_callable=MagicMock)
+    def test_install_cluster(self, install_cluster, app_status_get):
+        install_cluster.return_value = MagicMock()
+        app_status_get.return_value = None
 
         replication_user = "repuser"
         configuration = "configuration"
         bootstrap = True
         self.manager.install_cluster(self.context, replication_user,
                                      configuration, bootstrap)
-        dbaas.PXCAppStatus.get.assert_any_call()
-        dbaas.PXCApp.install_cluster.assert_called_with(
+        app_status_get.assert_any_call()
+        install_cluster.assert_called_with(
             replication_user, configuration, bootstrap)
 
-    def test_reset_admin_password(self):
-        mock_status = MagicMock()
-        dbaas.PXCAppStatus.get = MagicMock(return_value=mock_status)
-
-        dbaas.PXCApp.reset_admin_password = MagicMock(return_value=None)
+    @patch.object(mysql_service.BaseMySqlAppStatus, 'get',
+                  new_callable=MagicMock)
+    @patch.object(mariadb_service.MariaDBApp, 'reset_admin_password',
+                  new_callable=MagicMock)
+    def test_reset_admin_password(self, reset_admin_password, app_status_get):
+        reset_admin_password.return_value = None
+        app_status_get.return_value = MagicMock()
 
         admin_password = "password"
         self.manager.reset_admin_password(self.context, admin_password)
-        dbaas.PXCAppStatus.get.assert_any_call()
-        dbaas.PXCApp.reset_admin_password.assert_called_with(
-            admin_password)
+        app_status_get.assert_any_call()
+        reset_admin_password.assert_called_with(admin_password)

@@ -15,15 +15,17 @@ import uuid
 
 from mock import Mock
 from mock import patch
+
 from novaclient import exceptions as nova_exceptions
+
 from trove.cluster.models import Cluster
 from trove.cluster.models import ClusterTasks
 from trove.cluster.models import DBCluster
 from trove.common import cfg
 from trove.common import exception
 from trove.common import remote
-from trove.common.strategies.cluster.experimental.pxc import (
-    api as pxc_api)
+from trove.common.strategies.cluster.experimental.galera_common import (
+    api as galera_api)
 from trove.instance import models as inst_models
 from trove.quota.quota import QUOTAS
 from trove.taskmanager import api as task_api
@@ -56,14 +58,13 @@ class ClusterTest(trove_testtools.TestCase):
                                  tenant_id=self.tenant_id,
                                  datastore_version_id=self.dv_id,
                                  task_id=ClusterTasks.NONE._code)
-        self.context = Mock()
+        self.context = trove_testtools.TroveTestContext(self)
         self.datastore = Mock()
         self.dv = Mock()
         self.dv.manager = "pxc"
         self.datastore_version = self.dv
-        self.cluster = pxc_api.PXCCluster(self.context, self.db_info,
-                                          self.datastore,
-                                          self.datastore_version)
+        self.cluster = galera_api.GaleraCommonCluster(
+            self.context, self.db_info, self.datastore, self.datastore_version)
         self.instances = [{'volume_size': 1, 'flavor_id': '1234'},
                           {'volume_size': 1, 'flavor_id': '1234'},
                           {'volume_size': 1, 'flavor_id': '1234'}]
@@ -130,7 +131,7 @@ class ClusterTest(trove_testtools.TestCase):
                           )
 
     @patch.object(remote, 'create_nova_client')
-    @patch.object(pxc_api, 'CONF')
+    @patch.object(galera_api, 'CONF')
     def test_create_storage_specified_with_no_volume_support(self,
                                                              mock_conf,
                                                              mock_client):
@@ -150,7 +151,7 @@ class ClusterTest(trove_testtools.TestCase):
                           )
 
     @patch.object(remote, 'create_nova_client')
-    @patch.object(pxc_api, 'CONF')
+    @patch.object(galera_api, 'CONF')
     def test_create_storage_not_specified_and_no_ephemeral_flavor(self,
                                                                   mock_conf,
                                                                   mock_client):
@@ -196,16 +197,19 @@ class ClusterTest(trove_testtools.TestCase):
                           instances, {}
                           )
 
+    @patch.object(inst_models.DBInstance, 'find_all')
     @patch.object(inst_models.Instance, 'create')
     @patch.object(DBCluster, 'create')
     @patch.object(task_api, 'load')
     @patch.object(QUOTAS, 'check_quotas')
     @patch.object(remote, 'create_nova_client')
     def test_create(self, mock_client, mock_check_quotas, mock_task_api,
-                    mock_db_create, mock_ins_create):
+                    mock_db_create, mock_ins_create, mock_find_all):
         instances = self.instances
         flavors = Mock()
+        networks = Mock()
         mock_client.return_value.flavors = flavors
+        mock_client.return_value.networks = networks
         self.cluster.create(Mock(),
                             self.cluster_name,
                             self.datastore,
@@ -237,7 +241,8 @@ class ClusterTest(trove_testtools.TestCase):
             mock_db_create.return_value.id)
         self.assertEqual(4, mock_ins_create.call_count)
 
-    @patch.object(pxc_api, 'CONF')
+    @patch.object(inst_models.DBInstance, 'find_all')
+    @patch.object(galera_api, 'CONF')
     @patch.object(inst_models.Instance, 'create')
     @patch.object(DBCluster, 'create')
     @patch.object(task_api, 'load')
@@ -245,7 +250,8 @@ class ClusterTest(trove_testtools.TestCase):
     @patch.object(remote, 'create_nova_client')
     def test_create_with_ephemeral_flavor(self, mock_client, mock_check_quotas,
                                           mock_task_api, mock_db_create,
-                                          mock_ins_create, mock_conf):
+                                          mock_ins_create, mock_conf,
+                                          mock_find_all):
         class FakeFlavor:
             def __init__(self, flavor_id):
                 self.flavor_id = flavor_id
@@ -300,3 +306,54 @@ class ClusterTest(trove_testtools.TestCase):
         self.cluster.db_info.task_status = ClusterTasks.DELETING
         self.cluster.delete()
         mock_update_db.assert_called_with(task_status=ClusterTasks.DELETING)
+
+    @patch.object(galera_api.GaleraCommonCluster,
+                  '_get_cluster_network_interfaces')
+    @patch.object(DBCluster, 'update')
+    @patch.object(galera_api, 'CONF')
+    @patch.object(inst_models.Instance, 'create')
+    @patch.object(task_api, 'load')
+    @patch.object(QUOTAS, 'check_quotas')
+    @patch.object(remote, 'create_nova_client')
+    def test_grow(self, mock_client, mock_check_quotas, mock_task_api,
+                  mock_inst_create, mock_conf, mock_update, mock_interfaces):
+        mock_client.return_value.flavors = Mock()
+        mock_interfaces.return_value = [Mock()]
+        self.cluster.grow(self.instances)
+        mock_update.assert_called_with(
+            task_status=ClusterTasks.GROWING_CLUSTER)
+        mock_task_api.return_value.grow_cluster.assert_called_with(
+            self.db_info.id,
+            [mock_inst_create.return_value.id] * 3)
+        self.assertEqual(3, mock_inst_create.call_count)
+        self.assertEqual(1, mock_interfaces.call_count)
+
+    @patch.object(inst_models.DBInstance, 'find_all')
+    @patch.object(inst_models.Instance, 'load')
+    @patch.object(Cluster, 'validate_cluster_available')
+    def test_shrink_empty(self, mock_validate, mock_load, mock_find_all):
+        instance = Mock()
+        self.assertRaises(
+            exception.ClusterShrinkMustNotLeaveClusterEmpty,
+            self.cluster.shrink, [instance])
+
+    @patch.object(galera_api.GaleraCommonCluster, '__init__')
+    @patch.object(task_api, 'load')
+    @patch.object(DBCluster, 'update')
+    @patch.object(inst_models.DBInstance, 'find_all')
+    @patch.object(inst_models.Instance, 'load')
+    @patch.object(Cluster, 'validate_cluster_available')
+    def test_shrink(self, mock_validate, mock_load, mock_find_all,
+                    mock_update, mock_task_api, mock_init):
+        mock_init.return_value = None
+        existing_instances = [Mock(), Mock()]
+        mock_find_all.return_value.all.return_value = existing_instances
+        instance = Mock()
+        self.cluster.shrink([instance])
+        mock_validate.assert_called_with()
+        mock_update.assert_called_with(
+            task_status=ClusterTasks.SHRINKING_CLUSTER)
+        mock_task_api.return_value.shrink_cluster.assert_called_with(
+            self.db_info.id, [mock_load.return_value.id])
+        mock_init.assert_called_with(self.context, self.db_info,
+                                     self.datastore, self.datastore_version)

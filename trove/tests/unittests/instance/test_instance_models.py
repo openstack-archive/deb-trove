@@ -68,7 +68,7 @@ class SimpleInstanceTest(trove_testtools.TestCase):
         ip = self.instance.get_visible_ip_addresses()
         ip = filter_ips(
             ip, CONF.ip_regex, CONF.black_list_regex)
-        self.assertTrue(len(ip) == 2)
+        self.assertEqual(2, len(ip))
         self.assertTrue('123.123.123.123' in ip)
         self.assertTrue('15.123.123.123' in ip)
 
@@ -79,7 +79,7 @@ class SimpleInstanceTest(trove_testtools.TestCase):
         ip = self.instance.get_visible_ip_addresses()
         ip = filter_ips(
             ip, CONF.ip_regex, CONF.black_list_regex)
-        self.assertTrue(len(ip) == 2)
+        self.assertEqual(2, len(ip))
         self.assertTrue('10.123.123.123' not in ip)
 
     def test_one_network_label(self):
@@ -90,14 +90,14 @@ class SimpleInstanceTest(trove_testtools.TestCase):
     def test_two_network_labels(self):
         CONF.network_label_regex = '^(private|public)$'
         ip = self.instance.get_visible_ip_addresses()
-        self.assertTrue(len(ip) == 2)
+        self.assertEqual(2, len(ip))
         self.assertTrue('123.123.123.123' in ip)
         self.assertTrue('15.123.123.123' in ip)
 
     def test_all_network_labels(self):
         CONF.network_label_regex = '.*'
         ip = self.instance.get_visible_ip_addresses()
-        self.assertTrue(len(ip) == 3)
+        self.assertEqual(3, len(ip))
         self.assertTrue('10.123.123.123' in ip)
         self.assertTrue('123.123.123.123' in ip)
         self.assertTrue('15.123.123.123' in ip)
@@ -108,7 +108,7 @@ class CreateInstanceTest(trove_testtools.TestCase):
     @patch.object(task_api.API, 'get_client', Mock(return_value=Mock()))
     def setUp(self):
         util.init_db()
-        self.context = Mock()
+        self.context = trove_testtools.TroveTestContext(self, is_admin=True)
         self.name = "name"
         self.flavor_id = 5
         self.image_id = "UUID"
@@ -189,6 +189,7 @@ class CreateInstanceTest(trove_testtools.TestCase):
         super(CreateInstanceTest, self).tearDown()
 
     def test_exception_on_invalid_backup_size(self):
+        self.assertEqual(self.backup.id, self.backup_id)
         exc = self.assertRaises(
             exception.BackupTooLarge, models.Instance.create,
             self.context, self.name, self.flavor_id,

@@ -20,6 +20,7 @@ import os.path
 from oslo_config import cfg
 from oslo_config.cfg import NoSuchOptError
 from oslo_log import log as logging
+from osprofiler import opts as profiler
 
 from trove.version import version_info as version
 
@@ -55,7 +56,7 @@ common_opts = [
                help='Service type to use when searching catalog.'),
     cfg.StrOpt('nova_compute_endpoint_type', default='publicURL',
                help='Service endpoint type to use when searching catalog.'),
-    cfg.IntOpt('nova_client_version', default=2,
+    cfg.StrOpt('nova_client_version', default='2.12',
                help="The version of of the compute service client."),
     cfg.StrOpt('neutron_url', help='URL without the tenant segment.'),
     cfg.StrOpt('neutron_service_type', default='network',
@@ -130,6 +131,8 @@ common_opts = [
                help='Page size for listing backups.'),
     cfg.IntOpt('configurations_page_size', default=20,
                help='Page size for listing configurations.'),
+    cfg.IntOpt('modules_page_size', default=20,
+               help='Page size for listing modules.'),
     cfg.IntOpt('agent_call_low_timeout', default=5,
                help="Maximum time (in seconds) to wait for Guest Agent 'quick'"
                     "requests (such as retrieving a list of users or "
@@ -314,6 +317,8 @@ common_opts = [
                help='Transformer for exists notifications.'),
     cfg.IntOpt('exists_notification_interval', default=3600,
                help='Seconds to wait between pushing events.'),
+    cfg.IntOpt('quota_notification_interval', default=3600,
+               help='Seconds to wait between pushing events.'),
     cfg.DictOpt('notification_service_id',
                 default={'mysql': '2f3ff068-2bfb-4f70-9a9d-a6bb65bc084b',
                          'percona': 'fd1723f5-68d2-409c-994f-a4a197892a17',
@@ -396,20 +401,17 @@ common_opts = [
     cfg.IntOpt('timeout_wait_for_service', default=120,
                help='Maximum time (in seconds) to wait for a service to '
                     'become alive.'),
-]
-
-# Profiling specific option groups
-
-profiler_group = cfg.OptGroup(
-    'profiler', title='Profiler options',
-    help="Oslo option group designed for profiler")
-profiler_opts = [
-    cfg.BoolOpt("enabled", default=False,
-                help="If False fully disable profiling feature."),
-    cfg.BoolOpt("trace_sqlalchemy", default=True,
-                help="If False doesn't trace SQL requests."),
-    cfg.StrOpt("hmac_keys", default="SECRET_KEY",
-               help="Secret key to use to sign tracing messages."),
+    cfg.StrOpt('module_aes_cbc_key', default='module_aes_cbc_key',
+               help='OpenSSL aes_cbc key for module encryption.'),
+    cfg.StrOpt('module_types', default='test, hidden_test',
+               help='A list of module types supported.'),
+    cfg.StrOpt('guest_log_container_name',
+               default='database_logs',
+               help='Name of container that stores guest log components.'),
+    cfg.IntOpt('guest_log_limit', default=1000000,
+               help='Maximum size of a chunk saved in guest log container.'),
+    cfg.IntOpt('guest_log_expiry', default=2592000,
+               help='Expiry (in seconds) of objects in guest log container.'),
 ]
 
 
@@ -528,7 +530,7 @@ mysql_opts = [
                 deprecated_name='backup_incremental_strategy',
                 deprecated_group='DEFAULT'),
     cfg.StrOpt('root_controller',
-               default='trove.extensions.common.service.DefaultRootController',
+               default='trove.extensions.mysql.service.MySQLRootController',
                help='Root controller implementation for mysql.'),
     cfg.ListOpt('ignore_users', default=['os_admin', 'root'],
                 help='Users to exclude when listing users.',
@@ -539,6 +541,11 @@ mysql_opts = [
                 help='Databases to exclude when listing databases.',
                 deprecated_name='ignore_dbs',
                 deprecated_group='DEFAULT'),
+    cfg.StrOpt('guest_log_exposed_logs', default='general,slow_query',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('guest_log_long_query_time', default=1000,
+               help='The time in milliseconds that a statement must take in '
+                    'in order to be logged in the slow_query log.'),
 ]
 
 # Percona
@@ -612,6 +619,11 @@ percona_opts = [
                 help='Databases to exclude when listing databases.',
                 deprecated_name='ignore_dbs',
                 deprecated_group='DEFAULT'),
+    cfg.StrOpt('guest_log_exposed_logs', default='general,slow_query',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('guest_log_long_query_time', default=1000,
+               help='The time in milliseconds that a statement must take in '
+                    'in order to be logged in the slow_query log.'),
 ]
 
 # Percona XtraDB Cluster
@@ -674,22 +686,28 @@ pxc_opts = [
                help='Minimum number of members in PXC cluster.'),
     cfg.StrOpt('api_strategy',
                default='trove.common.strategies.cluster.experimental.'
-               'pxc.api.PXCAPIStrategy',
+               'galera_common.api.GaleraCommonAPIStrategy',
                help='Class that implements datastore-specific API logic.'),
     cfg.StrOpt('taskmanager_strategy',
-               default='trove.common.strategies.cluster.experimental.pxc.'
-               'taskmanager.PXCTaskManagerStrategy',
+               default='trove.common.strategies.cluster.experimental.'
+               'galera_common.taskmanager.GaleraCommonTaskManagerStrategy',
                help='Class that implements datastore-specific task manager '
                     'logic.'),
     cfg.StrOpt('guestagent_strategy',
                default='trove.common.strategies.cluster.experimental.'
-               'pxc.guestagent.PXCGuestAgentStrategy',
+               'galera_common.guestagent.GaleraCommonGuestAgentStrategy',
                help='Class that implements datastore-specific Guest Agent API '
                     'logic.'),
     cfg.StrOpt('root_controller',
-               default='trove.extensions.common.service.DefaultRootController',
+               default='trove.extensions.pxc.service.PxcRootController',
                help='Root controller implementation for pxc.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='general,slow_query',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('guest_log_long_query_time', default=1000,
+               help='The time in milliseconds that a statement must take in '
+                    'in order to be logged in the slow_query log.'),
 ]
+
 
 # Redis
 redis_group = cfg.OptGroup(
@@ -758,6 +776,8 @@ redis_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for redis.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # Cassandra
@@ -765,7 +785,7 @@ cassandra_group = cfg.OptGroup(
     'cassandra', title='Cassandra options',
     help="Oslo option group designed for Cassandra datastore")
 cassandra_opts = [
-    cfg.ListOpt('tcp_ports', default=["7000", "7001", "9042", "9160"],
+    cfg.ListOpt('tcp_ports', default=["7000", "7001", "7199", "9042", "9160"],
                 help='List of TCP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
@@ -773,16 +793,16 @@ cassandra_opts = [
                 help='List of UDP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
-    cfg.StrOpt('backup_strategy', default=None,
+    cfg.DictOpt('backup_incremental_strategy', default={},
+                help='Incremental strategy based on the default backup '
+                'strategy. For strategies that do not implement incremental '
+                'backups, the runner performs full backup instead.',
+                deprecated_name='backup_incremental_strategy',
+                deprecated_group='DEFAULT'),
+    cfg.StrOpt('backup_strategy', default="NodetoolSnapshot",
                help='Default strategy to perform backups.',
                deprecated_name='backup_strategy',
                deprecated_group='DEFAULT'),
-    cfg.DictOpt('backup_incremental_strategy', default={},
-                help='Incremental Backup Runner based on the default '
-                'strategy. For strategies that do not implement an '
-                'incremental, the runner will use the default full backup.',
-                deprecated_name='backup_incremental_strategy',
-                deprecated_group='DEFAULT'),
     cfg.StrOpt('replication_strategy', default=None,
                help='Default strategy for replication.'),
     cfg.StrOpt('mount_point', default='/var/lib/cassandra',
@@ -792,17 +812,45 @@ cassandra_opts = [
                 help='Whether to provision a Cinder volume for datadir.'),
     cfg.StrOpt('device_path', default='/dev/vdb',
                help='Device path for volume if volume support is enabled.'),
-    cfg.StrOpt('backup_namespace', default=None,
+    cfg.StrOpt('backup_namespace',
+               default="trove.guestagent.strategies.backup.experimental."
+               "cassandra_impl",
                help='Namespace to load backup strategies from.',
                deprecated_name='backup_namespace',
                deprecated_group='DEFAULT'),
-    cfg.StrOpt('restore_namespace', default=None,
+    cfg.StrOpt('restore_namespace',
+               default="trove.guestagent.strategies.restore.experimental."
+               "cassandra_impl",
                help='Namespace to load restore strategies from.',
                deprecated_name='restore_namespace',
                deprecated_group='DEFAULT'),
     cfg.StrOpt('root_controller',
-               default='trove.extensions.common.service.DefaultRootController',
-               help='Root controller implementation for cassandra.'),
+               default='trove.extensions.cassandra.service'
+               '.CassandraRootController',
+               help='Root controller implementation for Cassandra.'),
+    cfg.ListOpt('ignore_users', default=['os_admin'],
+                help='Users to exclude when listing users.'),
+    cfg.ListOpt('ignore_dbs', default=['system', 'system_auth',
+                                       'system_traces'],
+                help='Databases to exclude when listing databases.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.BoolOpt('cluster_support', default=True,
+                help='Enable clusters to be created and managed.'),
+    cfg.StrOpt('api_strategy',
+               default='trove.common.strategies.cluster.experimental.'
+               'cassandra.api.CassandraAPIStrategy',
+               help='Class that implements datastore-specific API logic.'),
+    cfg.StrOpt('taskmanager_strategy',
+               default='trove.common.strategies.cluster.experimental'
+               '.cassandra.taskmanager.CassandraTaskManagerStrategy',
+               help='Class that implements datastore-specific task manager '
+                    'logic.'),
+    cfg.StrOpt('guestagent_strategy',
+               default='trove.common.strategies.cluster.experimental'
+               '.cassandra.guestagent.CassandraGuestAgentStrategy',
+               help='Class that implements datastore-specific Guest Agent API '
+                    'logic.'),
 ]
 
 # Couchbase
@@ -859,6 +907,8 @@ couchbase_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for couchbase.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # MongoDB
@@ -940,6 +990,8 @@ mongodb_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for mongodb.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # PostgreSQL
@@ -987,6 +1039,13 @@ postgresql_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for postgresql.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='general',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('guest_log_long_query_time', default=0,
+               help="The time in milliseconds that a statement must take in "
+                    "in order to be logged in the 'general' log.  A value of "
+                    "'0' logs all statements, while '-1' turns off "
+                    "statement logging."),
 ]
 
 # Apache CouchDB
@@ -1030,6 +1089,8 @@ couchdb_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for couchdb.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # Vertica
@@ -1090,6 +1151,8 @@ vertica_opts = [
                default='trove.extensions.vertica.service.'
                        'VerticaRootController',
                help='Root controller implementation for Vertica.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # DB2
@@ -1134,6 +1197,8 @@ db2_opts = [
     cfg.StrOpt('root_controller',
                default='trove.extensions.common.service.DefaultRootController',
                help='Root controller implementation for db2.'),
+    cfg.StrOpt('guest_log_exposed_logs', default='',
+               help='List of Guest Logs to expose for publishing.'),
 ]
 
 # MariaDB
@@ -1141,7 +1206,7 @@ mariadb_group = cfg.OptGroup(
     'mariadb', title='MariaDB options',
     help="Oslo option group designed for MariaDB datastore")
 mariadb_opts = [
-    cfg.ListOpt('tcp_ports', default=["3306"],
+    cfg.ListOpt('tcp_ports', default=["3306", "4444", "4567", "4568"],
                 help='List of TCP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
@@ -1153,10 +1218,11 @@ mariadb_opts = [
                help='Default strategy to perform backups.',
                deprecated_name='backup_strategy',
                deprecated_group='DEFAULT'),
-    cfg.StrOpt('replication_strategy', default='MysqlBinlogReplication',
+    cfg.StrOpt('replication_strategy', default='MariaDBGTIDReplication',
                help='Default strategy for replication.'),
     cfg.StrOpt('replication_namespace',
-               default='trove.guestagent.strategies.replication.mysql_binlog',
+               default='trove.guestagent.strategies.replication.experimental'
+               '.mariadb_gtid',
                help='Namespace to load replication strategies from.'),
     cfg.StrOpt('mount_point', default='/var/lib/mysql',
                help="Filesystem path for mounting "
@@ -1203,6 +1269,29 @@ mariadb_opts = [
                 help='Databases to exclude when listing databases.',
                 deprecated_name='ignore_dbs',
                 deprecated_group='DEFAULT'),
+    cfg.StrOpt('guest_log_exposed_logs', default='general,slow_query',
+               help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('guest_log_long_query_time', default=1000,
+               help='The time in milliseconds that a statement must take in '
+                    'in order to be logged in the slow_query log.'),
+    cfg.BoolOpt('cluster_support', default=True,
+                help='Enable clusters to be created and managed.'),
+    cfg.IntOpt('min_cluster_member_count', default=3,
+               help='Minimum number of members in MariaDB cluster.'),
+    cfg.StrOpt('api_strategy',
+               default='trove.common.strategies.cluster.experimental.'
+               'galera_common.api.GaleraCommonAPIStrategy',
+               help='Class that implements datastore-specific API logic.'),
+    cfg.StrOpt('taskmanager_strategy',
+               default='trove.common.strategies.cluster.experimental.'
+               'galera_common.taskmanager.GaleraCommonTaskManagerStrategy',
+               help='Class that implements datastore-specific task manager '
+                    'logic.'),
+    cfg.StrOpt('guestagent_strategy',
+               default='trove.common.strategies.cluster.experimental.'
+               'galera_common.guestagent.GaleraCommonGuestAgentStrategy',
+               help='Class that implements datastore-specific Guest Agent API '
+                    'logic.'),
 ]
 
 # RPC version groups
@@ -1227,9 +1316,6 @@ CONF = cfg.CONF
 
 CONF.register_opts(path_opts)
 CONF.register_opts(common_opts)
-
-CONF.register_group(profiler_group)
-CONF.register_opts(profiler_opts, profiler_group)
 
 CONF.register_opts(database_opts, 'database')
 
@@ -1261,6 +1347,7 @@ CONF.register_opts(mariadb_opts, mariadb_group)
 
 CONF.register_opts(rpcapi_cap_opts, upgrade_levels)
 
+profiler.set_defaults(CONF)
 logging.register_options(CONF)
 
 

@@ -79,6 +79,7 @@ class InstanceTasks(object):
                              'Promoting the instance to replica source.')
     EJECTING = InstanceTask(0x09, 'EJECTING',
                             'Ejecting the replica source.')
+    LOGGING = InstanceTask(0x0a, 'LOGGING', 'Transferring guest logs.')
 
     BUILDING_ERROR_DNS = InstanceTask(0x50, 'BUILDING', 'Build error: DNS.',
                                       is_error=True)
@@ -105,6 +106,12 @@ class InstanceTasks(object):
     EJECTION_ERROR = InstanceTask(0x56, 'EJECTING',
                                         'Replica Source Ejection Error.',
                                         is_error=True)
+    GROWING_ERROR = InstanceTask(0x57, 'GROWING',
+                                       'Growing Cluster Error.',
+                                       is_error=True)
+    SHRINKING_ERROR = InstanceTask(0x58, 'SHRINKING',
+                                         'Shrinking Cluster Error.',
+                                         is_error=True)
 
 # Dissuade further additions at run-time.
 InstanceTask.__init__ = None

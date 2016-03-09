@@ -157,6 +157,11 @@ class FakeGuest(object):
             "_databases": [],
         })
 
+    def disable_root(self):
+        self.delete_user({
+            "_name": "root",
+            "_host": "%"})
+
     def delete_user(self, user):
         username = user['_name']
         self._check_username(username)
@@ -317,7 +322,7 @@ class FakeGuest(object):
             backup.checksum = 'fake-md5-sum'
             backup.size = BACKUP_SIZE
             backup.save()
-        eventlet.spawn_after(7.5, finish_create_backup)
+        eventlet.spawn_after(8, finish_create_backup)
 
     def mount_volume(self, device_path=None, mount_point=None):
         pass

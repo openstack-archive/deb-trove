@@ -22,6 +22,7 @@ import netaddr
 from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
+from trove.common import utils
 
 CONF = cfg.CONF
 
@@ -151,6 +152,36 @@ class MongoDBSchema(DatastoreSchema):
         # check against the invalid character set from
         # http://docs.mongodb.org/manual/reference/limits
         return not any(c in value for c in '/\. "$')
+
+    @classmethod
+    def _dict_requirements(cls):
+        return ['_name']
+
+
+class CassandraSchema(DatastoreSchema):
+    """Represents a Cassandra schema and its associated properties.
+
+    Keyspace names are 32 or fewer alpha-numeric characters and underscores,
+    the first of which is an alpha character.
+    """
+
+    def __init__(self, name=None, deserializing=False):
+        super(CassandraSchema, self).__init__()
+
+        if not (bool(deserializing) != bool(name)):
+            raise ValueError(_("Bad args. name: %(name)s, "
+                               "deserializing %(deser)s.")
+                             % ({'name': bool(name),
+                                 'deser': bool(deserializing)}))
+        if not deserializing:
+            self.name = name
+
+    @property
+    def _max_schema_name_length(self):
+        return 32
+
+    def _is_valid_schema_name(self, value):
+        return True
 
     @classmethod
     def _dict_requirements(cls):
@@ -745,6 +776,45 @@ class MongoDBUser(DatastoreUser):
         return ['_name']
 
 
+class CassandraUser(DatastoreUser):
+    """Represents a Cassandra user and its associated properties."""
+
+    def __init__(self, name=None, password=None, deserializing=False):
+        super(CassandraUser, self).__init__()
+
+        if ((not (bool(deserializing) != bool(name))) or
+                (bool(deserializing) and bool(password))):
+            raise ValueError(_("Bad args. name: %(name)s, "
+                               "password %(pass)s, "
+                               "deserializing %(deser)s.")
+                             % ({'name': bool(name),
+                                 'pass': bool(password),
+                                 'deser': bool(deserializing)}))
+        if not deserializing:
+            self.name = name
+            self.password = password
+
+    def _build_database_schema(self, name):
+        return CassandraSchema(name)
+
+    @property
+    def _max_username_length(self):
+        return 65535
+
+    def _is_valid_name(self, value):
+        return True
+
+    def _is_valid_host_name(self, value):
+        return True
+
+    def _is_valid_password(self, value):
+        return True
+
+    @classmethod
+    def _dict_requirements(cls):
+        return ['_name']
+
+
 class MySQLUser(Base):
     """Represents a MySQL User and its associated properties."""
 
@@ -840,6 +910,28 @@ class MySQLUser(Base):
 
 class RootUser(MySQLUser):
     """Overrides _ignore_users from the MySQLUser class."""
-
     def __init__(self):
         self._ignore_users = []
+
+
+class MySQLRootUser(RootUser):
+    """Represents the MySQL root user."""
+
+    def __init__(self, password=None):
+        super(MySQLRootUser, self).__init__()
+        self._name = "root"
+        self._host = "%"
+        if password is None:
+            self._password = utils.generate_random_password()
+        else:
+            self._password = password
+
+
+class CassandraRootUser(CassandraUser):
+    """Represents the Cassandra default superuser."""
+
+    def __init__(self, password=None, *args, **kwargs):
+        if password is None:
+            password = utils.generate_random_password()
+        super(CassandraRootUser, self).__init__("cassandra", password=password,
+                                                *args, **kwargs)

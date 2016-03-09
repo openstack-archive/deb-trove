@@ -23,14 +23,20 @@ from .service.database import PgSqlDatabase
 from .service.install import PgSqlInstall
 from .service.root import PgSqlRoot
 from .service.status import PgSqlAppStatus
+
 import pgutil
+
+from trove.common import cfg
+from trove.common.notification import EndNotification
 from trove.common import utils
 from trove.guestagent import backup
 from trove.guestagent.datastore import manager
+from trove.guestagent import guest_log
 from trove.guestagent import volume
 
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
 
 
 class Manager(
@@ -54,6 +60,40 @@ class Manager(
     def configuration_manager(self):
         return self._configuration_manager
 
+    @property
+    def datastore_log_defs(self):
+        owner = 'postgres'
+        datastore_dir = '/var/log/postgresql/'
+        long_query_time = CONF.get(self.manager).get(
+            'guest_log_long_query_time')
+        general_log_file = self.build_log_file_name(
+            self.GUEST_LOG_DEFS_GENERAL_LABEL, owner,
+            datastore_dir=datastore_dir)
+        general_log_dir, general_log_filename = os.path.split(general_log_file)
+        return {
+            self.GUEST_LOG_DEFS_GENERAL_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.USER,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: general_log_file,
+                self.GUEST_LOG_ENABLE_LABEL: {
+                    'logging_collector': 'on',
+                    'log_destination': self._quote_str('stderr'),
+                    'log_directory': self._quote_str(general_log_dir),
+                    'log_filename': self._quote_str(general_log_filename),
+                    'log_statement': self._quote_str('all'),
+                    'debug_print_plan': 'on',
+                    'log_min_duration_statement': long_query_time,
+                },
+                self.GUEST_LOG_DISABLE_LABEL: {
+                    'logging_collector': 'off',
+                },
+                self.GUEST_LOG_RESTART_LABEL: True,
+            },
+        }
+
+    def _quote_str(self, value):
+        return "'%s'" % value
+
     def do_prepare(self, context, packages, databases, memory_mb, users,
                    device_path, mount_point, backup_info, config_contents,
                    root_password, overrides, cluster_config, snapshot):
@@ -76,9 +116,6 @@ class Manager(
         else:
             self._secure(context)
 
-        if root_password and not backup_info:
-            self.enable_root(context, root_password)
-
     def _secure(self, context):
         # Create a new administrative user for Trove and also
         # disable the built-in superuser.
@@ -90,4 +127,5 @@ class Manager(
         self.alter_user(context, postgres, 'NOSUPERUSER', 'NOLOGIN')
 
     def create_backup(self, context, backup_info):
-        backup.backup(context, backup_info)
+        with EndNotification(context):
+            backup.backup(context, backup_info)

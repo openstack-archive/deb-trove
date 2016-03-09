@@ -15,11 +15,14 @@
 
 from oslo_log import log as logging
 
+from novaclient import exceptions as nova_exceptions
 from trove.cluster.tasks import ClusterTask
 from trove.cluster.tasks import ClusterTasks
 from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
+from trove.common.notification import DBaaSClusterGrow, DBaaSClusterShrink
+from trove.common.notification import StartNotification
 from trove.common import remote
 from trove.common.strategies.cluster import strategy
 from trove.common import utils
@@ -227,6 +230,35 @@ class Cluster(object):
 
         task_api.API(self.context).delete_cluster(self.id)
 
+    def action(self, context, req, action, param):
+        if action == 'grow':
+            context.notification = DBaaSClusterGrow(context, request=req)
+            with StartNotification(context, cluster_id=self.id):
+                instances = []
+                for node in param:
+                    instance = {
+                        'flavor_id': utils.get_id_from_href(node['flavorRef'])
+                    }
+                    if 'name' in node:
+                        instance['name'] = node['name']
+                    if 'volume' in node:
+                        instance['volume_size'] = int(node['volume']['size'])
+                    instances.append(instance)
+                return self.grow(instances)
+        elif action == 'shrink':
+            context.notification = DBaaSClusterShrink(context, request=req)
+            with StartNotification(context, cluster_id=self.id):
+                instance_ids = [instance['id'] for instance in param]
+                return self.shrink(instance_ids)
+        else:
+            raise exception.BadRequest(_("Action %s not supported") % action)
+
+    def grow(self, instances):
+            raise exception.BadRequest(_("Action 'grow' not supported"))
+
+    def shrink(self, instance_ids):
+            raise exception.BadRequest(_("Action 'shrink' not supported"))
+
     @staticmethod
     def load_instance(context, cluster_id, instance_id):
         return inst_models.load_instance_with_guest(
@@ -243,8 +275,51 @@ class Cluster(object):
 
 def is_cluster_deleting(context, cluster_id):
     cluster = Cluster.load(context, cluster_id)
-    return (cluster.db_info.task_status == ClusterTasks.DELETING
-            or cluster.db_info.task_status == ClusterTasks.SHRINKING_CLUSTER)
+    return (cluster.db_info.task_status == ClusterTasks.DELETING or
+            cluster.db_info.task_status == ClusterTasks.SHRINKING_CLUSTER)
+
+
+def get_flavors_from_instance_defs(context, instances,
+                                   volume_enabled, ephemeral_enabled):
+    """Load and validate flavors for given instance definitions."""
+    flavors = dict()
+    nova_client = remote.create_nova_client(context)
+    for instance in instances:
+        flavor_id = instance['flavor_id']
+        if flavor_id not in flavors:
+            try:
+                flavor = nova_client.flavors.get(flavor_id)
+                if (not volume_enabled and
+                        (ephemeral_enabled and flavor.ephemeral == 0)):
+                    raise exception.LocalStorageNotSpecified(
+                        flavor=flavor_id)
+                flavors[flavor_id] = flavor
+            except nova_exceptions.NotFound:
+                raise exception.FlavorNotFound(uuid=flavor_id)
+
+    return flavors
+
+
+def get_required_volume_size(instances, volume_enabled):
+    """Calculate the total Trove volume size for given instances."""
+    volume_sizes = [instance['volume_size'] for instance in instances
+                    if instance.get('volume_size', None)]
+
+    if volume_enabled:
+        if len(volume_sizes) != len(instances):
+            raise exception.ClusterVolumeSizeRequired()
+
+        total_volume_size = 0
+        for volume_size in volume_sizes:
+            validate_volume_size(volume_size)
+            total_volume_size += volume_size
+
+        return total_volume_size
+
+    if len(volume_sizes) > 0:
+        raise exception.VolumeNotSupported()
+
+    return None
 
 
 def validate_volume_size(size):

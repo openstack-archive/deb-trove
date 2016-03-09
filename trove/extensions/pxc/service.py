@@ -1,5 +1,5 @@
-#  Copyright 2013 Mirantis Inc.
-#  All Rights Reserved.
+# Copyright [2016] Hewlett-Packard Development Company, L.P.
+# All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,19 +13,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from trove.common import cfg
+from trove.common import exception
+from trove.extensions.common.service import ClusterRootController
 
+LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
+MANAGER = CONF.datastore_manager if CONF.datastore_manager else 'pxc'
 
-SERVICE_CANDIDATES = ["cassandra"]
 
-CASSANDRA_DATA_DIR = "/var/lib/cassandra/data"
-CASSANDRA_CONF = "/etc/cassandra/cassandra.yaml"
-CASSANDRA_TEMP_CONF = "/tmp/cassandra.yaml"
-CASSANDRA_TEMP_DIR = "/tmp/cassandra"
+class PxcRootController(ClusterRootController):
 
-CASSANDRA_STATUS = """echo "use system;" > /tmp/check; cqlsh -f /tmp/check"""
-
-CASSANDRA_KILL = "sudo killall java  || true"
-SERVICE_STOP_TIMEOUT = 60
-INSTALL_TIMEOUT = 10000
+    def root_delete(self, req, tenant_id, instance_id, is_cluster):
+        raise exception.DatastoreOperationNotSupported(
+            operation='disable_root', datastore=MANAGER)

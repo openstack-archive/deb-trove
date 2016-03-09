@@ -68,7 +68,6 @@ OS_NAME = operating_system.get_os()
 MYSQL_CONFIG = {operating_system.REDHAT: "/etc/my.cnf",
                 operating_system.DEBIAN: "/etc/mysql/my.cnf",
                 operating_system.SUSE: "/etc/my.cnf"}[OS_NAME]
-MYSQL_SERVICE_CANDIDATES = ["mysql", "mysqld", "mysql-server"]
 MYSQL_BIN_CANDIDATES = ["/usr/sbin/mysqld", "/usr/libexec/mysqld"]
 MYSQL_OWNER = 'mysql'
 CNF_EXT = 'cnf'
@@ -133,6 +132,7 @@ def load_mysqld_options():
 
 
 class BaseMySqlAppStatus(service.BaseDbStatus):
+
     @classmethod
     def get(cls):
         if not cls._instance:
@@ -416,6 +416,11 @@ class BaseMySqlAdmin(object):
         """
         return self.mysql_root_access.enable_root(root_password)
 
+    def disable_root(self):
+        """Disable the root user global access
+        """
+        return self.mysql_root_access.disable_root()
+
     def list_databases(self, limit=None, marker=None, include_marker=False):
         """List databases the user created on this mysql instance."""
         LOG.debug("---Listing Databases---")
@@ -483,6 +488,9 @@ class BaseMySqlAdmin(object):
         LIMIT :limit;
         '''
         LOG.debug("---Listing Users---")
+        ignored_user_names = "'%s'" % "', '".join(cfg.get_ignored_users())
+        LOG.debug("The following user names are on ignore list and will "
+                  "be omitted from the listing: %s" % ignored_user_names)
         users = []
         with self.local_sql_client(self.mysql_app.get_engine()) as client:
             mysql_user = models.MySQLUser()
@@ -495,7 +503,9 @@ class BaseMySqlAdmin(object):
             oq = sql_query.Query()  # Outer query.
             oq.columns = ['User', 'Host', 'Marker']
             oq.tables = ['(%s) as innerquery' % innerquery]
-            oq.where = ["Host != 'localhost'"]
+            oq.where = [
+                "Host != 'localhost'",
+                "User NOT IN (" + ignored_user_names + ")"]
             oq.order = ['Marker']
             if marker:
                 oq.where.append("Marker %s '%s'" %
@@ -567,6 +577,7 @@ class BaseMySqlApp(object):
     """Prepares DBaaS on a Guest container."""
 
     TIME_OUT = 1000
+    CFG_CODEC = IniCodec()
 
     @property
     def local_sql_client(self):
@@ -576,8 +587,13 @@ class BaseMySqlApp(object):
     def keep_alive_connection_cls(self):
         return self._keep_alive_connection_cls
 
+    @property
+    def mysql_service(self):
+        MYSQL_SERVICE_CANDIDATES = ["mysql", "mysqld", "mysql-server"]
+        return operating_system.service_discovery(MYSQL_SERVICE_CANDIDATES)
+
     configuration_manager = ConfigurationManager(
-        MYSQL_CONFIG, MYSQL_OWNER, MYSQL_OWNER, IniCodec(), requires_root=True,
+        MYSQL_CONFIG, MYSQL_OWNER, MYSQL_OWNER, CFG_CODEC, requires_root=True,
         override_strategy=ImportOverrideStrategy(CNF_INCLUDE_DIR, CNF_EXT))
 
     def get_engine(self):
@@ -601,7 +617,9 @@ class BaseMySqlApp(object):
 
     @classmethod
     def get_auth_password(cls):
-        return cls.configuration_manager.get_value('client').get('password')
+        auth_config = operating_system.read_file(
+            cls.get_client_auth_file(), codec=cls.CFG_CODEC)
+        return auth_config['client']['password']
 
     @classmethod
     def get_data_dir(cls):
@@ -612,6 +630,10 @@ class BaseMySqlApp(object):
     def set_data_dir(cls, value):
         cls.configuration_manager.apply_system_override(
             {MySQLConfParser.SERVER_CONF_SECTION: {'datadir': value}})
+
+    @classmethod
+    def get_client_auth_file(self):
+        return guestagent_utils.build_file_path("~", ".my.cnf")
 
     def __init__(self, status, local_sql_client, keep_alive_connection_cls):
         """By default login with root no password for initial setup."""
@@ -656,7 +678,7 @@ class BaseMySqlApp(object):
             LOG.info(_("Finished installing MySQL server."))
         self.start_mysql()
 
-    def secure(self, config_contents, overrides):
+    def secure(self, config_contents):
         LOG.info(_("Generating admin password."))
         admin_password = utils.generate_random_password()
         clear_expired_password()
@@ -669,7 +691,6 @@ class BaseMySqlApp(object):
         self.stop_db()
 
         self._reset_configuration(config_contents, admin_password)
-        self._apply_user_overrides(overrides)
         self.start_mysql()
 
         LOG.debug("MySQL secure complete.")
@@ -685,8 +706,11 @@ class BaseMySqlApp(object):
         self.wipe_ib_logfiles()
 
     def _save_authentication_properties(self, admin_password):
-        self.configuration_manager.apply_system_override(
-            {'client': {'user': ADMIN_USER_NAME, 'password': admin_password}})
+        client_sect = {'client': {'user': ADMIN_USER_NAME,
+                                  'password': admin_password,
+                                  'host': '127.0.0.1'}}
+        operating_system.write_file(self.get_client_auth_file(),
+                                    client_sect, codec=self.CFG_CODEC)
 
     def secure_root(self, secure_remote_root=True):
         with self.local_sql_client(self.get_engine()) as client:
@@ -717,18 +741,15 @@ class BaseMySqlApp(object):
     def _enable_mysql_on_boot(self):
         LOG.debug("Enabling MySQL on boot.")
         try:
-            mysql_service = operating_system.service_discovery(
-                MYSQL_SERVICE_CANDIDATES)
-            utils.execute_with_timeout(mysql_service['cmd_enable'], shell=True)
+            utils.execute_with_timeout(self.mysql_service['cmd_enable'],
+                                       shell=True)
         except KeyError:
             LOG.exception(_("Error enabling MySQL start on boot."))
             raise RuntimeError("Service is not discovered.")
 
     def _disable_mysql_on_boot(self):
         try:
-            mysql_service = operating_system.service_discovery(
-                MYSQL_SERVICE_CANDIDATES)
-            utils.execute_with_timeout(mysql_service['cmd_disable'],
+            utils.execute_with_timeout(self.mysql_service['cmd_disable'],
                                        shell=True)
         except KeyError:
             LOG.exception(_("Error disabling MySQL start on boot."))
@@ -739,9 +760,8 @@ class BaseMySqlApp(object):
         if do_not_start_on_reboot:
             self._disable_mysql_on_boot()
         try:
-            mysql_service = operating_system.service_discovery(
-                MYSQL_SERVICE_CANDIDATES)
-            utils.execute_with_timeout(mysql_service['cmd_stop'], shell=True)
+            utils.execute_with_timeout(self.mysql_service['cmd_stop'],
+                                       shell=True)
         except KeyError:
             LOG.exception(_("Error stopping MySQL."))
             raise RuntimeError("Service is not discovered.")
@@ -931,10 +951,8 @@ class BaseMySqlApp(object):
             self._enable_mysql_on_boot()
 
         try:
-            mysql_service = operating_system.service_discovery(
-                MYSQL_SERVICE_CANDIDATES)
-            utils.execute_with_timeout(mysql_service['cmd_start'], shell=True,
-                                       timeout=timeout)
+            utils.execute_with_timeout(self.mysql_service['cmd_start'],
+                                       shell=True, timeout=timeout)
         except KeyError:
             raise RuntimeError("Service is not discovered.")
         except exception.ProcessExecutionError:
@@ -975,54 +993,6 @@ class BaseMySqlApp(object):
         LOG.info(_("Resetting configuration."))
         self._reset_configuration(config_contents)
 
-    # DEPRECATED: Mantain for API Compatibility
-    def get_txn_count(self):
-        LOG.info(_("Retrieving latest txn id."))
-        txn_count = 0
-        with self.local_sql_client(self.get_engine()) as client:
-            result = client.execute('SELECT @@global.gtid_executed').first()
-            for uuid_set in result[0].split(','):
-                for interval in uuid_set.split(':')[1:]:
-                    if '-' in interval:
-                        iparts = interval.split('-')
-                        txn_count += int(iparts[1]) - int(iparts[0])
-                    else:
-                        txn_count += 1
-        return txn_count
-
-    def _get_slave_status(self):
-        with self.local_sql_client(self.get_engine()) as client:
-            return client.execute('SHOW SLAVE STATUS').first()
-
-    def _get_master_UUID(self):
-        slave_status = self._get_slave_status()
-        return slave_status and slave_status['Master_UUID'] or None
-
-    def _get_gtid_executed(self):
-        with self.local_sql_client(self.get_engine()) as client:
-            return client.execute('SELECT @@global.gtid_executed').first()[0]
-
-    def get_last_txn(self):
-        master_UUID = self._get_master_UUID()
-        last_txn_id = '0'
-        gtid_executed = self._get_gtid_executed()
-        for gtid_set in gtid_executed.split(','):
-            uuid_set = gtid_set.split(':')
-            if uuid_set[0] == master_UUID:
-                last_txn_id = uuid_set[-1].split('-')[-1]
-                break
-        return master_UUID, int(last_txn_id)
-
-    def get_latest_txn_id(self):
-        LOG.info(_("Retrieving latest txn id."))
-        return self._get_gtid_executed()
-
-    def wait_for_txn(self, txn):
-        LOG.info(_("Waiting on txn '%s'.") % txn)
-        with self.local_sql_client(self.get_engine()) as client:
-            client.execute("SELECT WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS('%s')"
-                           % txn)
-
     def reset_admin_password(self, admin_password):
         """Replace the password in the my.cnf file."""
         # grant the new  admin password
@@ -1060,10 +1030,7 @@ class BaseMySqlRootAccess(object):
         """Enable the root user global access and/or
            reset the root password.
         """
-        user = models.RootUser()
-        user.name = "root"
-        user.host = "%"
-        user.password = root_password or utils.generate_random_password()
+        user = models.MySQLRootUser(root_password)
         with self.local_sql_client(self.mysql_app.get_engine()) as client:
             print(client)
             try:
@@ -1093,3 +1060,9 @@ class BaseMySqlRootAccess(object):
             t = text(str(g))
             client.execute(t)
             return user.serialize()
+
+    def disable_root(self):
+        """Disable the root user global access
+        """
+        with self.local_sql_client(self.mysql_app.get_engine()) as client:
+            client.execute(text(sql_query.REMOVE_ROOT))

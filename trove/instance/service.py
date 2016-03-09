@@ -24,7 +24,10 @@ from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
 from trove.common.i18n import _LI
+from trove.common import notification
+from trove.common.notification import StartNotification
 from trove.common import pagination
+from trove.common.remote import create_guest_client
 from trove.common import utils
 from trove.common import wsgi
 from trove.datastore import models as datastore_models
@@ -44,11 +47,11 @@ class InstanceController(wsgi.Controller):
 
     @classmethod
     def get_action_schema(cls, body, action_schema):
-        action_type = body.keys()[0]
+        action_type = list(body.keys())[0]
         action_schema = action_schema.get(action_type, {})
         if action_type == 'resize':
             # volume or flavorRef
-            resize_action = body[action_type].keys()[0]
+            resize_action = list(body[action_type].keys())[0]
             action_schema = action_schema.get(resize_action, {})
         return action_schema
 
@@ -92,13 +95,16 @@ class InstanceController(wsgi.Controller):
                      "instance %(instance_id)s for tenant '%(tenant_id)s'"),
                  {'action_name': action_name, 'instance_id': id,
                   'tenant_id': tenant_id})
-        return selected_action(instance, body)
+        return selected_action(context, req, instance, body)
 
-    def _action_restart(self, instance, body):
-        instance.restart()
+    def _action_restart(self, context, req, instance, body):
+        context.notification = notification.DBaaSInstanceRestart(context,
+                                                                 request=req)
+        with StartNotification(context, instance_id=instance.id):
+            instance.restart()
         return wsgi.Result(None, 202)
 
-    def _action_resize(self, instance, body):
+    def _action_resize(self, context, req, instance, body):
         """
         Handles 2 cases
         1. resize volume
@@ -119,26 +125,40 @@ class InstanceController(wsgi.Controller):
                 selected_option = options[key]
                 args = body['resize'][key]
                 break
-        return selected_option(instance, args)
+        return selected_option(context, req, instance, args)
 
-    def _action_resize_volume(self, instance, volume):
-        instance.resize_volume(volume['size'])
+    def _action_resize_volume(self, context, req, instance, volume):
+        context.notification = notification.DBaaSInstanceResizeVolume(
+            context, request=req)
+        with StartNotification(context, instance_id=instance.id,
+                               new_size=volume['size']):
+            instance.resize_volume(volume['size'])
         return wsgi.Result(None, 202)
 
-    def _action_resize_flavor(self, instance, flavorRef):
+    def _action_resize_flavor(self, context, req, instance, flavorRef):
+        context.notification = notification.DBaaSInstanceResizeInstance(
+            context, request=req)
         new_flavor_id = utils.get_id_from_href(flavorRef)
-        instance.resize_flavor(new_flavor_id)
+        with StartNotification(context, instance_id=instance.id,
+                               new_flavor_id=new_flavor_id):
+            instance.resize_flavor(new_flavor_id)
         return wsgi.Result(None, 202)
 
-    def _action_reset_password(self, instance, body):
+    def _action_reset_password(self, context, instance, body):
         raise webob.exc.HTTPNotImplemented()
 
-    def _action_promote_to_replica_source(self, instance, body):
-        instance.promote_to_replica_source()
+    def _action_promote_to_replica_source(self, context, req, instance, body):
+        context.notification = notification.DBaaSInstanceEject(context,
+                                                               request=req)
+        with StartNotification(context, instance_id=instance.id):
+            instance.promote_to_replica_source()
         return wsgi.Result(None, 202)
 
-    def _action_eject_replica_source(self, instance, body):
-        instance.eject_replica_source()
+    def _action_eject_replica_source(self, context, req, instance, body):
+        context.notification = notification.DBaaSInstancePromote(context,
+                                                                 request=req)
+        with StartNotification(context, instance_id=instance.id):
+            instance.eject_replica_source()
         return wsgi.Result(None, 202)
 
     def index(self, req, tenant_id):
@@ -188,7 +208,10 @@ class InstanceController(wsgi.Controller):
         # TODO(hub-cap): turn this into middleware
         context = req.environ[wsgi.CONTEXT_KEY]
         instance = models.load_any_instance(context, id)
-        instance.delete()
+        context.notification = notification.DBaaSInstanceDelete(context,
+                                                                request=req)
+        with StartNotification(context, instance_id=instance.id):
+            instance.delete()
         # TODO(cp16net): need to set the return code correctly
         return wsgi.Result(None, 202)
 
@@ -199,6 +222,8 @@ class InstanceController(wsgi.Controller):
         LOG.debug("req : '%s'\n\n", strutils.mask_password(req))
         LOG.debug("body : '%s'\n\n", strutils.mask_password(body))
         context = req.environ[wsgi.CONTEXT_KEY]
+        context.notification = notification.DBaaSInstanceCreate(context,
+                                                                request=req)
         datastore_args = body['instance'].get('datastore', {})
         datastore, datastore_version = (
             datastore_models.get_datastore_version(**datastore_args))
@@ -235,9 +260,7 @@ class InstanceController(wsgi.Controller):
         availability_zone = body['instance'].get('availability_zone')
         nics = body['instance'].get('nics')
 
-        slave_of_id = body['instance'].get('replica_of',
-                                           # also check for older name
-                                           body['instance'].get('slave_of'))
+        slave_of_id = body['instance'].get('replica_of')
         replica_count = body['instance'].get('replica_count')
         instance = models.Instance.create(context, name, flavor_id,
                                           image_id, databases, users,
@@ -258,7 +281,7 @@ class InstanceController(wsgi.Controller):
                 configuration_id = utils.get_id_from_href(configuration_ref)
                 return configuration_id
 
-    def _modify_instance(self, instance, **kwargs):
+    def _modify_instance(self, context, req, instance, **kwargs):
         """Modifies the instance using the specified keyword arguments
         'detach_replica': ignored if not present or False, if True,
         specifies the instance is a replica that will be detached from
@@ -270,12 +293,25 @@ class InstanceController(wsgi.Controller):
 
         if 'detach_replica' in kwargs and kwargs['detach_replica']:
             LOG.debug("Detaching replica from source.")
-            instance.detach_replica()
+            context.notification = notification.DBaaSInstanceDetach(
+                context, request=req)
+            with StartNotification(context, instance_id=instance.id):
+                instance.detach_replica()
         if 'configuration_id' in kwargs:
             if kwargs['configuration_id']:
-                instance.assign_configuration(kwargs['configuration_id'])
+                context.notification = (
+                    notification.DBaaSInstanceAttachConfiguration(context,
+                                                                  request=req))
+                configuration_id = kwargs['configuration_id']
+                with StartNotification(context, instance_id=instance.id,
+                                       configuration_id=configuration_id):
+                    instance.assign_configuration(configuration_id)
             else:
-                instance.unassign_configuration()
+                context.notification = (
+                    notification.DBaaSInstanceDetachConfiguration(context,
+                                                                  request=req))
+                with StartNotification(context, instance_id=instance.id):
+                    instance.unassign_configuration()
         if kwargs:
             instance.update_db(**kwargs)
 
@@ -293,7 +329,7 @@ class InstanceController(wsgi.Controller):
         # Make sure args contains a 'configuration_id' argument,
         args = {}
         args['configuration_id'] = self._configuration_parse(context, body)
-        self._modify_instance(instance, **args)
+        self._modify_instance(context, req, instance, **args)
         return wsgi.Result(None, 202)
 
     def edit(self, req, id, body, tenant_id):
@@ -308,14 +344,13 @@ class InstanceController(wsgi.Controller):
         instance = models.Instance.load(context, id)
 
         args = {}
-        args['detach_replica'] = ('replica_of' in body['instance'] or
-                                  'slave_of' in body['instance'])
+        args['detach_replica'] = 'replica_of' in body['instance']
 
         if 'name' in body['instance']:
             args['name'] = body['instance']['name']
         if 'configuration' in body['instance']:
             args['configuration_id'] = self._configuration_parse(context, body)
-        self._modify_instance(instance, **args)
+        self._modify_instance(context, req, instance, **args)
         return wsgi.Result(None, 202)
 
     def configuration(self, req, tenant_id, id):
@@ -331,3 +366,33 @@ class InstanceController(wsgi.Controller):
                   {'instance_id': id, 'config': config})
         return wsgi.Result(views.DefaultConfigurationView(
                            config).data(), 200)
+
+    def guest_log_list(self, req, tenant_id, id):
+        """Return all information about all logs for an instance."""
+        LOG.debug("Listing logs for tenant %s" % tenant_id)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        instance = models.Instance.load(context, id)
+        if not instance:
+            raise exception.NotFound(uuid=id)
+        client = create_guest_client(context, id)
+        guest_log_list = client.guest_log_list()
+        return wsgi.Result({'logs': guest_log_list}, 200)
+
+    def guest_log_action(self, req, body, tenant_id, id):
+        """Processes a guest log."""
+        LOG.info(_("Processing log for tenant %s"), tenant_id)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        instance = models.Instance.load(context, id)
+        if not instance:
+            raise exception.NotFound(uuid=id)
+        log_name = body['name']
+        enable = body.get('enable', None)
+        disable = body.get('disable', None)
+        publish = body.get('publish', None)
+        discard = body.get('discard', None)
+        if enable and disable:
+            raise exception.BadRequest(_("Cannot enable and disable log."))
+        client = create_guest_client(context, id)
+        guest_log = client.guest_log_action(log_name, enable, disable,
+                                            publish, discard)
+        return wsgi.Result({'log': guest_log}, 200)

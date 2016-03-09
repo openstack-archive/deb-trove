@@ -76,6 +76,27 @@ class Root(object):
 
         return root_user
 
+    @classmethod
+    def delete(cls, context, instance_id):
+        load_and_verify(context, instance_id)
+        create_guest_client(context, instance_id).disable_root()
+
+
+class ClusterRoot(Root):
+
+    @classmethod
+    def create(cls, context, instance_id, user, root_password,
+               cluster_instances_list=None):
+        root_user = super(ClusterRoot, cls).create(context, instance_id,
+                                                   user, root_password,
+                                                   cluster_instances_list=None)
+
+        if cluster_instances_list:
+            for instance in cluster_instances_list:
+                RootHistory.create(context, instance, user)
+
+        return root_user
+
 
 class RootHistory(object):
 

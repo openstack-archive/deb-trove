@@ -36,8 +36,6 @@ class InstanceCreateRunner(TestRunner):
 
     def run_empty_instance_create(
             self, expected_states=['BUILD', 'ACTIVE'], expected_http_code=200):
-        # TODO(pmalik): Instance create should return 202 Accepted (cast)
-        # rather than 200 OK (call).
         name = self.instance_info.name
         flavor = self._get_instance_flavor()
         trove_volume_size = CONFIG.get('trove_volume_size', 1)
@@ -79,9 +77,13 @@ class InstanceCreateRunner(TestRunner):
             self, with_dbs=True, with_users=True, configuration_id=None,
             expected_states=['BUILD', 'ACTIVE'], expected_http_code=200,
             create_helper_user=True):
-        # TODO(pmalik): Instance create should return 202 Accepted (cast)
-        # rather than 200 OK (call).
-        name = self.instance_info.name
+        if self.is_using_existing_instance:
+            # The user requested to run the tests using an existing instance.
+            # We therefore skip any scenarios that involve creating new
+            # test instances.
+            raise SkipTest("Using an existing instance.")
+
+        name = self.instance_info.name + '_init'
         flavor = self._get_instance_flavor()
         trove_volume_size = CONFIG.get('trove_volume_size', 1)
         self.init_inst_dbs = (self.test_helper.get_valid_database_definitions()
@@ -138,7 +140,7 @@ class InstanceCreateRunner(TestRunner):
 
         # Here we add helper user/database if any.
         if create_helper_user:
-            helper_db_def, helper_user_def = self.build_helper_defs()
+            helper_db_def, helper_user_def, root_def = self.build_helper_defs()
             if helper_db_def:
                 self.report.log(
                     "Appending a helper database '%s' to the instance "

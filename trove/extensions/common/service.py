@@ -49,6 +49,16 @@ class BaseDatastoreRootController(wsgi.Controller):
     def root_create(self, req, body, tenant_id, instance_id, is_cluster):
         pass
 
+    @abc.abstractmethod
+    def root_delete(self, req, tenant_id, instance_id, is_cluster):
+        pass
+
+    @staticmethod
+    def _get_password_from_body(body=None):
+        if body:
+            return body['password'] if 'password' in body else None
+        return None
+
 
 class DefaultRootController(BaseDatastoreRootController):
 
@@ -71,13 +81,87 @@ class DefaultRootController(BaseDatastoreRootController):
         LOG.info(_LI("req : '%s'\n\n") % req)
         context = req.environ[wsgi.CONTEXT_KEY]
         user_name = context.user
-        if body:
-            password = body['password'] if 'password' in body else None
-        else:
-            password = None
+        password = DefaultRootController._get_password_from_body(body)
         root = models.Root.create(context, instance_id,
                                   user_name, password)
         return wsgi.Result(views.RootCreatedView(root).data(), 200)
+
+    def root_delete(self, req, tenant_id, instance_id, is_cluster):
+        if is_cluster:
+            raise exception.ClusterOperationNotSupported(
+                operation='disable_root')
+        LOG.info(_LI("Disabling root for instance '%s'.") % instance_id)
+        LOG.info(_LI("req : '%s'\n\n") % req)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        try:
+            found_user = self._find_root_user(context, instance_id)
+        except (ValueError, AttributeError) as e:
+            raise exception.BadRequest(msg=str(e))
+        if not found_user:
+            raise exception.UserNotFound(uuid="root")
+        models.Root.delete(context, instance_id)
+        return wsgi.Result(None, 200)
+
+
+class ClusterRootController(DefaultRootController):
+
+    def root_index(self, req, tenant_id, instance_id, is_cluster):
+        """Returns True if root is enabled; False otherwise."""
+        if is_cluster:
+            return self.cluster_root_index(req, tenant_id, instance_id)
+        else:
+            return self.instance_root_index(req, tenant_id, instance_id)
+
+    def instance_root_index(self, req, tenant_id, instance_id):
+        LOG.info(_LI("Getting root enabled for instance '%s'.") % instance_id)
+        LOG.info(_LI("req : '%s'\n\n") % req)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        try:
+            is_root_enabled = models.ClusterRoot.load(context, instance_id)
+        except exception.UnprocessableEntity:
+            raise exception.UnprocessableEntity(
+                "Cluster %s is not ready." % instance_id)
+        return wsgi.Result(views.RootEnabledView(is_root_enabled).data(), 200)
+
+    def cluster_root_index(self, req, tenant_id, cluster_id):
+        LOG.info(_LI("Getting root enabled for cluster '%s'.") % cluster_id)
+        single_instance_id, cluster_instances = self._get_cluster_instance_id(
+            tenant_id, cluster_id)
+        return self.instance_root_index(req, tenant_id, single_instance_id)
+
+    def root_create(self, req, body, tenant_id, instance_id, is_cluster):
+        if is_cluster:
+            return self.cluster_root_create(req, body, tenant_id, instance_id)
+        else:
+            return self.instance_root_create(req, body, instance_id)
+
+    def instance_root_create(self, req, body, instance_id,
+                             cluster_instances=None):
+        LOG.info(_LI("Enabling root for instance '%s'.") % instance_id)
+        LOG.info(_LI("req : '%s'\n\n") % req)
+        context = req.environ[wsgi.CONTEXT_KEY]
+        user_name = context.user
+        password = ClusterRootController._get_password_from_body(body)
+        root = models.ClusterRoot.create(context, instance_id, user_name,
+                                         password, cluster_instances)
+        return wsgi.Result(views.RootCreatedView(root).data(), 200)
+
+    def cluster_root_create(self, req, body, tenant_id, cluster_id):
+        LOG.info(_LI("Enabling root for cluster '%s'.") % cluster_id)
+        single_instance_id, cluster_instances = self._get_cluster_instance_id(
+            tenant_id, cluster_id)
+        return self.instance_root_create(req, body, single_instance_id,
+                                         cluster_instances)
+
+    def _find_cluster_node_ids(self, tenant_id, cluster_id):
+        args = {'tenant_id': tenant_id, 'cluster_id': cluster_id}
+        cluster_instances = DBInstance.find_all(**args).all()
+        return [db_instance.id for db_instance in cluster_instances]
+
+    def _get_cluster_instance_id(self, tenant_id, cluster_id):
+        instance_ids = self._find_cluster_node_ids(tenant_id, cluster_id)
+        single_instance_id = instance_ids[0]
+        return single_instance_id, instance_ids
 
 
 class RootController(wsgi.Controller):
@@ -98,6 +182,16 @@ class RootController(wsgi.Controller):
         root_controller = self.load_root_controller(datastore_manager)
         if root_controller is not None:
             return root_controller.root_create(req, body, tenant_id,
+                                               instance_id, is_cluster)
+        else:
+            raise NoSuchOptError('root_controller', group='datastore_manager')
+
+    def delete(self, req, tenant_id, instance_id):
+        datastore_manager, is_cluster = self._get_datastore(tenant_id,
+                                                            instance_id)
+        root_controller = self.load_root_controller(datastore_manager)
+        if root_controller is not None:
+            return root_controller.root_delete(req, tenant_id,
                                                instance_id, is_cluster)
         else:
             raise NoSuchOptError

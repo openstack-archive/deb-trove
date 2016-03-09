@@ -230,6 +230,11 @@ class UnprocessableEntity(TroveError):
     message = _("Unable to process the contained request.")
 
 
+class UnauthorizedRequest(TroveError):
+
+    message = _("Unauthorized request.")
+
+
 class CannotResizeToSameSize(TroveError):
 
     message = _("No change was requested in the size of the instance.")
@@ -491,12 +496,46 @@ class ReplicaSourceDeleteForbidden(Forbidden):
                 "replicas.")
 
 
+class ModuleTypeNotFound(NotFound):
+    message = _("Module type '%(module_type)s' was not found.")
+
+
+class ModuleAppliedToInstance(BadRequest):
+
+    message = _("A module cannot be deleted or its contents modified if it "
+                "has been applied to a non-terminated instance, unless the "
+                "module has been marked as 'live_update.' "
+                "Please remove the module from all non-terminated "
+                "instances and try again.")
+
+
+class ModuleAlreadyExists(BadRequest):
+
+    message = _("A module with the name '%(name)s' already exists for "
+                "datastore '%(datastore)s' and datastore version "
+                "'%(ds_version)s'")
+
+
+class ModuleAccessForbidden(Forbidden):
+
+    message = _("You must be admin to %(action)s a module with these "
+                "options. %(options)s")
+
+
 class ClusterNotFound(NotFound):
     message = _("Cluster '%(cluster)s' cannot be found.")
 
 
 class ClusterFlavorsNotEqual(TroveError):
     message = _("The flavor for each instance in a cluster must be the same.")
+
+
+class ClusterNetworksNotEqual(TroveError):
+    message = _("The network for each instance in a cluster must be the same.")
+
+
+class NetworkNotFound(TroveError):
+    message = _("Network Resource %(uuid)s cannot be found.")
 
 
 class ClusterVolumeSizeRequired(TroveError):
@@ -516,6 +555,11 @@ class ClusterNumInstancesNotSupported(TroveError):
 class ClusterNumInstancesNotLargeEnough(TroveError):
     message = _("The number of instances for your initial cluster must "
                 "be at least %(num_instances)s.")
+
+
+class ClusterShrinkMustNotLeaveClusterEmpty(TroveError):
+    message = _("Must leave at least one instance in the cluster when "
+                "shrinking.")
 
 
 class ClusterInstanceOperationNotSupported(TroveError):

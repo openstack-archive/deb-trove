@@ -20,17 +20,22 @@ import os
 
 from oslo_log import log as logging
 
+from trove.common import cfg
+from trove.common import configurations
 from trove.common import exception
 from trove.common.i18n import _
 from trove.common import instance as rd_instance
+from trove.common.notification import EndNotification
 from trove.guestagent import backup
 from trove.guestagent.common import operating_system
 from trove.guestagent.datastore import manager
 from trove.guestagent.datastore.mysql_common import service
+from trove.guestagent import guest_log
 from trove.guestagent import volume
 
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
 
 
 class MySqlManager(manager.Manager):
@@ -66,28 +71,84 @@ class MySqlManager(manager.Manager):
         return self.mysql_app(
             self.mysql_app_status.get()).configuration_manager
 
+    @property
+    def datastore_log_defs(self):
+        owner = 'mysql'
+        datastore_dir = self.mysql_app.get_data_dir()
+        server_section = configurations.MySQLConfParser.SERVER_CONF_SECTION
+        long_query_time = CONF.get(self.manager).get(
+            'guest_log_long_query_time') / 1000
+        general_log_file = self.build_log_file_name(
+            self.GUEST_LOG_DEFS_GENERAL_LABEL, owner,
+            datastore_dir=datastore_dir)
+        error_log_file = self.validate_log_file('/var/log/mysqld.log', owner)
+        slow_query_log_file = self.build_log_file_name(
+            self.GUEST_LOG_DEFS_SLOW_QUERY_LABEL, owner,
+            datastore_dir=datastore_dir)
+        return {
+            self.GUEST_LOG_DEFS_GENERAL_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.USER,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: general_log_file,
+                self.GUEST_LOG_SECTION_LABEL: server_section,
+                self.GUEST_LOG_ENABLE_LABEL: {
+                    'general_log': 'on',
+                    'general_log_file': general_log_file,
+                    'log_output': 'file',
+                },
+                self.GUEST_LOG_DISABLE_LABEL: {
+                    'general_log': 'off',
+                },
+            },
+            self.GUEST_LOG_DEFS_SLOW_QUERY_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.USER,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: slow_query_log_file,
+                self.GUEST_LOG_SECTION_LABEL: server_section,
+                self.GUEST_LOG_ENABLE_LABEL: {
+                    'slow_query_log': 'on',
+                    'slow_query_log_file': slow_query_log_file,
+                    'long_query_time': long_query_time,
+                },
+                self.GUEST_LOG_DISABLE_LABEL: {
+                    'slow_query_log': 'off',
+                },
+            },
+            self.GUEST_LOG_DEFS_ERROR_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.SYS,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: error_log_file,
+            },
+        }
+
     def change_passwords(self, context, users):
-        return self.mysql_admin().change_passwords(users)
+        with EndNotification(context):
+            self.mysql_admin().change_passwords(users)
 
     def update_attributes(self, context, username, hostname, user_attrs):
-        return self.mysql_admin().update_attributes(
-            username, hostname, user_attrs)
+        with EndNotification(context):
+            self.mysql_admin().update_attributes(
+                username, hostname, user_attrs)
 
     def reset_configuration(self, context, configuration):
         app = self.mysql_app(self.mysql_app_status.get())
         app.reset_configuration(configuration)
 
     def create_database(self, context, databases):
-        return self.mysql_admin().create_database(databases)
+        with EndNotification(context):
+            return self.mysql_admin().create_database(databases)
 
     def create_user(self, context, users):
-        self.mysql_admin().create_user(users)
+        with EndNotification(context):
+            self.mysql_admin().create_user(users)
 
     def delete_database(self, context, database):
-        return self.mysql_admin().delete_database(database)
+        with EndNotification(context):
+            return self.mysql_admin().delete_database(database)
 
     def delete_user(self, context, user):
-        self.mysql_admin().delete_user(user)
+        with EndNotification(context):
+            self.mysql_admin().delete_user(user)
 
     def get_user(self, context, username, hostname):
         return self.mysql_admin().get_user(username, hostname)
@@ -115,11 +176,13 @@ class MySqlManager(manager.Manager):
         return self.mysql_admin().enable_root()
 
     def enable_root_with_password(self, context, root_password=None):
-        raise exception.DatastoreOperationNotSupported(
-            operation='enable_root_with_password', datastore=self.manager)
+        return self.mysql_admin().enable_root(root_password)
 
     def is_root_enabled(self, context):
         return self.mysql_admin().is_root_enabled()
+
+    def disable_root(self, context):
+        return self.mysql_admin().disable_root()
 
     def _perform_restore(self, backup_info, context, restore_location, app):
         LOG.info(_("Restoring database from backup %s.") % backup_info['id'])
@@ -168,13 +231,10 @@ class MySqlManager(manager.Manager):
             self._perform_restore(backup_info, context,
                                   mount_point + "/data", app)
         LOG.debug("Securing MySQL now.")
-        app.secure(config_contents, overrides)
+        app.secure(config_contents)
         enable_root_on_restore = (backup_info and
                                   self.mysql_admin().is_root_enabled())
-        if root_password and not backup_info:
-            app.secure_root(secure_remote_root=True)
-            self.mysql_admin().enable_root(root_password)
-        elif enable_root_on_restore:
+        if enable_root_on_restore:
             app.secure_root(secure_remote_root=False)
             self.mysql_app_status.get().report_root(context, 'root')
         else:
@@ -205,7 +265,8 @@ class MySqlManager(manager.Manager):
         :param backup_info: a dictionary containing the db instance id of the
                             backup task, location, type, and other data.
         """
-        backup.backup(context, backup_info)
+        with EndNotification(context):
+            backup.backup(context, backup_info)
 
     def update_overrides(self, context, overrides, remove=False):
         app = self.mysql_app(self.mysql_app_status.get())

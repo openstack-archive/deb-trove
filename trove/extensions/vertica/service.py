@@ -15,69 +15,24 @@
 
 from oslo_log import log as logging
 
-from trove.common.i18n import _LI
-from trove.common import wsgi
-from trove.extensions.common.service import BaseDatastoreRootController
-from trove.extensions.common import views
-from trove.extensions.vertica import models
+from trove.common import cfg
+from trove.common import exception
+from trove.extensions.common.service import ClusterRootController
 from trove.instance.models import DBInstance
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
+MANAGER = CONF.datastore_manager if CONF.datastore_manager else 'vertica'
 
 
-class VerticaRootController(BaseDatastoreRootController):
+class VerticaRootController(ClusterRootController):
 
-    def root_index(self, req, tenant_id, instance_id, is_cluster):
-        """Returns True if root is enabled; False otherwise."""
-        if is_cluster:
-            return self.cluster_root_index(req, tenant_id, instance_id)
-        else:
-            return self.instance_root_index(req, tenant_id, instance_id)
-
-    def instance_root_index(self, req, tenant_id, instance_id):
-        LOG.info(_LI("Getting root enabled for instance '%s'.") % instance_id)
-        LOG.info(_LI("req : '%s'\n\n") % req)
-        context = req.environ[wsgi.CONTEXT_KEY]
-        is_root_enabled = models.VerticaRoot.load(context, instance_id)
-        return wsgi.Result(views.RootEnabledView(is_root_enabled).data(), 200)
-
-    def cluster_root_index(self, req, tenant_id, cluster_id):
-        LOG.info(_LI("Getting root enabled for cluster '%s'.") % cluster_id)
-        master_instance_id, cluster_instances = self._get_cluster_instance_id(
-            tenant_id, cluster_id)
-        return self.instance_root_index(req, tenant_id, master_instance_id)
-
-    def root_create(self, req, body, tenant_id, instance_id, is_cluster):
-        if is_cluster:
-            return self.cluster_root_create(req, body, tenant_id, instance_id)
-        else:
-            return self.instance_root_create(req, body, instance_id)
-
-    def instance_root_create(self, req, body, instance_id,
-                             cluster_instances=None):
-        LOG.info(_LI("Enabling root for instance '%s'.") % instance_id)
-        LOG.info(_LI("req : '%s'\n\n") % req)
-        context = req.environ[wsgi.CONTEXT_KEY]
-        user_name = context.user
-        if body:
-            password = body['password'] if 'password' in body else None
-        else:
-            password = None
-        root = models.VerticaRoot.create(context, instance_id, user_name,
-                                         password, cluster_instances)
-        return wsgi.Result(views.RootCreatedView(root).data(), 200)
-
-    def cluster_root_create(self, req, body, tenant_id, cluster_id):
-        LOG.info(_LI("Enabling root for cluster '%s'.") % cluster_id)
-        master_instance_id, cluster_instances = self._get_cluster_instance_id(
-            tenant_id, cluster_id)
-        return self.instance_root_create(req, body, master_instance_id,
-                                         cluster_instances)
+    def delete(self, req, tenant_id, instance_id):
+        raise exception.DatastoreOperationNotSupported(
+            operation='disable_root', datastore=MANAGER)
 
     def _get_cluster_instance_id(self, tenant_id, cluster_id):
-        args = {'tenant_id': tenant_id, 'cluster_id': cluster_id}
-        cluster_instances = DBInstance.find_all(**args).all()
-        instance_ids = [db_instance.id for db_instance in cluster_instances]
+        instance_ids = self._find_cluster_node_ids(tenant_id, cluster_id)
         args = {'tenant_id': tenant_id, 'cluster_id': cluster_id, 'type':
                 'master'}
         master_instance = DBInstance.find_by(**args)

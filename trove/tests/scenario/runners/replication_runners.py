@@ -31,6 +31,7 @@ class ReplicationRunner(TestRunner):
         self.master_host = self.get_instance_host(self.master_id)
         self.replica_1_host = None
         self.master_backup_count = None
+        self.used_data_sets = set()
 
     def run_add_data_for_replication(self, data_type=DataType.small):
         self.assert_add_replication_data(data_type, self.master_host)
@@ -40,6 +41,7 @@ class ReplicationRunner(TestRunner):
         'helper' class should implement the 'add_<data_type>_data' method.
         """
         self.test_helper.add_data(data_type, host)
+        self.used_data_sets.add(data_type)
 
     def run_verify_data_for_replication(self, data_type=DataType.small):
         self.assert_verify_replication_data(data_type, self.master_host)
@@ -65,7 +67,9 @@ class ReplicationRunner(TestRunner):
         replica = self.auth_client.instances.create(
             self.instance_info.name + replica_name,
             self.instance_info.dbaas_flavor_href,
-            self.instance_info.volume, slave_of=master_id,
+            self.instance_info.volume, replica_of=master_id,
+            datastore=self.instance_info.dbaas_datastore,
+            datastore_version=self.instance_info.dbaas_datastore_version,
             nics=self.instance_info.nics,
             replica_count=replica_count)
         replica_id = replica.id
@@ -90,7 +94,7 @@ class ReplicationRunner(TestRunner):
     def _assert_is_replica(self, instance_id, master_id):
         instance = self.get_instance(instance_id)
         self.assert_client_code(200)
-        CheckInstance(instance._info).slave_of()
+        CheckInstance(instance._info).replica_of()
         self.assert_equal(master_id, instance._info['replica_of']['id'],
                           'Unexpected replication master ID')
 
@@ -203,9 +207,9 @@ class ReplicationRunner(TestRunner):
         """In order for this to work, the corresponding datastore
         'helper' class should implement the 'remove_<type>_data' method.
         """
-        self.test_helper.remove_data(DataType.small, host)
-        self.test_helper.remove_data(DataType.tiny, host)
-        self.test_helper.remove_data(DataType.tiny2, host)
+        for data_set in self.used_data_sets:
+            self.report.log("Removing replicated data set: %s" % data_set)
+            self.test_helper.remove_data(data_set, host)
 
     def run_detach_replica_from_source(self,
                                        expected_states=['ACTIVE'],

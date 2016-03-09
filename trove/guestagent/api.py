@@ -25,6 +25,7 @@ from oslo_messaging.rpc.client import RemoteError
 from trove.common import cfg
 from trove.common import exception
 from trove.common.i18n import _
+from trove.common.notification import NotificationCastWrapper
 import trove.common.rpc.version as rpc_version
 from trove import rpc
 
@@ -75,8 +76,9 @@ class API(object):
     def _cast(self, method_name, version, **kwargs):
         LOG.debug("Casting %s" % method_name)
         try:
-            cctxt = self.client.prepare(version=version)
-            cctxt.cast(self.context, method_name, **kwargs)
+            with NotificationCastWrapper(self.context, 'guest'):
+                cctxt = self.client.prepare(version=version)
+                cctxt.cast(self.context, method_name, **kwargs)
         except RemoteError as r:
             LOG.exception(_("Error calling %s") % method_name)
             raise exception.GuestError(original_message=r.value)
@@ -427,3 +429,17 @@ class API(object):
         LOG.debug("Demoting instance %s to non-master.", self.id)
         self._call("demote_replication_master", AGENT_HIGH_TIMEOUT,
                    self.version_cap)
+
+    def guest_log_list(self):
+        LOG.debug("Retrieving guest log list for %s.", self.id)
+        result = self._call("guest_log_list", AGENT_HIGH_TIMEOUT,
+                            self.version_cap)
+        LOG.debug("guest_log_list 1 returns %s", result)
+        return result
+
+    def guest_log_action(self, log_name, enable, disable, publish, discard):
+        LOG.debug("Processing guest log '%s' for %s.", log_name, self.id)
+        return self._call("guest_log_action", AGENT_HIGH_TIMEOUT,
+                          self.version_cap, log_name=log_name,
+                          enable=enable, disable=disable,
+                          publish=publish, discard=discard)
