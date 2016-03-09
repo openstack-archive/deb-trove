@@ -11,6 +11,7 @@ openstack-trove (1:5.0.0~b3-1) experimental; urgency=medium
   * Added (= ${binary:Version}) in all Depends: trove-common.
   * Standards-Version: 3.9.7 (no change).
   * Fixed debian/copyright ordering.
+  * Fails build on unit test failure.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 09 Mar 2016 10:03:36 +0100
 
