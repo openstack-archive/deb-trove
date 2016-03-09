@@ -2,10 +2,6 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: trove
 Source: https://github.com/openstack/trove
 
-Files: debian/*
-Copyright: (c) 2010-2013, Thomas Goirand <zigo@debian.org>
-License: Apache-2
-
 Files: *
 Copyright: (c) 2012-2013, Michael Basnight <mbasnight@gmail.com>
            (c) 2012-2013, Tim Simpson <tim.simpson@rackspace.com>
@@ -48,6 +44,10 @@ Copyright: (c) 2012-2013, Michael Basnight <mbasnight@gmail.com>
            (c) 2012-2013, David Fecker <david.fecker@rackspace.com>
            (c) 2012-2013, Dan Nguyen <dan.nguyens.mail@gmail.com>
            (c) 2012-2013, Daniel Salinas <imsplitbit@gmail.com>
+License: Apache-2
+
+Files: debian/*
+Copyright: (c) 2010-2016, Thomas Goirand <zigo@debian.org>
 License: Apache-2
 
 License: Apache-2
