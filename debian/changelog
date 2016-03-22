@@ -1,6 +1,7 @@
 openstack-trove (1:5.0.0~rc1-1) experimental; urgency=medium
 
   * New upstream release.
+  * Added couchdb as build-depends-indep.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 22 Mar 2016 14:20:28 +0100
 
