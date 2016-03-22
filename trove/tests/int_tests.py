@@ -163,7 +163,7 @@ module_groups = list(instance_create_groups)
 module_groups.extend([module_group.GROUP])
 
 module_create_groups = list(base_groups)
-module_create_groups.extend([module_group.GROUP_MODULE,
+module_create_groups.extend([module_group.GROUP_MODULE_CREATE,
                              module_group.GROUP_MODULE_DELETE])
 
 replication_groups = list(instance_create_groups)
@@ -203,7 +203,8 @@ register(["cassandra_supported"], common_groups,
          backup_groups, configuration_groups, cluster_actions_groups)
 register(["couchbase_supported"], common_groups, backup_groups,
          root_actions_groups)
-register(["couchdb_supported"], common_groups)
+register(["couchdb_supported"], common_groups, backup_groups,
+         user_actions_groups, database_actions_groups, root_actions_groups)
 register(["postgresql_supported"], common_groups,
          backup_groups, database_actions_groups, configuration_groups,
          root_actions_groups, user_actions_groups)
@@ -222,4 +223,4 @@ register(["pxc_supported"], common_groups,
 register(["redis_supported"], common_groups,
          backup_groups, replication_groups, cluster_actions_groups)
 register(["vertica_supported"], common_groups,
-         cluster_actions_groups, root_actions_groups)
+         cluster_actions_groups, root_actions_groups, configuration_groups)
