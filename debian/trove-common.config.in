@@ -10,6 +10,7 @@ CONF=/etc/trove/trove.conf
 
 pkgos_var_user_group trove
 pkgos_dbc_read_conf -pkg trove-common ${CONF} database connection trove $@
+pkgos_rabbit_read_conf ${CONF} oslo_messaging_rabbit trove
 pkgos_read_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
 
 exit 0
