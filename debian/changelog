@@ -5,6 +5,8 @@ openstack-trove (1:5.0.0~rc1-3) UNRELEASED; urgency=medium
   * Added "pkgos_rabbit_read_conf ${CONF} oslo_messaging_rabbit trove" in the
     config script.
   * Sets Neutron as network manager by default, and not nova-network.
+  * Move all config files handling within trove-common.
+  * Move all logrotate stuff within trove-common.logrotate.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 30 Mar 2016 10:25:54 +0200
 

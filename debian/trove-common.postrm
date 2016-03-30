@@ -22,9 +22,15 @@ if [ "${1}" = "purge" ] ; then
 	rm -rf /var/log/trove
 	rm -rf /var/cache/trove
 
+	rm -rf /etc/trove/conf.d
+	rm -rf /etc/trove/cloudinit
 	rm -f /etc/trove/api-paste.ini
 	rm -f /etc/trove/trove.conf
-	[ -d /etc/trove ] && rmdir --ignore-fail-on-non-empty /etc/trove
+	rm -f /etc/trove/trove-conductor.conf
+	rm -f /etc/trove/trove-guestagent.conf
+	rm -f /etc/trove/trove-taskmanager.conf
+
+	[ -d /etc/trove ] && rmdir --ignore-fail-on-non-empty /etc/trove || true
 	rm -rf /var/lib/trove
 fi
 
