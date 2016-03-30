@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: trove\n"
-"Report-Msgid-Bugs-To: trove@packages.debian.org\n"
-"POT-Creation-Date: 2013-10-03 01:47+0800\n"
+"Report-Msgid-Bugs-To: openstack-trove@packages.debian.org\n"
+"POT-Creation-Date: 2016-03-30 23:50+0200\n"
 "PO-Revision-Date: 2013-12-09 17:43+0200\n"
 "Last-Translator: Beatrice Torracca <beatricet@libero.it>\n"
 "Language-Team: Italian <debian-l10n-italian@lists.debian.org>\n"
@@ -20,7 +20,9 @@ msgstr ""
 #. Type: boolean
 #. Description
 #: ../trove-api.templates:2001
-msgid "Register Glance in the Keystone endpoint catalog?"
+#, fuzzy
+#| msgid "Register Glance in the Keystone endpoint catalog?"
+msgid "Register Trove in the Keystone endpoint catalog?"
 msgstr "Registrare Glance nel catalogo di punti terminali Keystone?"
 
 #. Type: boolean
@@ -38,9 +40,14 @@ msgstr ""
 #. Type: boolean
 #. Description
 #: ../trove-api.templates:2001
+#, fuzzy
+#| msgid ""
+#| "Note that you will need to have an up and running Keystone server on "
+#| "which to connect using the Keystone authentication token."
 msgid ""
 "Note that you will need to have an up and running Keystone server on which "
-"to connect using the Keystone authentication token."
+"to connect using a known admin project name, admin username and password. "
+"The admin auth token is not used anymore."
 msgstr ""
 "Notare che sarà necessario avere un server keystone in funzione a cui "
 "connettersi usando il token di autenticazione Keystone."
@@ -54,45 +61,70 @@ msgstr "Indirizzo IP del server Keystone:"
 #. Type: string
 #. Description
 #: ../trove-api.templates:3001
+#, fuzzy
+#| msgid ""
+#| "Please enter the IP address of the Keystone server, so that trove-api can "
+#| "contact Keystone to do the Glance service and endpoint creation."
 msgid ""
 "Please enter the IP address of the Keystone server, so that trove-api can "
-"contact Keystone to do the Glance service and endpoint creation."
+"contact Keystone to do the Trove service and endpoint creation."
 msgstr ""
 "Inserire l'indirizzo IP del server Keystone, in modo che trove-api possa "
 "contattare Keystone per effettuare la creazione del servizio e del punto "
 "terminale Glance."
 
-#. Type: password
+#. Type: string
 #. Description
 #: ../trove-api.templates:4001
-msgid "Keystone authentication token:"
+#, fuzzy
+#| msgid "Keystone authentication token:"
+msgid "Keystone admin name:"
 msgstr "Token di autenticazione Keystone:"
 
+#. Type: string
+#. Description
+#. Type: string
+#. Description
 #. Type: password
 #. Description
-#: ../trove-api.templates:4001
+#: ../trove-api.templates:4001 ../trove-api.templates:5001
+#: ../trove-api.templates:6001
 msgid ""
-"To configure its endpoint in Keystone, trove-api needs the Keystone "
-"authentication token."
+"To register the service endpoint, this package needs to know the Admin "
+"login, name, project name, and password to the Keystone server."
 msgstr ""
-"Per configurare il proprio punto terminale in Keystone, trove-api ha bisogno "
-"del token di autenticazione Keystone."
 
 #. Type: string
 #. Description
 #: ../trove-api.templates:5001
-msgid "Glance endpoint IP address:"
+msgid "Keystone admin project name:"
+msgstr ""
+
+#. Type: password
+#. Description
+#: ../trove-api.templates:6001
+msgid "Keystone admin password:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-api.templates:7001
+#, fuzzy
+#| msgid "Glance endpoint IP address:"
+msgid "Trove endpoint IP address:"
 msgstr "Indirizzo IP del punto terminale Glance:"
 
 #. Type: string
 #. Description
-#: ../trove-api.templates:5001
-msgid "Please enter the IP address that will be used to contact Glance."
+#: ../trove-api.templates:7001
+#, fuzzy
+#| msgid "Please enter the IP address that will be used to contact Glance."
+msgid "Please enter the IP address that will be used to contact Trove."
 msgstr "Inserire l'indirizzo IP che verrà usato per contattare Glance."
 
 #. Type: string
 #. Description
-#: ../trove-api.templates:5001
+#: ../trove-api.templates:7001
 msgid ""
 "This IP address should be accessible from the clients that will use this "
 "service, so if you are installing a public cloud, this should be a public IP "
@@ -104,13 +136,13 @@ msgstr ""
 
 #. Type: string
 #. Description
-#: ../trove-api.templates:6001
+#: ../trove-api.templates:8001
 msgid "Name of the region to register:"
 msgstr "Nome della regione da registrare:"
 
 #. Type: string
 #. Description
-#: ../trove-api.templates:6001
+#: ../trove-api.templates:8001
 msgid ""
 "OpenStack supports using availability zones, with each region representing a "
 "location. Please enter the zone that you wish to use when registering the "
@@ -186,8 +218,7 @@ msgid ""
 "(Keystone)."
 msgstr ""
 "Specificare il nome host del server di autenticazione per Trove. "
-"Tipicamente, è anche il nome host dell'OpenStack Identity Service "
-"(Keystone)."
+"Tipicamente, è anche il nome host dell'OpenStack Identity Service (Keystone)."
 
 #. Type: string
 #. Description
@@ -214,8 +245,7 @@ msgstr "Nome del locatario («tenant») per il server di autenticazione:"
 #: ../trove-common.templates:4001
 msgid "Please specify the authentication server tenant name."
 msgstr ""
-"Specificare il nome del locatario («tenant») per il server di "
-"autenticazione."
+"Specificare il nome del locatario («tenant») per il server di autenticazione."
 
 #. Type: string
 #. Description
@@ -240,3 +270,10 @@ msgstr "Password per il server di autenticazione:"
 #: ../trove-common.templates:6001
 msgid "Please specify the password to use with the authentication server."
 msgstr "Specificare la password da usare con il server di autenticazione."
+
+#~ msgid ""
+#~ "To configure its endpoint in Keystone, trove-api needs the Keystone "
+#~ "authentication token."
+#~ msgstr ""
+#~ "Per configurare il proprio punto terminale in Keystone, trove-api ha "
+#~ "bisogno del token di autenticazione Keystone."

@@ -10,7 +10,7 @@
 Template: trove/register-endpoint
 Type: boolean
 Default: false
-_Description: Register Glance in the Keystone endpoint catalog?
+_Description: Register Trove in the Keystone endpoint catalog?
  Each OpenStack service (each API) should be registered in order to be
  accessible. This is done using "keystone service-create" and "keystone
  endpoint-create". This can be done automatically now.
@@ -23,7 +23,7 @@ Template: trove/keystone-ip
 Type: string
 _Description: Keystone server IP address:
  Please enter the IP address of the Keystone server, so that trove-api can
- contact Keystone to do the Glance service and endpoint creation.
+ contact Keystone to do the Trove service and endpoint creation.
 
 Template: trove/keystone-admin-name
 Type: string
@@ -47,8 +47,8 @@ _Description: Keystone admin password:
 
 Template: trove/endpoint-ip
 Type: string
-_Description: Glance endpoint IP address:
- Please enter the IP address that will be used to contact Glance.
+_Description: Trove endpoint IP address:
+ Please enter the IP address that will be used to contact Trove.
  .
  This IP address should be accessible from the clients that will use this
  service, so if you are installing a public cloud, this should be a public
