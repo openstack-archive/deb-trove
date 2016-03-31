@@ -1,5 +1,6 @@
-openstack-trove (1:5.0.0~rc1-3) UNRELEASED; urgency=medium
+openstack-trove (1:5.0.0~rc2-1) experimental; urgency=medium
 
+  * New upstream release.
   * Added /etc/trove/cloudinit/README file, so that the /etc/trove/cloudinit
     folder stays installed.
   * Added "pkgos_rabbit_read_conf ${CONF} oslo_messaging_rabbit trove" in the
