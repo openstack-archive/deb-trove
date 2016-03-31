@@ -8,6 +8,7 @@ openstack-trove (1:5.0.0~rc1-3) UNRELEASED; urgency=medium
   * Move all config files handling within trove-common.
   * Move all logrotate stuff within trove-common.logrotate.
   * Write db and rabbit info in all needed config files.
+  * Add make-trove-taskmanager.conf-parseable.patch.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 30 Mar 2016 10:25:54 +0200
 
