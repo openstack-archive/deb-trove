@@ -30,7 +30,7 @@ if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 		pkgos_inifile set /etc/trove/trove-taskmanager.conf database connection ${RET}
 		trove-manage db_sync
 	fi
-	#pkgos_write_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
+	pkgos_write_admin_creds /etc/trove/trove.conf keystone_authtoken trove
 
 	pkgos_rabbit_write_conf /etc/trove/trove.conf oslo_messaging_rabbit trove
 	pkgos_rabbit_write_conf /etc/trove/trove-conductor.conf oslo_messaging_rabbit trove

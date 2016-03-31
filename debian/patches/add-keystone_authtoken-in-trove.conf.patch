@@ -1,0 +1,22 @@
+Description: Add a keystone_authtoken section in trove.conf
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2016-03-31
+
+--- openstack-trove-5.0.0~rc1.orig/etc/trove/trove.conf.sample
++++ openstack-trove-5.0.0~rc1/etc/trove/trove.conf.sample
+@@ -310,4 +310,12 @@ api_strategy = trove.common.strategies.c
+ 
+ # Indicate which header field names may be used during the actual request.
+ # (list value)
+-#allow_headers = X-Auth-Token, X-Identity-Status, X-Roles, X-Service-Catalog, X-User-Id, X-Tenant-Id, X-OpenStack-Request-ID
+\ No newline at end of file
++#allow_headers = X-Auth-Token, X-Identity-Status, X-Roles, X-Service-Catalog, X-User-Id, X-Tenant-Id, X-OpenStack-Request-ID
++
++
++[keystone_authtoken]
++auth_host = 192.168.10.3
++auth_protocol = http
++admin_user = admin
++admin_password = XXXXXX
++admin_tenant_name = admin

@@ -10,6 +10,7 @@ openstack-trove (1:5.0.0~rc1-3) UNRELEASED; urgency=medium
   * Write db and rabbit info in all needed config files.
   * Add make-trove-taskmanager.conf-parseable.patch.
   * Add install-missing-files.patch.
+  * Add add-keystone_authtoken-in-trove.conf.patch.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 30 Mar 2016 10:25:54 +0200
 
