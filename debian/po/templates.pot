@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: openstack-trove\n"
 "Report-Msgid-Bugs-To: openstack-trove@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-30 23:50+0200\n"
+"POT-Creation-Date: 2016-03-31 10:25+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -226,4 +226,53 @@ msgstr ""
 #. Description
 #: ../trove-common.templates:6001
 msgid "Please specify the password to use with the authentication server."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:7001
+msgid "IP address of your RabbitMQ host:"
+msgstr ""
+
+#. Type: string
+#. Description
+#. Type: string
+#. Description
+#. Type: password
+#. Description
+#: ../trove-common.templates:7001 ../trove-common.templates:8001
+#: ../trove-common.templates:9001
+msgid ""
+"In order to interoperate with other components of OpenStack, this package "
+"needs to connect to a central RabbitMQ server."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:7001
+msgid "Please specify the IP address of that server."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:8001
+msgid "Username for connection to the RabbitMQ server:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:8001
+msgid "Please specify the username used to connect to the RabbitMQ server."
+msgstr ""
+
+#. Type: password
+#. Description
+#: ../trove-common.templates:9001
+msgid "Password for connection to the RabbitMQ server:"
+msgstr ""
+
+#. Type: password
+#. Description
+#: ../trove-common.templates:9001
+msgid "Please specify the password used to connect to the RabbitMQ server."
 msgstr ""

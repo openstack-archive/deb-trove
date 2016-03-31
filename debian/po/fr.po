@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: trove\n"
 "Report-Msgid-Bugs-To: openstack-trove@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-30 23:50+0200\n"
+"POT-Creation-Date: 2016-03-31 10:25+0200\n"
 "PO-Revision-Date: 2013-10-31 14:03+0100\n"
 "Last-Translator: Julien Patriarca <leatherface@debian.org>\n"
 "Language-Team: FRENCH <debian-l10n-french@lists.debian.org>\n"
@@ -273,6 +273,67 @@ msgstr "Mot de passe pour le serveur d'authentification :"
 #. Description
 #: ../trove-common.templates:6001
 msgid "Please specify the password to use with the authentication server."
+msgstr ""
+"Veuillez indiquer le mot de passe à utiliser sur le serveur "
+"d'authentification."
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:7001
+msgid "IP address of your RabbitMQ host:"
+msgstr ""
+
+#. Type: string
+#. Description
+#. Type: string
+#. Description
+#. Type: password
+#. Description
+#: ../trove-common.templates:7001 ../trove-common.templates:8001
+#: ../trove-common.templates:9001
+msgid ""
+"In order to interoperate with other components of OpenStack, this package "
+"needs to connect to a central RabbitMQ server."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:7001
+#, fuzzy
+#| msgid "Please specify the password to use with the authentication server."
+msgid "Please specify the IP address of that server."
+msgstr ""
+"Veuillez indiquer le mot de passe à utiliser sur le serveur "
+"d'authentification."
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:8001
+msgid "Username for connection to the RabbitMQ server:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../trove-common.templates:8001
+#, fuzzy
+#| msgid "Please specify the username to use with the authentication server."
+msgid "Please specify the username used to connect to the RabbitMQ server."
+msgstr ""
+"Veuillez indiquer le nom d'utilisateur à utiliser sur le serveur "
+"d'authentification."
+
+#. Type: password
+#. Description
+#: ../trove-common.templates:9001
+msgid "Password for connection to the RabbitMQ server:"
+msgstr ""
+
+#. Type: password
+#. Description
+#: ../trove-common.templates:9001
+#, fuzzy
+#| msgid "Please specify the password to use with the authentication server."
+msgid "Please specify the password used to connect to the RabbitMQ server."
 msgstr ""
 "Veuillez indiquer le mot de passe à utiliser sur le serveur "
 "d'authentification."
