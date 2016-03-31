@@ -25,12 +25,18 @@ if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	db_get trove/configure_db
 	if [ "$RET" = "true" ]; then
 		pkgos_dbc_postinst /etc/trove/trove.conf database connection trove $@
-	fi
-	pkgos_write_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
-	db_get trove/configure_db
-	if [ "$RET" = "true" ]; then
+		pkgos_inifile get /etc/trove/trove.conf database connection
+		pkgos_inifile set /etc/trove/trove-conductor.conf database connection ${RET}
+		pkgos_inifile set /etc/trove/trove-taskmanager.conf database connection ${RET}
 		trove-manage db_sync
 	fi
+	#pkgos_write_admin_creds /etc/trove/api-paste.ini filter:authtoken trove
+
+	pkgos_rabbit_write_conf /etc/trove/trove.conf oslo_messaging_rabbit trove
+	pkgos_rabbit_write_conf /etc/trove/trove-conductor.conf oslo_messaging_rabbit trove
+	pkgos_rabbit_write_conf /etc/trove/trove-taskmanager.conf oslo_messaging_rabbit trove
+	pkgos_rabbit_write_conf /etc/trove/trove-guestagent.conf oslo_messaging_rabbit trove
+
 	db_stop
 fi
 
