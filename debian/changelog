@@ -1,3 +1,9 @@
+openstack-trove (1:5.0.0~rc2-2) experimental; urgency=medium
+
+  * Added better-default-config.patch.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 01 Apr 2016 18:02:48 +0200
+
 openstack-trove (1:5.0.0~rc2-1) experimental; urgency=medium
 
   * New upstream release.
