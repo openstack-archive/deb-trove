@@ -79,7 +79,7 @@ Build-Depends-Indep: iproute2,
                      python-wsgi-intercept,
                      subunit,
                      testrepository,
-Standards-Version: 3.9.7
+Standards-Version: 3.9.8
 Vcs-Browser: https://anonscm.debian.org/cgit/openstack/openstack-trove.git/
 Vcs-Git: https://anonscm.debian.org/git/openstack/openstack-trove.git
 Homepage: https://github.com/openstack/trove
