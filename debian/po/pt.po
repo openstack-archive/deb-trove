@@ -2,13 +2,13 @@
 # Copyright (C) 2013 THE openstack-trove'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the openstack-trove package.
 #
-# Américo Monteiro <a_monteiro@gmx.com>, 2013.
+# Américo Monteiro <a_monteiro@gmx.com>, 2013 - 2016.
 msgid ""
 msgstr ""
-"Project-Id-Version: openstack-trove 2013.2~rc1-1\n"
+"Project-Id-Version: openstack-trove 1:5.0.0-1\n"
 "Report-Msgid-Bugs-To: openstack-trove@packages.debian.org\n"
 "POT-Creation-Date: 2016-03-31 10:25+0200\n"
-"PO-Revision-Date: 2013-11-18 21:41+0000\n"
+"PO-Revision-Date: 2016-04-16 23:51+0100\n"
 "Last-Translator: Américo Monteiro <a_monteiro@gmx.com>\n"
 "Language-Team: Portuguese <traduz@debianpt.org>\n"
 "Language: pt\n"
@@ -21,10 +21,9 @@ msgstr ""
 #. Type: boolean
 #. Description
 #: ../trove-api.templates:2001
-#, fuzzy
 #| msgid "Register Glance in the Keystone endpoint catalog?"
 msgid "Register Trove in the Keystone endpoint catalog?"
-msgstr "Registar o Glance no catálogo de \"endpoint\" do Keystone?"
+msgstr "Registar o Trove no catálogo de \"endpoint\" do Keystone?"
 
 #. Type: boolean
 #. Description
@@ -41,7 +40,6 @@ msgstr ""
 #. Type: boolean
 #. Description
 #: ../trove-api.templates:2001
-#, fuzzy
 #| msgid ""
 #| "Note that you will need to have an up and running Keystone server on "
 #| "which to connect using the Keystone authentication token."
@@ -51,7 +49,8 @@ msgid ""
 "The admin auth token is not used anymore."
 msgstr ""
 "Note que irá precisar de ter um servidor Keystone a funcionar no qual ligar "
-"usando o sinal de autenticação do Keystone."
+"usando um nome de projecto admin conhecido, nome de utilizador e palavra "
+"passe admin. O token de autenticação admin não é mais utilizado."
 
 #. Type: string
 #. Description
@@ -62,7 +61,6 @@ msgstr "Endereço IP do servidor Keystone:"
 #. Type: string
 #. Description
 #: ../trove-api.templates:3001
-#, fuzzy
 #| msgid ""
 #| "Please enter the IP address of the Keystone server, so that trove-api can "
 #| "contact Keystone to do the Glance service and endpoint creation."
@@ -71,16 +69,15 @@ msgid ""
 "contact Keystone to do the Trove service and endpoint creation."
 msgstr ""
 "Por favor indique o endereço IP do servidor Keystone, para que o trove-api "
-"possa contactar o Keystone para fazer o serviço Glance e a criação do "
+"possa contactar o Keystone para fazer o serviço Trove e a criação do "
 "\"endpoint\"."
 
 #. Type: string
 #. Description
 #: ../trove-api.templates:4001
-#, fuzzy
 #| msgid "Keystone authentication token:"
 msgid "Keystone admin name:"
-msgstr "Sinal (token) de autenticação do Keystone:"
+msgstr "Nome de administrador do Keystone:"
 
 #. Type: string
 #. Description
@@ -94,35 +91,34 @@ msgid ""
 "To register the service endpoint, this package needs to know the Admin "
 "login, name, project name, and password to the Keystone server."
 msgstr ""
+"Para registar o endpoint do serviço, este pacote precisa de saber o login de "
+"Admin, o nome, nome do projecto e palavra passe para o servidor Keystone."
 
 #. Type: string
 #. Description
 #: ../trove-api.templates:5001
 msgid "Keystone admin project name:"
-msgstr ""
+msgstr "Nome do projecto admin do Keystone:"
 
 #. Type: password
 #. Description
 #: ../trove-api.templates:6001
 msgid "Keystone admin password:"
-msgstr ""
+msgstr "Palavra passe admin do Keystone:"
 
 #. Type: string
 #. Description
 #: ../trove-api.templates:7001
-#, fuzzy
 #| msgid "Glance endpoint IP address:"
 msgid "Trove endpoint IP address:"
-msgstr "Endereço IP do endpoint do Glance:"
+msgstr "Endereço IP do endpoint do Trove:"
 
 #. Type: string
 #. Description
 #: ../trove-api.templates:7001
-#, fuzzy
 #| msgid "Please enter the IP address that will be used to contact Glance."
 msgid "Please enter the IP address that will be used to contact Trove."
-msgstr ""
-"Por favor indique o endereço IP que será usado para contactar o Glance."
+msgstr "Por favor indique o endereço IP que será usado para contactar o Trove."
 
 #. Type: string
 #. Description
@@ -281,7 +277,7 @@ msgstr ""
 #. Description
 #: ../trove-common.templates:7001
 msgid "IP address of your RabbitMQ host:"
-msgstr ""
+msgstr "Endereço IP do seu hospedeiro RabbitMQ:"
 
 #. Type: string
 #. Description
@@ -295,46 +291,45 @@ msgid ""
 "In order to interoperate with other components of OpenStack, this package "
 "needs to connect to a central RabbitMQ server."
 msgstr ""
+"De modo a inter-operar com outros componentes do OpenStack, este pacote "
+"precisa de se ligar a um servidor RabbitMQ central."
 
 #. Type: string
 #. Description
 #: ../trove-common.templates:7001
-#, fuzzy
 #| msgid "Please specify the password to use with the authentication server."
 msgid "Please specify the IP address of that server."
-msgstr ""
-"Por favor especifique a palavra passe a usar com o servidor de autenticação."
+msgstr "Por favor especifique o endereço IP desse servidor."
 
 #. Type: string
 #. Description
 #: ../trove-common.templates:8001
 msgid "Username for connection to the RabbitMQ server:"
-msgstr ""
+msgstr "Nome de utilizador para ligação ao servidor RabbitMQ:"
 
 #. Type: string
 #. Description
 #: ../trove-common.templates:8001
-#, fuzzy
 #| msgid "Please specify the username to use with the authentication server."
 msgid "Please specify the username used to connect to the RabbitMQ server."
 msgstr ""
-"Por favor especifique o nome de utilizador a usar com o servidor de "
-"autenticação."
+"Por favor especifique o nome de utilizador a usar para ligação ao "
+"servidor RabbitMQ."
 
 #. Type: password
 #. Description
 #: ../trove-common.templates:9001
 msgid "Password for connection to the RabbitMQ server:"
-msgstr ""
+msgstr "Palavra passe para ligação ao servidor RabbitMQ:"
 
 #. Type: password
 #. Description
 #: ../trove-common.templates:9001
-#, fuzzy
 #| msgid "Please specify the password to use with the authentication server."
 msgid "Please specify the password used to connect to the RabbitMQ server."
 msgstr ""
-"Por favor especifique a palavra passe a usar com o servidor de autenticação."
+"Por favor especifique a palavra passe a usar para ligação ao servidor "
+"RabbitMQ."
 
 #~ msgid ""
 #~ "To configure its endpoint in Keystone, trove-api needs the Keystone "
