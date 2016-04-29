@@ -1,12 +1,13 @@
-openstack-trove (1:5.0.0-3) UNRELEASED; urgency=medium
+openstack-trove (1:5.0.0-4) UNRELEASED; urgency=medium
 
   [ Ondřej Nový ]
   * Standards-Version is 3.9.8 now (no change)
 
   [ Thomas Goirand ]
   * Updated Portuguese translation for debconf messages (Closes: #821238).
+  * Set use_nova_config_drive to True by default.
 
- -- Thomas Goirand <zigo@debian.org>  Sat, 23 Apr 2016 18:49:12 +0200
+ -- Thomas Goirand <zigo@debian.org>  Fri, 29 Apr 2016 12:44:04 -0500
 
 openstack-trove (1:5.0.0-1) unstable; urgency=medium
 

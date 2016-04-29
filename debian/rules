@@ -49,6 +49,9 @@ override_dh_install:
 	# We want neutron by default, not nova-network
 	pkgos-fix-config-default $(CURDIR)/debian/trove-common/usr/share/trove-common/trove.conf DEFAULT network_driver	trove.network.neutron.NeutronDriver
 
+	# Use nova config drive by default
+	pkgos-fix-config-default $(CURDIR)/debian/trove-common/usr/share/trove-common/trove-taskmanager.conf DEFAULT use_nova_server_config_drive True
+
 	install -D -m 0664 $(CURDIR)/etc/trove/api-paste.ini $(CURDIR)/debian/trove-common/usr/share/trove-common/api-paste.ini
 
 override_dh_auto_test:
