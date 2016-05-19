@@ -8,6 +8,9 @@ openstack-trove (1:5.0.0-2) UNRELEASED; urgency=medium
   * Set use_nova_config_drive to True by default.
   * Updated Dutch translation for debconf messages (Closes: #822970).
 
+  [ Ondřej Nový ]
+  * d/rules: Changed UPSTREAM_GIT protocol to https
+
  -- Thomas Goirand <zigo@debian.org>  Thu, 19 May 2016 11:24:58 +0200
 
 openstack-trove (1:5.0.0-1) unstable; urgency=medium
