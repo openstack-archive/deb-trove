@@ -32,12 +32,47 @@ class SwiftStorageSaveChecksumTests(trove_testtools.TestCase):
 
     def setUp(self):
         super(SwiftStorageSaveChecksumTests, self).setUp()
+        self.max_file_size = swift.MAX_FILE_SIZE
+        swift.MAX_FILE_SIZE = 128
 
     def tearDown(self):
+        swift.MAX_FILE_SIZE = self.max_file_size
         super(SwiftStorageSaveChecksumTests, self).tearDown()
 
+    def test_swift_small_file_checksum_save(self):
+        """This tests that SwiftStorage.save returns the swift checksum
+        for small files.
+        """
+        context = trove_testtools.TroveTestContext(self)
+        backup_id = '123'
+        user = 'user'
+        password = 'password'
+
+        swift.MAX_FILE_SIZE = 2 * (1024 ** 3)
+
+        swift_client = FakeSwiftConnection()
+        with patch.object(swift, 'create_swift_client',
+                          return_value=swift_client):
+            storage_strategy = SwiftStorage(context)
+
+            with MockBackupRunner(filename=backup_id,
+                                  user=user,
+                                  password=password) as runner:
+                (success,
+                 note,
+                 checksum,
+                 location) = storage_strategy.save(runner.manifest, runner)
+
+        self.assertTrue(success, "The backup should have been successful.")
+        self.assertIsNotNone(note, "A note should have been returned.")
+        self.assertEqual('http://mockswift/v1/database_backups/123.gz.enc',
+                         location,
+                         "Incorrect swift location was returned.")
+
     def test_swift_checksum_save(self):
-        """This tests that SwiftStorage.save returns the swift checksum."""
+        """This tests that SwiftStorage.save returns the swift checksum for
+        large files.
+        """
         context = trove_testtools.TroveTestContext(self)
         backup_id = '123'
         user = 'user'
@@ -219,7 +254,7 @@ class SwiftStorageLoad(trove_testtools.TestCase):
 class MockBackupStream(MockBackupRunner):
 
     def read(self, chunk_size):
-        return 'X' * chunk_size
+        return b'X' * chunk_size
 
 
 class StreamReaderTests(trove_testtools.TestCase):
@@ -240,9 +275,6 @@ class StreamReaderTests(trove_testtools.TestCase):
         stream_reader = StreamReader(self.runner, 'foo')
         self.assertEqual('foo', stream_reader.base_filename)
 
-    def test_prefix(self):
-        self.assertEqual('database_backups/123_', self.stream.prefix)
-
     def test_segment(self):
         self.assertEqual('123_00000000', self.stream.segment)
 
@@ -255,11 +287,11 @@ class StreamReaderTests(trove_testtools.TestCase):
     def test_segment_almost_complete(self):
         self.stream.segment_length = 98
         results = self.stream.read(2)
-        self.assertEqual('XX', results)
+        self.assertEqual(b'XX', results)
         self.assertEqual('123_00000000', self.stream.segment,
                          "The Segment should still be the same")
         self.assertEqual(100, self.stream.segment_length)
-        checksum = hashlib.md5('XX')
+        checksum = hashlib.md5(b'XX')
         checksum = checksum.hexdigest()
         segment_checksum = self.stream.segment_checksum.hexdigest()
         self.assertEqual(checksum, segment_checksum,
@@ -326,8 +358,7 @@ class SwiftMetadataTests(trove_testtools.TestCase):
         self.swift.save_metadata(location, metadata=metadata)
 
         headers = {
-            'X-Object-Meta-lsn': '1234567',
-            'X-Object-Manifest': None
+            'X-Object-Meta-lsn': '1234567'
         }
         self.swift_client.post_object.assert_called_with(
             'backups', 'mybackup.tar', headers=headers)

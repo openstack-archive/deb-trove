@@ -606,8 +606,9 @@ class BaseMySqlApp(object):
             return ENGINE
 
         pwd = self.get_auth_password()
-        ENGINE = sqlalchemy.create_engine("mysql://%s:%s@localhost:3306" %
-                                          (ADMIN_USER_NAME, pwd.strip()),
+        uri = ("mysql+pymysql://%s:%s@localhost:3306"
+               % (ADMIN_USER_NAME, pwd.strip()))
+        ENGINE = sqlalchemy.create_engine(uri,
                                           pool_recycle=7200,
                                           echo=CONF.sql_query_logging,
                                           listeners=[
@@ -682,8 +683,8 @@ class BaseMySqlApp(object):
         LOG.info(_("Generating admin password."))
         admin_password = utils.generate_random_password()
         clear_expired_password()
-        engine = sqlalchemy.create_engine("mysql://root:@localhost:3306",
-                                          echo=True)
+        uri = "mysql+pymysql://root:@localhost:3306"
+        engine = sqlalchemy.create_engine(uri, echo=True)
         with self.local_sql_client(engine) as client:
             self._remove_anonymous_user(client)
             self._create_admin_user(client, admin_password)
@@ -802,7 +803,7 @@ class BaseMySqlApp(object):
         LOG.debug("Applying overrides to MySQL.")
         with self.local_sql_client(self.get_engine()) as client:
             LOG.debug("Updating override values in running MySQL.")
-            for k, v in overrides.iteritems():
+            for k, v in overrides.items():
                 byte_value = guestagent_utils.to_bytes(v)
                 q = sql_query.SetServerVariable(key=k, value=byte_value)
                 t = text(str(q))
@@ -960,7 +961,7 @@ class BaseMySqlApp(object):
             # but actually come up ok. we're looking into the timing issue on
             # parallel, but for now, we'd like to give it one more chance to
             # come up. so regardless of the execute_with_timeout() response,
-            # we'll assume mysql comes up and check it's status for a while.
+            # we'll assume mysql comes up and check its status for a while.
             pass
         if not self.status.wait_for_real_status_to_change_to(
                 rd_instance.ServiceStatuses.RUNNING,
@@ -1037,7 +1038,7 @@ class BaseMySqlRootAccess(object):
                 cu = sql_query.CreateUser(user.name, host=user.host)
                 t = text(str(cu))
                 client.execute(t, **cu.keyArgs)
-            except exc.OperationalError as err:
+            except (exc.OperationalError, exc.InternalError) as err:
                 # Ignore, user is already created, just reset the password
                 # TODO(rnirmal): More fine grained error checking later on
                 LOG.debug(err)
@@ -1062,7 +1063,6 @@ class BaseMySqlRootAccess(object):
             return user.serialize()
 
     def disable_root(self):
-        """Disable the root user global access
+        """Reset the root password to an unknown value.
         """
-        with self.local_sql_client(self.mysql_app.get_engine()) as client:
-            client.execute(text(sql_query.REMOVE_ROOT))
+        self.enable_root(root_password=None)

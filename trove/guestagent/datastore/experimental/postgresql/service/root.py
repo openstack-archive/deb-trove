@@ -13,15 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
-
 from trove.common import cfg
-from trove.common import utils
 from trove.guestagent.datastore.experimental.postgresql import pgutil
 from trove.guestagent.datastore.experimental.postgresql.service.users import (
     PgSqlUsers)
+from trove.guestagent.db import models
 
-LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 
@@ -63,7 +60,7 @@ class PgSqlRoot(PgSqlUsers):
         called 'postgres'.
         This system account has no password and is *locked* by default,
         so that it can be used by *local* users only.
-        It should *never* be enabled (or it's password set)!!!
+        It should *never* be enabled (or its password set)!!!
         That would just open up a new attack vector on the system account.
 
         Remote clients should use a build-in *database* account of the same
@@ -75,18 +72,15 @@ class PgSqlRoot(PgSqlUsers):
 
             {"_name": "postgres", "_password": "<secret>"}
         """
-        user = {
-            "_name": "postgres",
-            "_password": root_password or utils.generate_random_password(),
-        }
+        user = models.PostgreSQLRootUser(password=root_password)
         query = pgutil.UserQuery.alter_user(
-            user['_name'],
-            user['_password'],
+            user.name,
+            user.password,
             None,
             *self.ADMIN_OPTIONS
         )
         pgutil.psql(query, timeout=30)
-        return user
+        return user.serialize()
 
     def disable_root(self, context):
         """Generate a new random password for the public superuser account.
@@ -96,4 +90,4 @@ class PgSqlRoot(PgSqlUsers):
         self.enable_root(context)
 
     def enable_root_with_password(self, context, root_password=None):
-        self.enable_root(context, root_password)
+        return self.enable_root(context, root_password)

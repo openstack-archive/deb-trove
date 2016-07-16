@@ -11,13 +11,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ConfigParser
 import os
 import subprocess
 import tempfile
 
 from oslo_log import log as logging
 from oslo_utils import netutils
+from six.moves import configparser
 
 from trove.common import cfg
 from trove.common import exception
@@ -248,7 +248,7 @@ class VerticaApp(object):
                                                           db_password))
             system.shell_execute(create_db_command, "dbadmin")
         except exception.ProcessExecutionError:
-            # Give vertica some time to get the the node up, won't be available
+            # Give vertica some time to get the node up, won't be available
             # by the time adminTools -t db_add_node completes
             LOG.info(_("adminTools failed as expected - wait for node"))
         self.wait_for_node_status()
@@ -265,7 +265,7 @@ class VerticaApp(object):
                                                                db_password))
             system.shell_execute(create_db_command, "dbadmin")
         except exception.ProcessExecutionError:
-            # Give vertica some time to get the the node up, won't be available
+            # Give vertica some time to get the node up, won't be available
             # by the time adminTools -t db_add_node completes
             LOG.info(_("adminTools failed as expected - wait for node"))
 
@@ -361,7 +361,7 @@ class VerticaApp(object):
 
     def _generate_database_password(self):
         """Generate and write the password to vertica.cnf file."""
-        config = ConfigParser.ConfigParser()
+        config = configparser.ConfigParser()
         config.add_section('credentials')
         config.set('credentials', 'dbadmin_password',
                    utils.generate_random_password())
@@ -388,7 +388,7 @@ class VerticaApp(object):
     def read_config(self):
         """Reads and returns the Vertica config."""
         try:
-            config = ConfigParser.ConfigParser()
+            config = configparser.ConfigParser()
             config.read(system.VERTICA_CONF)
             return config
         except Exception:

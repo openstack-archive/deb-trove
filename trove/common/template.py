@@ -33,6 +33,8 @@ SERVICE_PARSERS = {
     'mongodb': configurations.MongoDBConfParser,
     'mysql': configurations.MySQLConfParser,
     'percona': configurations.MySQLConfParser,
+    'mariadb': configurations.MySQLConfParser,
+    'pxc': configurations.MySQLConfParser,
     'postgresql': configurations.PostgresqlConfParser,
     'cassandra': configurations.CassandraConfParser,
     'redis': configurations.RedisConfParser,
@@ -113,10 +115,6 @@ class SingleInstanceConfigTemplate(object):
         :return: a positive integer
         """
         return abs(hash(self.instance_id) % (2 ** 31))
-
-
-class OverrideConfigTemplate(SingleInstanceConfigTemplate):
-    template_name = "override.config.template"
 
 
 def _validate_datastore(datastore_manager):

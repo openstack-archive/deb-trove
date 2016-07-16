@@ -15,9 +15,9 @@
 
 import abc
 import re
-import string
 
 import netaddr
+from six import u
 
 from trove.common import cfg
 from trove.common import exception
@@ -53,10 +53,22 @@ class Base(object):
 class DatastoreSchema(Base):
     """Represents a database schema."""
 
-    def __init__(self):
+    def __init__(self, name, deserializing=False, *args, **kwargs):
         self._name = None
         self._collate = None
         self._character_set = None
+
+        # If both or neither are passed in this is a bug.
+        if not (bool(deserializing) != bool(name)):
+            raise RuntimeError("Bug in DatastoreSchema()")
+        if not deserializing:
+            self.name = name
+
+    def __str__(self):
+        return str(self.name)
+
+    def __repr__(self):
+        return str(self.serialize())
 
     @classmethod
     def deserialize_schema(cls, value):
@@ -65,7 +77,7 @@ class DatastoreSchema(Base):
                                "Required: %(reqs)s")
                              % ({'keys': value.keys(),
                                  'reqs': cls._dict_requirements()}))
-        schema = cls(deserializing=True)
+        schema = cls(name=None, deserializing=True)
         schema.deserialize(value)
         return schema
 
@@ -133,16 +145,8 @@ class MongoDBSchema(DatastoreSchema):
 
     name_regex = re.compile(r'^[a-zA-Z0-9_\-]+$')
 
-    def __init__(self, name=None, deserializing=False):
-        super(MongoDBSchema, self).__init__()
-        # need one or the other, not both, not none (!= ~ XOR)
-        if not (bool(deserializing) != bool(name)):
-            raise ValueError(_("Bad args. name: %(name)s, "
-                               "deserializing %(deser)s.")
-                             % ({'name': bool(name),
-                                 'deser': bool(deserializing)}))
-        if not deserializing:
-            self.name = name
+    def __init__(self, name, *args, **kwargs):
+        super(MongoDBSchema, self).__init__(name, *args, **kwargs)
 
     @property
     def _max_schema_name_length(self):
@@ -165,16 +169,8 @@ class CassandraSchema(DatastoreSchema):
     the first of which is an alpha character.
     """
 
-    def __init__(self, name=None, deserializing=False):
-        super(CassandraSchema, self).__init__()
-
-        if not (bool(deserializing) != bool(name)):
-            raise ValueError(_("Bad args. name: %(name)s, "
-                               "deserializing %(deser)s.")
-                             % ({'name': bool(name),
-                                 'deser': bool(deserializing)}))
-        if not deserializing:
-            self.name = name
+    def __init__(self, name, *args, **kwargs):
+        super(CassandraSchema, self).__init__(name, *args, **kwargs)
 
     @property
     def _max_schema_name_length(self):
@@ -201,17 +197,8 @@ class CouchDBSchema(DatastoreSchema):
 
     name_regex = re.compile(r'^[a-z][a-z0-9_$()+/-]*$')
 
-    def __init__(self, name=None, deserializing=False):
-        super(CouchDBSchema, self).__init__()
-        self._ignore_dbs = cfg.get_ignored_dbs()
-        # need one or the other, not both, not none (!= ~ XOR)
-        if not (bool(deserializing) != bool(name)):
-            raise ValueError(_("Bad args. name: %(name)s, "
-                               "deserializing %(deser)s.")
-                             % ({'name': bool(name),
-                                 'deser': bool(deserializing)}))
-        if not deserializing:
-            self.name = name
+    def __init__(self, name, *args, **kwargs):
+        super(CouchDBSchema, self).__init__(name, *args, **kwargs)
 
     @property
     def _max_schema_name_length(self):
@@ -219,12 +206,46 @@ class CouchDBSchema(DatastoreSchema):
 
     def _is_valid_schema_name(self, value):
         # https://wiki.apache.org/couchdb/HTTP_database_API
-        if value.lower() in self._ignore_dbs:
-            return False
         if re.match(r'^[a-z]*$', value[0]):
             return True
         else:
             return False
+
+    @classmethod
+    def _dict_requirements(cls):
+        return ['_name']
+
+
+class PostgreSQLSchema(DatastoreSchema):
+    """Represents a PostgreSQL schema and its associated properties.
+
+    Permitted characters in quoted identifiers include the full
+    Unicode Basic Multilingual Plane (BMP), except U+0000.
+    Database, table, and column names cannot end with space characters.
+    """
+    name_regex = re.compile(u(r'^[\u0001-\u007F\u0080-\uFFFF]+[^\s]$'))
+
+    def __init__(self, name, character_set=None, collate=None,
+                 *args, **kwargs):
+        super(PostgreSQLSchema, self).__init__(name, *args, **kwargs)
+
+        self.character_set = character_set
+        self.collate = collate
+
+    @DatastoreSchema.collate.setter
+    def collate(self, value):
+        self._collate = value
+
+    @DatastoreSchema.character_set.setter
+    def character_set(self, value):
+        self._character_set = value
+
+    @property
+    def _max_schema_name_length(self):
+        return 63
+
+    def _is_valid_schema_name(self, value):
+        return self.name_regex.match(value) is not None
 
     @classmethod
     def _dict_requirements(cls):
@@ -276,6 +297,7 @@ class MySQLDatabase(Base):
                "gbk": ["gbk_chinese_ci", "gbk_bin"],
                "latin5": ["latin5_turkish_ci", "latin5_bin"],
                "armscii8": ["armscii8_general_ci", "armscii8_bin"],
+               "utf8mb4": ["utf8_unicode_ci", "utf8mb4_unicode_ci"],
                "utf8": ["utf8_general_ci",
                         "utf8_bin",
                         "utf8_unicode_ci",
@@ -395,6 +417,7 @@ class MySQLDatabase(Base):
                  "latin5_bin": "latin5",
                  "armscii8_general_ci": "armscii8",
                  "armscii8_bin": "armscii8",
+                 "utf8mb4_unicode_ci": "utf8mb4",
                  "utf8_general_ci": "utf8",
                  "utf8_bin": "utf8",
                  "utf8_unicode_ci": "utf8",
@@ -539,7 +562,7 @@ class ValidatedMySQLDatabase(MySQLDatabase):
         if any([not value,
                 not self._is_valid(value),
                 not self.dbname.match(value),
-                string.find("%r" % value, "\\") != -1]):
+                ("%r" % value).find("\\") != -1]):
             raise ValueError(_("'%s' is not a valid database name.") % value)
         elif len(value) > 64:
             msg = _("Database name '%s' is too long. Max length = 64.")
@@ -553,11 +576,27 @@ class DatastoreUser(Base):
 
     _HOSTNAME_WILDCARD = '%'
 
-    def __init__(self):
+    def __init__(self, name, password, deserializing=False, *args, **kwargs):
         self._name = None
         self._password = None
         self._host = None
         self._databases = []
+
+        # need only one of: deserializing, name, or (name and password)
+        if ((not (bool(deserializing) != bool(name))) or
+                (bool(deserializing) and bool(password))):
+            raise RuntimeError("Bug in DatastoreUser()")
+        if not deserializing:
+            if name:
+                self.name = name
+            if password is not None:
+                self.password = password
+
+    def __str__(self):
+        return str(self.name)
+
+    def __repr__(self):
+        return str(self.serialize())
 
     @classmethod
     def deserialize_user(cls, value):
@@ -566,7 +605,7 @@ class DatastoreUser(Base):
                                "Required: %(reqs)s")
                              % ({'keys': value.keys(),
                                  'reqs': cls._dict_requirements()}))
-        user = cls(deserializing=True)
+        user = cls(name=None, password=None, deserializing=True)
         user.deserialize(value)
         return user
 
@@ -680,24 +719,11 @@ class MongoDBUser(DatastoreUser):
     Trove stores this as <database>.<username>
     """
 
-    def __init__(self, name=None, password=None, deserializing=False):
-        super(MongoDBUser, self).__init__()
-        self._name = None
+    def __init__(self, name=None, password=None, *args, **kwargs):
         self._username = None
         self._database = None
         self._roles = []
-        # need only one of: deserializing, name, or (name and password)
-        if ((not (bool(deserializing) != bool(name))) or
-                (bool(deserializing) and bool(password))):
-            raise ValueError(_("Bad args. name: %(name)s, "
-                               "password %(pass)s, "
-                               "deserializing %(deser)s.")
-                             % ({'name': bool(name),
-                                 'pass': bool(password),
-                                 'deser': bool(deserializing)}))
-        if not deserializing:
-            self.name = name
-            self.password = password
+        super(MongoDBUser, self).__init__(name, password, *args, **kwargs)
 
     @property
     def username(self):
@@ -822,20 +848,8 @@ class MongoDBUser(DatastoreUser):
 class CassandraUser(DatastoreUser):
     """Represents a Cassandra user and its associated properties."""
 
-    def __init__(self, name=None, password=None, deserializing=False):
-        super(CassandraUser, self).__init__()
-
-        if ((not (bool(deserializing) != bool(name))) or
-                (bool(deserializing) and bool(password))):
-            raise ValueError(_("Bad args. name: %(name)s, "
-                               "password %(pass)s, "
-                               "deserializing %(deser)s.")
-                             % ({'name': bool(name),
-                                 'pass': bool(password),
-                                 'deser': bool(deserializing)}))
-        if not deserializing:
-            self.name = name
-            self.password = password
+    def __init__(self, name, password=None, *args, **kwargs):
+        super(CassandraUser, self).__init__(name, password, *args, **kwargs)
 
     def _build_database_schema(self, name):
         return CassandraSchema(name)
@@ -861,60 +875,28 @@ class CassandraUser(DatastoreUser):
 class CouchDBUser(DatastoreUser):
     """Represents a CouchDB user and its associated properties."""
 
-    def __init__(self):
-        self._name = None
-        self._host = None
-        self._password = None
-        self._databases = []
-        self._ignore_users = cfg.get_ignored_users()
+    def __init__(self, name, password=None, *args, **kwargs):
+        super(CouchDBUser, self).__init__(name, password, *args, **kwargs)
 
-    def _is_valid(self, value):
+    def _build_database_schema(self, name):
+        return CouchDBSchema(name)
+
+    @property
+    def _max_username_length(self):
+        return None
+
+    def _is_valid_name(self, value):
         return True
 
-    @property
-    def name(self):
-        return self._name
+    def _is_valid_host_name(self, value):
+        return True
 
-    @name.setter
-    def name(self, value):
-        if not self._is_valid(value):
-            raise ValueError(_("'%s' is not a valid user name.") % value)
-        else:
-            self._name = value
+    def _is_valid_password(self, value):
+        return True
 
-    @property
-    def password(self):
-        return self._password
-
-    @password.setter
-    def password(self, value):
-        if not self._is_valid(value):
-            raise ValueError(_("'%s' is not a valid password.") % value)
-        else:
-            self._password = value
-
-    @property
-    def databases(self):
-        return self._databases
-
-    @databases.setter
-    def databases(self, value):
-        mydb = ValidatedMySQLDatabase()
-        mydb.name = value
-        self._databases.append(mydb.serialize())
-
-    @property
-    def host(self):
-        if self._host is None:
-            return '%'
-        return self._host
-
-    @host.setter
-    def host(self, value):
-        if not self._is_valid_host_name(value):
-            raise ValueError(_("'%s' is not a valid hostname.") % value)
-        else:
-            self._host = value
+    @classmethod
+    def _dict_requirements(cls):
+        return ['_name']
 
 
 class MySQLUser(Base):
@@ -932,7 +914,7 @@ class MySQLUser(Base):
     def _is_valid(self, value):
         if (not value or
                 self.not_supported_chars.search(value) or
-                string.find("%r" % value, "\\") != -1):
+                ("%r" % value).find("\\") != -1):
             return False
         else:
             return True
@@ -1010,8 +992,36 @@ class MySQLUser(Base):
             self._host = value
 
 
+class PostgreSQLUser(DatastoreUser):
+    """Represents a PostgreSQL user and its associated properties."""
+
+    def __init__(self, name, password=None, *args, **kwargs):
+        super(PostgreSQLUser, self).__init__(name, password, *args, **kwargs)
+
+    def _build_database_schema(self, name):
+        return PostgreSQLSchema(name)
+
+    @property
+    def _max_username_length(self):
+        return 63
+
+    def _is_valid_name(self, value):
+        return True
+
+    def _is_valid_host_name(self, value):
+        return True
+
+    def _is_valid_password(self, value):
+        return True
+
+    @classmethod
+    def _dict_requirements(cls):
+        return ['_name']
+
+
 class RootUser(MySQLUser):
     """Overrides _ignore_users from the MySQLUser class."""
+
     def __init__(self):
         self._ignore_users = []
 
@@ -1037,3 +1047,22 @@ class CassandraRootUser(CassandraUser):
             password = utils.generate_random_password()
         super(CassandraRootUser, self).__init__("cassandra", password=password,
                                                 *args, **kwargs)
+
+
+class PostgreSQLRootUser(PostgreSQLUser):
+    """Represents the PostgreSQL default superuser."""
+
+    def __init__(self, password=None, *args, **kwargs):
+        password = password if not None else utils.generate_random_password()
+        super(PostgreSQLRootUser, self).__init__("postgres", password=password,
+                                                 *args, **kwargs)
+
+
+class CouchDBRootUser(CouchDBUser):
+    """Represents the CouchDB default superuser."""
+
+    def __init__(self, password=None, *args, **kwargs):
+        if password is None:
+            password = utils.generate_random_password()
+        super(CouchDBRootUser, self).__init__("root", password=password,
+                                              *args, **kwargs)

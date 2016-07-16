@@ -26,6 +26,7 @@ from osprofiler import opts as profiler
 from trove.version import version_info as version
 
 
+LOG = logging.getLogger(__name__)
 UNKNOWN_SERVICE_ID = 'unknown-service-id-error'
 
 path_opts = [
@@ -58,7 +59,7 @@ common_opts = [
     cfg.StrOpt('nova_compute_endpoint_type', default='publicURL',
                help='Service endpoint type to use when searching catalog.'),
     cfg.StrOpt('nova_client_version', default='2.12',
-               help="The version of of the compute service client."),
+               help="The version of the compute service client."),
     cfg.StrOpt('neutron_url', help='URL without the tenant segment.'),
     cfg.StrOpt('neutron_service_type', default='network',
                help='Service type to use when searching catalog.'),
@@ -134,11 +135,11 @@ common_opts = [
                help='Page size for listing configurations.'),
     cfg.IntOpt('modules_page_size', default=20,
                help='Page size for listing modules.'),
-    cfg.IntOpt('agent_call_low_timeout', default=5,
+    cfg.IntOpt('agent_call_low_timeout', default=15,
                help="Maximum time (in seconds) to wait for Guest Agent 'quick'"
                     "requests (such as retrieving a list of users or "
                     "databases)."),
-    cfg.IntOpt('agent_call_high_timeout', default=60,
+    cfg.IntOpt('agent_call_high_timeout', default=60 * 5,
                help="Maximum time (in seconds) to wait for Guest Agent 'slow' "
                     "requests (such as restarting the database)."),
     cfg.IntOpt('agent_replication_snapshot_timeout', default=36000,
@@ -146,7 +147,7 @@ common_opts = [
                     'Agent replication snapshot.'),
     # The guest_id opt definition must match the one in cmd/guest.py
     cfg.StrOpt('guest_id', default=None, help="ID of the Guest Instance."),
-    cfg.IntOpt('state_change_wait_time', default=3 * 60,
+    cfg.IntOpt('state_change_wait_time', default=60 * 10,
                help='Maximum time (in seconds) to wait for a state change.'),
     cfg.IntOpt('state_change_poll_time', default=3,
                help='Interval between state change poll requests (seconds).'),
@@ -169,12 +170,12 @@ common_opts = [
     cfg.StrOpt('mount_options', default='defaults,noatime',
                help='Options to use when mounting a volume.'),
     cfg.IntOpt('max_instances_per_tenant',
-               default=5,
+               default=10,
                help='Default maximum number of instances per tenant.',
                deprecated_name='max_instances_per_user'),
-    cfg.IntOpt('max_accepted_volume_size', default=5,
+    cfg.IntOpt('max_accepted_volume_size', default=10,
                help='Default maximum volume size (in GB) for an instance.'),
-    cfg.IntOpt('max_volumes_per_tenant', default=20,
+    cfg.IntOpt('max_volumes_per_tenant', default=40,
                help='Default maximum volume capacity (in GB) spanning across '
                     'all Trove volumes per tenant.',
                deprecated_name='max_volumes_per_user'),
@@ -220,7 +221,7 @@ common_opts = [
                help='Maximum time (in seconds) to wait for a server reboot.'),
     cfg.IntOpt('dns_time_out', default=60 * 2,
                help='Maximum time (in seconds) to wait for a DNS entry add.'),
-    cfg.IntOpt('resize_time_out', default=60 * 10,
+    cfg.IntOpt('resize_time_out', default=60 * 15,
                help='Maximum time (in seconds) to wait for a server resize.'),
     cfg.IntOpt('revert_time_out', default=60 * 10,
                help='Maximum time (in seconds) to wait for a server resize '
@@ -231,8 +232,6 @@ common_opts = [
                 help="Permissions to grant to the 'root' user."),
     cfg.BoolOpt('root_grant_option', default=True,
                 help="Assign the 'root' user GRANT permissions."),
-    cfg.IntOpt('default_password_length', default=36,
-               help='Character length of generated passwords.'),
     cfg.IntOpt('http_get_rate', default=200,
                help="Maximum number of HTTP 'GET' requests (per minute)."),
     cfg.IntOpt('http_post_rate', default=200,
@@ -390,7 +389,7 @@ common_opts = [
                help="Describes the actual network manager used for "
                     "the management of network attributes "
                     "(security groups, floating IPs, etc.)."),
-    cfg.IntOpt('usage_timeout', default=900,
+    cfg.IntOpt('usage_timeout', default=60 * 30,
                help='Maximum time (in seconds) to wait for a Guest to become '
                     'active.'),
     cfg.IntOpt('restore_usage_timeout', default=36000,
@@ -548,6 +547,10 @@ mysql_opts = [
     cfg.IntOpt('guest_log_long_query_time', default=1000,
                help='The time in milliseconds that a statement must take in '
                     'in order to be logged in the slow_query log.'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Percona
@@ -626,6 +629,11 @@ percona_opts = [
     cfg.IntOpt('guest_log_long_query_time', default=1000,
                help='The time in milliseconds that a statement must take in '
                     'in order to be logged in the slow_query log.'),
+    cfg.IntOpt('default_password_length',
+               default='${mysql.default_password_length}',
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Percona XtraDB Cluster
@@ -708,6 +716,11 @@ pxc_opts = [
     cfg.IntOpt('guest_log_long_query_time', default=1000,
                help='The time in milliseconds that a statement must take in '
                     'in order to be logged in the slow_query log.'),
+    cfg.IntOpt('default_password_length',
+               default='${mysql.default_password_length}',
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 
@@ -780,6 +793,10 @@ redis_opts = [
                help='Root controller implementation for redis.'),
     cfg.StrOpt('guest_log_exposed_logs', default='',
                help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Cassandra
@@ -853,6 +870,10 @@ cassandra_opts = [
                '.cassandra.guestagent.CassandraGuestAgentStrategy',
                help='Class that implements datastore-specific Guest Agent API '
                     'logic.'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Couchbase
@@ -911,6 +932,10 @@ couchbase_opts = [
                help='Root controller implementation for couchbase.'),
     cfg.StrOpt('guest_log_exposed_logs', default='',
                help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('default_password_length', default=24, min=6, max=24,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # MongoDB
@@ -918,7 +943,7 @@ mongodb_group = cfg.OptGroup(
     'mongodb', title='MongoDB options',
     help="Oslo option group designed for MongoDB datastore")
 mongodb_opts = [
-    cfg.ListOpt('tcp_ports', default=["2500", "27017"],
+    cfg.ListOpt('tcp_ports', default=["2500", "27017", "27019"],
                 help='List of TCP ports and/or port ranges to open '
                      'in the security group (only applicable '
                      'if trove_security_groups_support is True).'),
@@ -993,10 +1018,15 @@ mongodb_opts = [
                help='Maximum time to wait (in seconds) for a replica set '
                     'initialization process to complete.'),
     cfg.StrOpt('root_controller',
-               default='trove.extensions.common.service.DefaultRootController',
+               default='trove.extensions.mongodb.service.'
+                       'MongoDBRootController',
                help='Root controller implementation for mongodb.'),
     cfg.StrOpt('guest_log_exposed_logs', default='',
                help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # PostgreSQL
@@ -1014,15 +1044,20 @@ postgresql_opts = [
                      'if trove_security_groups_support is True).'),
     cfg.PortOpt('postgresql_port', default=5432,
                 help='The TCP port the server listens on.'),
-    cfg.StrOpt('backup_strategy', default='PgDump',
+    cfg.StrOpt('backup_strategy', default='PgBaseBackup',
                help='Default strategy to perform backups.'),
-    cfg.DictOpt('backup_incremental_strategy', default={},
+    cfg.DictOpt('backup_incremental_strategy',
+                default={'PgBaseBackup': 'PgBaseBackupIncremental'},
                 help='Incremental Backup Runner based on the default '
                 'strategy. For strategies that do not implement an '
                 'incremental, the runner will use the default full backup.'),
     cfg.StrOpt('mount_point', default='/var/lib/postgresql',
                help="Filesystem path for mounting "
                "volumes if volume support is enabled."),
+    cfg.StrOpt('wal_archive_location', default='/mnt/wal_archive',
+               help="Filesystem path storing WAL archive files when "
+                    "WAL-shipping based backups or replication "
+                    "is enabled."),
     cfg.BoolOpt('root_on_create', default=False,
                 help='Enable the automatic creation of the root user for the '
                 'service during instance-create. The generated password for '
@@ -1042,7 +1077,8 @@ postgresql_opts = [
     cfg.ListOpt('ignore_users', default=['os_admin', 'postgres', 'root']),
     cfg.ListOpt('ignore_dbs', default=['postgres']),
     cfg.StrOpt('root_controller',
-               default='trove.extensions.common.service.DefaultRootController',
+               default='trove.extensions.postgresql.service'
+               '.PostgreSQLRootController',
                help='Root controller implementation for postgresql.'),
     cfg.StrOpt('guest_log_exposed_logs', default='general',
                help='List of Guest Logs to expose for publishing.'),
@@ -1051,6 +1087,10 @@ postgresql_opts = [
                     "in order to be logged in the 'general' log.  A value of "
                     "'0' logs all statements, while '-1' turns off "
                     "statement logging."),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Apache CouchDB
@@ -1107,7 +1147,10 @@ couchdb_opts = [
                 help='Databases to exclude when listing databases.',
                 deprecated_name='ignore_dbs',
                 deprecated_group='DEFAULT'),
-
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # Vertica
@@ -1172,6 +1215,10 @@ vertica_opts = [
                help='List of Guest Logs to expose for publishing.'),
     cfg.IntOpt('min_ksafety', default=0,
                help='Minimum k-safety setting permitted for vertica clusters'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # DB2
@@ -1226,6 +1273,10 @@ db2_opts = [
                help='Root controller implementation for db2.'),
     cfg.StrOpt('guest_log_exposed_logs', default='',
                help='List of Guest Logs to expose for publishing.'),
+    cfg.IntOpt('default_password_length', default=36,
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # MariaDB
@@ -1319,6 +1370,11 @@ mariadb_opts = [
                'galera_common.guestagent.GaleraCommonGuestAgentStrategy',
                help='Class that implements datastore-specific Guest Agent API '
                     'logic.'),
+    cfg.IntOpt('default_password_length',
+               default='${mysql.default_password_length}',
+               help='Character length of generated passwords.',
+               deprecated_name='default_password_length',
+               deprecated_group='DEFAULT'),
 ]
 
 # RPC version groups
@@ -1389,35 +1445,35 @@ def parse_args(argv, default_config_files=None):
              default_config_files=default_config_files)
 
 
-def get_ignored_dbs(manager=None):
+def get_ignored_dbs():
     try:
-        return get_configuration_property('ignore_dbs', manager=manager)
+        return get_configuration_property('ignore_dbs')
     except NoSuchOptError:
         return []
 
 
-def get_ignored_users(manager=None):
+def get_ignored_users():
     try:
-        return get_configuration_property('ignore_users', manager=manager)
+        return get_configuration_property('ignore_users')
     except NoSuchOptError:
         return []
 
 
-def get_configuration_property(property_name, manager=None):
+def get_configuration_property(property_name):
     """
     Get a configuration property.
     Try to get it from the datastore-specific section first.
     If it is not available, retrieve it from the DEFAULT section.
     """
 
-    # TODO(pmalik): Note that the unit and fake-integration tests
-    # do not define 'CONF.datastore_manager'. *MySQL* options will
-    # be loaded unless the caller passes a manager name explicitly.
-    #
-    # Once the tests are fixed this conditional expression should be removed
-    # and the proper value should always be either loaded from
-    # 'CONF.datastore_manager' or passed-in by the caller.
-    datastore_manager = manager or CONF.datastore_manager or 'mysql'
+    # Fake-integration tests do not define 'CONF.datastore_manager'.
+    # *MySQL* options will
+    # be loaded. This should never occur in a production environment.
+    datastore_manager = CONF.datastore_manager
+    if not datastore_manager:
+        datastore_manager = 'mysql'
+        LOG.warning(_("Manager name ('datastore_manager') not defined, "
+                      "using '%s' options instead.") % datastore_manager)
 
     try:
         return CONF.get(datastore_manager).get(property_name)

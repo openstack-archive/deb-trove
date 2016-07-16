@@ -33,6 +33,7 @@ from trove.common.remote import create_cinder_client
 from trove.common.remote import create_dns_client
 from trove.common.remote import create_guest_client
 from trove.common.remote import create_nova_client
+from trove.common import server_group as srv_grp
 from trove.common import template
 from trove.common import utils
 from trove.configuration.models import Configuration
@@ -99,13 +100,14 @@ class InstanceStatus(object):
     RESTART_REQUIRED = "RESTART_REQUIRED"
     PROMOTE = "PROMOTE"
     EJECT = "EJECT"
+    DETACH = "DETACH"
 
 
 def validate_volume_size(size):
     if size is None:
         raise exception.VolumeSizeNotSpecified()
     max_size = CONF.max_accepted_volume_size
-    if long(size) > max_size:
+    if int(size) > max_size:
         msg = ("Volume 'size' cannot exceed maximum "
                "of %d GB, %s cannot be accepted."
                % (max_size, size))
@@ -152,7 +154,7 @@ class SimpleInstance(object):
     """
 
     def __init__(self, context, db_info, datastore_status, root_password=None,
-                 ds_version=None, ds=None):
+                 ds_version=None, ds=None, locality=None):
         """
         :type context: trove.common.context.TroveContext
         :type db_info: trove.instance.models.DBInstance
@@ -169,6 +171,7 @@ class SimpleInstance(object):
         if ds is None:
             self.ds = (datastore_models.Datastore.
                        load(self.ds_version.datastore_id))
+        self.locality = locality
 
         self.slave_list = None
 
@@ -301,6 +304,8 @@ class SimpleInstance(object):
             return InstanceStatus.EJECT
         if InstanceTasks.LOGGING.action == action:
             return InstanceStatus.LOGGING
+        if InstanceTasks.DETACHING.action == action:
+            return InstanceStatus.DETACH
 
         # Check for server status.
         if self.db_info.server_status in ["BUILD", "ERROR", "REBOOT",
@@ -492,7 +497,7 @@ def load_instance(cls, context, id, needs_server=False,
     return cls(context, db_info, server, service_status)
 
 
-def load_instance_with_guest(cls, context, id, cluster_id=None):
+def load_instance_with_info(cls, context, id, cluster_id=None):
     db_info = get_db_info(context, id, cluster_id)
     load_simple_instance_server_status(context, db_info)
     service_status = InstanceServiceStatus.find_by(instance_id=id)
@@ -500,6 +505,7 @@ def load_instance_with_guest(cls, context, id, cluster_id=None):
               {'instance_id': id, 'service_status': service_status.status})
     instance = cls(context, db_info, service_status)
     load_guest_info(instance, context, id)
+    load_server_group_info(instance, context, db_info.compute_instance_id)
     return instance
 
 
@@ -513,6 +519,12 @@ def load_guest_info(instance, context, id):
         except Exception as e:
             LOG.error(e)
     return instance
+
+
+def load_server_group_info(instance, context, compute_id):
+    server_group = srv_grp.ServerGroup.load(context, compute_id)
+    if server_group:
+        instance.locality = srv_grp.ServerGroup.get_locality(server_group)
 
 
 class BaseInstance(SimpleInstance):
@@ -554,6 +566,8 @@ class BaseInstance(SimpleInstance):
         self._guest = None
         self._nova_client = None
         self._volume_client = None
+        self._server_group = None
+        self._server_group_loaded = False
 
     def get_guest(self):
         return create_guest_client(self.context, self.db_info.id)
@@ -637,6 +651,15 @@ class BaseInstance(SimpleInstance):
                  self.id)
         self.update_db(task_status=InstanceTasks.NONE)
 
+    @property
+    def server_group(self):
+        # The server group could be empty, so we need a flag to cache it
+        if not self._server_group_loaded:
+            self._server_group = srv_grp.ServerGroup.load(
+                self.context, self.db_info.compute_instance_id)
+            self._server_group_loaded = True
+        return self._server_group
+
 
 class FreshInstance(BaseInstance):
     @classmethod
@@ -674,7 +697,8 @@ class Instance(BuiltInstance):
                datastore, datastore_version, volume_size, backup_id,
                availability_zone=None, nics=None,
                configuration_id=None, slave_of_id=None, cluster_config=None,
-               replica_count=None, volume_type=None, modules=None):
+               replica_count=None, volume_type=None, modules=None,
+               locality=None):
 
         call_args = {
             'name': name,
@@ -789,6 +813,8 @@ class Instance(BuiltInstance):
                 "create %(count)d instances.") % {'count': replica_count})
         multi_replica = slave_of_id and replica_count and replica_count > 1
         instance_count = replica_count if multi_replica else 1
+        if locality:
+            call_args['locality'] = locality
 
         if not nics:
             nics = []
@@ -886,10 +912,11 @@ class Instance(BuiltInstance):
                 datastore_version.manager, datastore_version.packages,
                 volume_size, backup_id, availability_zone, root_password,
                 nics, overrides, slave_of_id, cluster_config,
-                volume_type=volume_type, modules=module_list)
+                volume_type=volume_type, modules=module_list,
+                locality=locality)
 
             return SimpleInstance(context, db_info, service_status,
-                                  root_password)
+                                  root_password, locality=locality)
 
         with StartNotification(context, **call_args):
             return run_with_quotas(context.tenant, deltas, _create_resources)
@@ -910,7 +937,7 @@ class Instance(BuiltInstance):
                   "%(ds_version)s and flavor %(flavor)s.",
                   {'ds_version': self.ds_version, 'flavor': flavor})
         config = template.SingleInstanceConfigTemplate(
-            self.ds_version, flavor, id)
+            self.ds_version, flavor, self.id)
         return config.render_dict()
 
     def resize_flavor(self, new_flavor_id):
@@ -967,7 +994,7 @@ class Instance(BuiltInstance):
         if not self.volume_size:
             raise exception.BadRequest(_("Instance %s has no volume.")
                                        % self.id)
-        new_size_l = long(new_size)
+        new_size_l = int(new_size)
         validate_volume_size(new_size_l)
         return run_with_quotas(self.tenant_id,
                                {'volumes': new_size_l - self.volume_size},
@@ -1002,6 +1029,9 @@ class Instance(BuiltInstance):
         if not self.slave_of_id:
             raise exception.BadRequest(_("Instance %s is not a replica.")
                                        % self.id)
+
+        self.update_db(task_status=InstanceTasks.DETACHING)
+
         task_api.API(self.context).detach_replica(self.id)
 
     def promote_to_replica_source(self):
@@ -1021,7 +1051,7 @@ class Instance(BuiltInstance):
 
     def eject_replica_source(self):
         self.validate_can_perform_action()
-        LOG.info(_LI("Ejecting replica source %s from it's replication set."),
+        LOG.info(_LI("Ejecting replica source %s from its replication set."),
                  self.id)
 
         if not self.slaves:

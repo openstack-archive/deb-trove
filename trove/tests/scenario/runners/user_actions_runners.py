@@ -17,6 +17,8 @@ from six.moves.urllib import parse as urllib_parse
 
 from proboscis import SkipTest
 
+from trove.common import exception
+from trove.common.utils import poll_until
 from trove.tests.scenario.runners.test_runners import TestRunner
 from troveclient.compat import exceptions
 
@@ -51,7 +53,29 @@ class UserActionsRunner(TestRunner):
                             expected_http_code):
         self.auth_client.users.create(instance_id, serial_users_def)
         self.assert_client_code(expected_http_code)
+        self._wait_for_user_create(instance_id, serial_users_def)
         return serial_users_def
+
+    def _wait_for_user_create(self, instance_id, expected_user_defs):
+        expected_user_names = {user_def['name']
+                               for user_def in expected_user_defs}
+        self.report.log("Waiting for all created users to appear in the "
+                        "listing: %s" % expected_user_names)
+
+        def _all_exist():
+            all_users = self._get_user_names(instance_id)
+            return all(usr in all_users for usr in expected_user_names)
+
+        try:
+            poll_until(_all_exist, time_out=self.GUEST_CAST_WAIT_TIMEOUT_SEC)
+            self.report.log("All users now exist on the instance.")
+        except exception.PollTimeOut:
+            self.fail("Some users were not created within the poll "
+                      "timeout: %ds" % self.GUEST_CAST_WAIT_TIMEOUT_SEC)
+
+    def _get_user_names(self, instance_id):
+        full_list = self.auth_client.users.list(instance_id)
+        return {user.name: user for user in full_list}
 
     def run_user_show(self, expected_http_code=200):
         for user_def in self.user_defs:
@@ -127,6 +151,74 @@ class UserActionsRunner(TestRunner):
 
     def as_pagination_marker(self, user):
         return urllib_parse.quote(user.name)
+
+    def run_user_access_show(self, expected_http_code=200):
+        for user_def in self.user_defs:
+            self.assert_user_access_show(
+                self.instance_info.id, user_def, expected_http_code)
+
+    def assert_user_access_show(self, instance_id, user_def,
+                                expected_http_code):
+        user_name, user_host = self._get_user_name_host_pair(user_def)
+        user_dbs = self.auth_client.users.list_access(instance_id, user_name,
+                                                      hostname=user_host)
+        self.assert_client_code(expected_http_code)
+
+        expected_dbs = {db_def['name'] for db_def in user_def['databases']}
+        listed_dbs = [db.name for db in user_dbs]
+
+        self.assert_equal(len(expected_dbs), len(listed_dbs),
+                          "Unexpected number of databases on the user access "
+                          "list.")
+
+        for database in expected_dbs:
+            self.assert_true(
+                database in listed_dbs,
+                "Database not found in the user access list: %s" % database)
+
+    def run_user_access_revoke(self, expected_http_code=202):
+        self._apply_on_all_databases(
+            self.instance_info.id, self.assert_user_access_revoke,
+            expected_http_code)
+
+    def _apply_on_all_databases(self, instance_id, action, expected_http_code):
+        if any(user_def['databases'] for user_def in self.user_defs):
+            for user_def in self.user_defs:
+                user_name, user_host = self._get_user_name_host_pair(user_def)
+                db_defs = user_def['databases']
+                for db_def in db_defs:
+                    db_name = db_def['name']
+                    action(instance_id, user_name, user_host,
+                           db_name, expected_http_code)
+        else:
+            raise SkipTest("No user databases defined.")
+
+    def assert_user_access_revoke(self, instance_id, user_name, user_host,
+                                  database, expected_http_code):
+        self.auth_client.users.revoke(
+            instance_id, user_name, database, hostname=user_host)
+        self.assert_client_code(expected_http_code)
+        user_dbs = self.auth_client.users.list_access(
+            instance_id, user_name, hostname=user_host)
+        self.assert_false(any(db.name == database for db in user_dbs),
+                          "Database should no longer be included in the user "
+                          "access list after revoke: %s" % database)
+
+    def run_user_access_grant(self, expected_http_code=202):
+        self._apply_on_all_databases(
+            self.instance_info.id, self.assert_user_access_grant,
+            expected_http_code)
+
+    def assert_user_access_grant(self, instance_id, user_name, user_host,
+                                 database, expected_http_code):
+        self.auth_client.users.grant(
+            instance_id, user_name, [database], hostname=user_host)
+        self.assert_client_code(expected_http_code)
+        user_dbs = self.auth_client.users.list_access(
+            instance_id, user_name, hostname=user_host)
+        self.assert_true(any(db.name == database for db in user_dbs),
+                         "Database should be included in the user "
+                         "access list after granting access: %s" % database)
 
     def run_user_create_with_no_attributes(
             self, expected_exception=exceptions.BadRequest,
@@ -262,6 +354,8 @@ class UserActionsRunner(TestRunner):
                 user_def.update(update_attribites)
                 expected_def = user_def
 
+        self._wait_for_user_create(instance_id, self.user_defs)
+
         # Verify using 'user-show' and 'user-list'.
         self.assert_user_show(instance_id, expected_def, 200)
         self.assert_users_list(instance_id, self.user_defs, 200)
@@ -276,14 +370,22 @@ class UserActionsRunner(TestRunner):
 
         self.auth_client.users.delete(instance_id, user_name, user_host)
         self.assert_client_code(expected_http_code)
+        self._wait_for_user_delete(instance_id, user_name)
 
-        self.assert_raises(exceptions.NotFound, 404,
-                           self.auth_client.users.get,
-                           instance_id, user_name, user_host)
+    def _wait_for_user_delete(self, instance_id, deleted_user_name):
+        self.report.log("Waiting for deleted user to disappear from the "
+                        "listing: %s" % deleted_user_name)
 
-        for user in self.auth_client.users.list(instance_id):
-            if user.name == user_name:
-                self.fail("User still listed after delete: %s" % user_name)
+        def _db_is_gone():
+            all_users = self._get_user_names(instance_id)
+            return deleted_user_name not in all_users
+
+        try:
+            poll_until(_db_is_gone, time_out=self.GUEST_CAST_WAIT_TIMEOUT_SEC)
+            self.report.log("User is now gone from the instance.")
+        except exception.PollTimeOut:
+            self.fail("User still listed after the poll timeout: %ds" %
+                      self.GUEST_CAST_WAIT_TIMEOUT_SEC)
 
     def run_nonexisting_user_show(
             self, expected_exception=exceptions.NotFound,

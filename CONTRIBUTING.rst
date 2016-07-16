@@ -87,6 +87,34 @@ Other references:
    - http://docs.openstack.org/developer/hacking/
    - https://review.openstack.org/#/c/116176/
 
+Approving changes
+=================
+
+The Trove project follows the conventions below in approving changes.
+
+1. In general, two core reviewers must +2 a change before it can be
+   approved. In practice this means that coreA can +2 the change, then
+   coreB can +2/+A the change and it can be merged.
+
+2. coreA and coreB should belong to different organizations.
+
+3. For requirements changes proposed by the Proposal Bot or
+   translations proposed by Zanata, a single core reviewer can review
+   and approve the change.
+
+NOTE:
+
+For the remainder of the Newton release cycle, we will relax the above
+conventions. These relaxations apply to the master branch only.
+
+We will adopt a practice of lazy consensus for approving all changes
+and a single core reviewer can review and approve a change. This could
+be done, for example, by allowing all reviewers know that he or she
+intends to approve some change or set of changes if there are no
+additional negative comments by a certain time definite.
+
+We will however still require that at least one other person review
+(and +1 or +2) the change before it can be +A'ed.
 
 Trove Documentation
 ===================
@@ -144,3 +172,54 @@ tox will use the `openstack-doc-tools package
 <https://github.com/openstack/openstack-doc-tools>`_ for execution of
 these tests. openstack-doc-tools has a requirement on maven for the
 build check.
+
+Usage for integration testing
+-----------------------------
+
+If you'd like to start up a fake Trove API daemon for integration testing
+with your own tool, run:
+
+.. code-block:: bash
+
+    $ ./tools/start-fake-mode.sh
+
+Stop the server with:
+
+.. code-block:: bash
+
+    $ ./tools/stop-fake-mode.sh
+
+Tests
+-----
+
+To run all tests and PEP8, run tox, like so:
+
+.. code-block:: bash
+
+    $ tox
+
+To run just the tests for Python 2.7, run:
+
+.. code-block:: bash
+
+    $ tox -epy27
+
+To run just PEP8, run:
+
+.. code-block:: bash
+
+    $ tox -epep8
+
+To generate a coverage report,run:
+
+.. code-block:: bash
+
+    $ tox -ecover
+
+(note: on some boxes, the results may not be accurate unless you run it twice)
+
+If you want to run only the tests in one file you can use testtools e.g.
+
+.. code-block:: bash
+
+    $ python -m testtools.run trove.tests.unittests.python.module.path

@@ -92,7 +92,7 @@ pulse Method
 ------------
 
 The pulse method is going through the stack(list) of threads looking for
-the the next thread to execute while updating the 'sleep' time and the if
+the next thread to execute while updating the 'sleep' time and the if
 the 'sleep' time is <=0 then it will run this thread until it calls for
 another time.sleep.
 
@@ -168,7 +168,7 @@ class Coroutine(object):
 
         This should only be called by the thread which owns this object.
         """
-        # Only call this from it's own thread.
+        # Only call this from its own thread.
         assert eventlet.corolocal.get_ident() == self.id
         self.caller_sem.release()  # Relinquish control back to caller.
         self.my_sem.acquire(blocking=True, timeout=None)

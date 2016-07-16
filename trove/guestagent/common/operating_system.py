@@ -59,7 +59,7 @@ def read_file(path, codec=IdentityCodec(), as_root=False, decode=True):
         if as_root:
             return _read_file_as_root(path, codec, decode=decode)
 
-        with open(path, 'rb') as fp:
+        with open(path, 'r') as fp:
             if decode:
                 return codec.deserialize(fp.read())
             return codec.serialize(fp.read())
@@ -144,11 +144,12 @@ def write_file(path, data, codec=IdentityCodec(), as_root=False, encode=True):
         if as_root:
             _write_file_as_root(path, data, codec, encode=encode)
         else:
-            with open(path, 'wb', 0) as fp:
+            with open(path, 'w') as fp:
                 if encode:
                     fp.write(codec.serialize(data))
                 else:
                     fp.write(codec.deserialize(data))
+                fp.flush()
     else:
         raise exception.UnprocessableEntity(_("Invalid path: %s") % path)
 
@@ -170,11 +171,12 @@ def _write_file_as_root(path, data, codec, encode=True):
     """
     # The files gets removed automatically once the managing object goes
     # out of scope.
-    with tempfile.NamedTemporaryFile('wb', 0, delete=False) as fp:
+    with tempfile.NamedTemporaryFile('w', delete=False) as fp:
         if encode:
             fp.write(codec.serialize(data))
         else:
             fp.write(codec.deserialize(data))
+        fp.flush()
         fp.close()  # Release the resource before proceeding.
         copy(fp.name, path, force=True, as_root=True)
 
@@ -227,6 +229,10 @@ class FileMode(object):
     @classmethod
     def SET_USR_RW(cls):
         return cls(reset=[stat.S_IRUSR | stat.S_IWUSR])  # =0600
+
+    @classmethod
+    def SET_USR_RWX(cls):
+        return cls(reset=[stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR])  # =0700
 
     @classmethod
     def ADD_ALL_R(cls):
@@ -332,23 +338,23 @@ def file_discovery(file_candidates):
     return ''
 
 
-def start_service(service_candidates):
-    _execute_service_command(service_candidates, 'cmd_start')
+def start_service(service_candidates, **kwargs):
+    _execute_service_command(service_candidates, 'cmd_start', **kwargs)
 
 
-def stop_service(service_candidates):
-    _execute_service_command(service_candidates, 'cmd_stop')
+def stop_service(service_candidates, **kwargs):
+    _execute_service_command(service_candidates, 'cmd_stop', **kwargs)
 
 
-def enable_service_on_boot(service_candidates):
-    _execute_service_command(service_candidates, 'cmd_enable')
+def enable_service_on_boot(service_candidates, **kwargs):
+    _execute_service_command(service_candidates, 'cmd_enable', **kwargs)
 
 
-def disable_service_on_boot(service_candidates):
-    _execute_service_command(service_candidates, 'cmd_disable')
+def disable_service_on_boot(service_candidates, **kwargs):
+    _execute_service_command(service_candidates, 'cmd_disable', **kwargs)
 
 
-def _execute_service_command(service_candidates, command_key):
+def _execute_service_command(service_candidates, command_key, **kwargs):
     """
     :param service_candidates        List of possible system service names.
     :type service_candidates         list
@@ -357,13 +363,28 @@ def _execute_service_command(service_candidates, command_key):
                                      'service_discovery'.
     :type command_key                string
 
+    :param timeout:                  Number of seconds if specified,
+                                     default if not.
+                                     There is no timeout if set to None.
+    :type timeout:                   integer
+
+    :raises:          :class:`UnknownArgumentError` if passed unknown args.
     :raises:          :class:`UnprocessableEntity` if no candidate names given.
     :raises:          :class:`RuntimeError` if command not found.
     """
+
+    exec_args = {}
+    if 'timeout' in kwargs:
+        exec_args['timeout'] = kwargs.pop('timeout')
+
+    if kwargs:
+        raise UnknownArgumentError(_("Got unknown keyword args: %r") % kwargs)
+
     if service_candidates:
         service = service_discovery(service_candidates)
         if command_key in service:
-            utils.execute_with_timeout(service[command_key], shell=True)
+            utils.execute_with_timeout(service[command_key], shell=True,
+                                       **exec_args)
         else:
             raise RuntimeError(_("Service control command not available: %s")
                                % command_key)

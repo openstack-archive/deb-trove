@@ -255,7 +255,7 @@ class MongoDBApp(object):
     def add_config_servers(self, config_server_hosts):
         """Set config servers on a query router (mongos) instance.
         """
-        config_servers_string = ','.join(['%s:27019' % host
+        config_servers_string = ','.join(['%s:%s' % (host, CONFIGSVR_PORT)
                                           for host in config_server_hosts])
         LOG.info(_("Setting config servers: %s") % config_servers_string)
         self.configuration_manager.apply_system_override(
@@ -458,8 +458,7 @@ class MongoDBAppStatus(service.BaseDbStatus):
         return ds_instance.ServiceStatuses.SHUTDOWN
 
     def cleanup_stalled_db_services(self):
-        out, err = utils.execute_with_timeout(system.FIND_PID, shell=True)
-        pid = "".join(out.split(" ")[1:2])
+        pid, err = utils.execute_with_timeout(system.FIND_PID, shell=True)
         utils.execute_with_timeout(system.MONGODB_KILL % pid, shell=True)
 
 
@@ -481,7 +480,7 @@ class MongoDBAdmin(object):
         return type(self).admin_user
 
     def _is_modifiable_user(self, name):
-        if ((name in cfg.get_ignored_users(manager=MANAGER)) or
+        if ((name in cfg.get_ignored_users()) or
                 name == system.MONGO_ADMIN_NAME):
             return False
         return True
@@ -724,7 +723,7 @@ class MongoDBAdmin(object):
     def list_databases(self, limit=None, marker=None, include_marker=False):
         """Lists the databases."""
         db_names = self.list_database_names()
-        for hidden in cfg.get_ignored_dbs(manager=MANAGER):
+        for hidden in cfg.get_ignored_dbs():
             if hidden in db_names:
                 db_names.remove(hidden)
         databases = [models.MongoDBSchema(db_name).serialize()

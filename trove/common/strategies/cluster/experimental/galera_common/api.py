@@ -98,12 +98,16 @@ class GaleraCommonCluster(cluster_models.Cluster):
         check_quotas(context.tenant, deltas)
 
         # Checking networks are same for the cluster
-        instance_nics = [instance.get('nics', None) for instance in instances]
-        if len(set(instance_nics)) != 1:
+        instance_nics = []
+        for instance in instances:
+            nics = instance.get('nics')
+            if nics:
+                instance_nics.append(nics[0].get('net-id'))
+        if len(set(instance_nics)) > 1:
             raise exception.ClusterNetworksNotEqual()
-        instance_nic = instance_nics[0]
-        if instance_nic is None:
+        if not instance_nics:
             return
+        instance_nic = instance_nics[0]
         try:
             nova_client.networks.get(instance_nic)
         except nova_exceptions.NotFound:
@@ -121,22 +125,21 @@ class GaleraCommonCluster(cluster_models.Cluster):
                                                      str(name_index))
                 name_index += 1
 
-        return map(lambda instance:
-                   Instance.create(context,
-                                   instance['name'],
-                                   instance['flavor_id'],
-                                   datastore_version.image_id,
-                                   [], [],
-                                   datastore, datastore_version,
-                                   instance.get('volume_size', None),
-                                   None,
-                                   availability_zone=instance.get(
-                                       'availability_zone', None),
-                                   nics=instance.get('nics', None),
-                                   configuration_id=None,
-                                   cluster_config=member_config
-                                   ),
-                   instances)
+        return [Instance.create(context,
+                                instance['name'],
+                                instance['flavor_id'],
+                                datastore_version.image_id,
+                                [], [],
+                                datastore, datastore_version,
+                                instance.get('volume_size', None),
+                                None,
+                                availability_zone=instance.get(
+                                    'availability_zone', None),
+                                nics=instance.get('nics', None),
+                                configuration_id=None,
+                                cluster_config=member_config
+                                )
+                for instance in instances]
 
     @classmethod
     def create(cls, context, name, datastore, datastore_version,

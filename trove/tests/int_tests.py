@@ -32,6 +32,7 @@ from trove.tests.api import root
 from trove.tests.api import user_access
 from trove.tests.api import users
 from trove.tests.api import versions
+from trove.tests.scenario import groups
 from trove.tests.scenario.groups import backup_group
 from trove.tests.scenario.groups import cluster_actions_group
 from trove.tests.scenario.groups import configuration_group
@@ -142,10 +143,18 @@ instance_create_groups.extend([instance_create_group.GROUP,
                                instance_delete_group.GROUP])
 
 backup_groups = list(instance_create_groups)
-backup_groups.extend([backup_group.GROUP])
+backup_groups.extend([groups.BACKUP,
+                      groups.BACKUP_INST])
+
+backup_incremental_groups = list(backup_groups)
+backup_incremental_groups.extend([backup_group.GROUP])
 
 configuration_groups = list(instance_create_groups)
 configuration_groups.extend([configuration_group.GROUP])
+
+configuration_create_groups = list(base_groups)
+configuration_create_groups.extend([groups.CFGGRP_CREATE,
+                                    groups.CFGGRP_DELETE])
 
 database_actions_groups = list(instance_create_groups)
 database_actions_groups.extend([database_actions_group.GROUP])
@@ -156,15 +165,12 @@ guest_log_groups.extend([guest_log_group.GROUP])
 instance_actions_groups = list(instance_create_groups)
 instance_actions_groups.extend([instance_actions_group.GROUP])
 
-instance_module_groups = list(instance_create_groups)
-instance_module_groups.extend([module_group.GROUP_INSTANCE_MODULE])
-
 module_groups = list(instance_create_groups)
 module_groups.extend([module_group.GROUP])
 
 module_create_groups = list(base_groups)
-module_create_groups.extend([module_group.GROUP_MODULE_CREATE,
-                             module_group.GROUP_MODULE_DELETE])
+module_create_groups.extend([groups.MODULE_CREATE,
+                             groups.MODULE_DELETE])
 
 replication_groups = list(instance_create_groups)
 replication_groups.extend([replication_group.GROUP])
@@ -181,13 +187,14 @@ common_groups.extend([guest_log_groups, module_groups])
 
 # Register: Component based groups
 register(["backup"], backup_groups)
+register(["backup_incremental"], backup_incremental_groups)
 register(["cluster"], cluster_actions_groups)
 register(["configuration"], configuration_groups)
+register(["configuration_create"], configuration_create_groups)
 register(["database"], database_actions_groups)
 register(["guest_log"], guest_log_groups)
 register(["instance", "instance_actions"], instance_actions_groups)
 register(["instance_create"], instance_create_groups)
-register(["instance_module"], instance_module_groups)
 register(["module"], module_groups)
 register(["module_create"], module_create_groups)
 register(["replication"], replication_groups)
@@ -207,10 +214,12 @@ register(["couchdb_supported"], common_groups, backup_groups,
          user_actions_groups, database_actions_groups, root_actions_groups)
 register(["postgresql_supported"], common_groups,
          backup_groups, database_actions_groups, configuration_groups,
-         root_actions_groups, user_actions_groups)
+         root_actions_groups, user_actions_groups,
+         backup_incremental_groups)
 register(["mysql_supported", "percona_supported"], common_groups,
          backup_groups, configuration_groups, database_actions_groups,
-         replication_groups, root_actions_groups, user_actions_groups)
+         replication_groups, root_actions_groups, user_actions_groups,
+         backup_incremental_groups)
 register(["mariadb_supported"], common_groups,
          backup_groups, cluster_actions_groups, configuration_groups,
          database_actions_groups, replication_groups, root_actions_groups,
