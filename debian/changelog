@@ -3,6 +3,16 @@ openstack-trove (1:6.0.0~b2-1) experimental; urgency=medium
   * New upstream release.
   * Fixed (build-)depends for this release.
   * Refreshed / rebased all patches.
+  * Blacklist a bunch of unit tests which are trying to write in /etc:
+    test_template.HeatTemplateLoadTest.test_heat_template_load_success
+    test_template.HeatTemplateLoadTest.test_no_rules_if_no_ports
+    test_...HeatTemplateLoadTest.test_render_templates_with_ports_from_config
+    test_template.TemplateTest.test_renderer_discovers_special_config
+    test_template.TemplateTest.test_rendering
+    test_template.TemplateTest.test_replica_config_rendering
+    test_template.TemplateTest.test_replica_source_config_rendering
+    test_template.TemplateTest.test_single_instance_config_rendering
+    taskmanager.test_models.BuiltInstanceTasksTest.test_error_attach_replica
 
  -- Thomas Goirand <zigo@debian.org>  Sat, 16 Jul 2016 14:59:14 +0200
 
