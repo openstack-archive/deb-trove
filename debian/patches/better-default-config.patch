@@ -5,9 +5,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
 Last-Update: 2016-04-01
 
---- openstack-trove-5.0.0~rc2.orig/etc/trove/trove-taskmanager.conf.sample
-+++ openstack-trove-5.0.0~rc2/etc/trove/trove-taskmanager.conf.sample
-@@ -30,11 +30,11 @@ control_exchange = trove
+Index: openstack-trove/etc/trove/trove-taskmanager.conf.sample
+===================================================================
+--- openstack-trove.orig/etc/trove/trove-taskmanager.conf.sample
++++ openstack-trove/etc/trove/trove-taskmanager.conf.sample
+@@ -27,11 +27,11 @@ control_exchange = trove
  db_api_implementation = trove.db.sqlalchemy.api
  
  # Configuration options for talking to nova via the novaclient.
@@ -24,7 +26,7 @@ Last-Update: 2016-04-01
  
  # nova_compute_url, cinder_url, swift_url, and heat_url can all be fetched
  # from Keystone. To fetch from Keystone, comment out nova_compute_url,
-@@ -220,7 +220,7 @@ rabbit_password=f7999d1955c5014aa32c
+@@ -218,7 +218,7 @@ rabbit_password=f7999d1955c5014aa32c
  [mysql]
  # Format (single port or port range): A, B-C
  # where C greater than B
@@ -33,9 +35,11 @@ Last-Update: 2016-04-01
  volume_support = True
  device_path = /dev/vdb
  
---- openstack-trove-5.0.0~rc2.orig/etc/trove/trove.conf.sample
-+++ openstack-trove-5.0.0~rc2/etc/trove/trove.conf.sample
-@@ -40,11 +40,11 @@ control_exchange = trove
+Index: openstack-trove/etc/trove/trove.conf.sample
+===================================================================
+--- openstack-trove.orig/etc/trove/trove.conf.sample
++++ openstack-trove/etc/trove/trove.conf.sample
+@@ -37,11 +37,11 @@ control_exchange = trove
  db_api_implementation = "trove.db.sqlalchemy.api"
  
  # Configuration options for talking to nova via the novaclient.
@@ -52,7 +56,7 @@ Last-Update: 2016-04-01
  
  # nova_compute_url, cinder_url, swift_url, and heat_url can all be fetched
  # from Keystone. To fetch from Keystone, comment out nova_compute_url,
-@@ -213,7 +213,7 @@ rabbit_password=f7999d1955c5014aa32c
+@@ -212,7 +212,7 @@ rabbit_password=f7999d1955c5014aa32c
  root_on_create = False
  # Format (single port or port range): A, B-C
  # where C greater than B
