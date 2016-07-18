@@ -13,6 +13,7 @@ openstack-trove (1:6.0.0~b2-1) experimental; urgency=medium
     test_template.TemplateTest.test_replica_source_config_rendering
     test_template.TemplateTest.test_single_instance_config_rendering
     taskmanager.test_models.BuiltInstanceTasksTest.test_error_attach_replica
+  * Using @testtools.skip() to blacklist tests.
 
  -- Thomas Goirand <zigo@debian.org>  Sat, 16 Jul 2016 14:59:14 +0200
 

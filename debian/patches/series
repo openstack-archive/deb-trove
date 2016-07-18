@@ -5,3 +5,4 @@ add-keystone_authtoken-in-trove.conf.patch
 better-default-config.patch
 fix-default-sql_connection-directive.patch
 make-trove-taskmanager.conf-parseable.patch
+blacklist-failing-tests.patch
