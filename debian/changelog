@@ -1,7 +1,9 @@
-openstack-trove (1:5.0.1-2) UNRELEASED; urgency=medium
+openstack-trove (1:5.0.1-2) unstable; urgency=medium
 
   * Added pt_BR.po new debconf translation (Closes: #829346).
   * Fixed python-swiftclient missing EPOC.
+  * Added use-realpath-function-to-find-my.cnf-in-debian.patch
+    (Closes: #829369).
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 26 Jul 2016 15:59:22 +0200
 

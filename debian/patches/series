@@ -5,3 +5,4 @@ make-trove-taskmanager.conf-parseable.patch
 install-missing-files.patch
 add-keystone_authtoken-in-trove.conf.patch
 better-default-config.patch
+use-realpath-function-to-find-my.cnf-in-debian.patch
