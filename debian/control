@@ -178,6 +178,7 @@ Package: trove-api
 Architecture: all
 Depends: adduser,
          trove-common (= ${binary:Version}),
+         lsb-base,
          python-openstackclient,
          q-text-as-data,
          ${misc:Depends},
@@ -202,6 +203,7 @@ Description: Database as a Service for OpenStack - API server
 Package: trove-guestagent
 Architecture: all
 Depends: adduser,
+         lsb-base,
          trove-common (= ${binary:Version}),
          ${misc:Depends},
          ${python:Depends},
@@ -226,6 +228,7 @@ Description: Database as a Service for OpenStack - guest agent
 Package: trove-taskmanager
 Architecture: all
 Depends: adduser,
+         lsb-base,
          trove-common (= ${binary:Version}),
          ${misc:Depends},
          ${python:Depends},
@@ -249,6 +252,7 @@ Description: Database as a Service for OpenStack - taskmanager
 Package: trove-conductor
 Architecture: all
 Depends: adduser,
+         lsb-base,
          trove-common (= ${binary:Version}),
          ${misc:Depends},
          ${python:Depends},
